@@ -35,10 +35,10 @@ docker compose logs -f api
 
 ## 3. 服務位址
 
-- API Health: `http://localhost:8000/health`
-- Swagger: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-- MySQL Host: `localhost:3306`
+- API Health: `http://localhost:${API_HOST_PORT}/health`（預設 `8010`）
+- Swagger: `http://localhost:${API_HOST_PORT}/docs`（預設 `8010`）
+- ReDoc: `http://localhost:${API_HOST_PORT}/redoc`（預設 `8010`）
+- MySQL Host: `localhost:${DB_HOST_PORT}`（預設 `3309`）
 
 ## 4. 資料庫連線資訊
 
@@ -58,7 +58,7 @@ mysql+pymysql://fixture_user:fixture_pass@db:3306/fixture_m_lite?charset=utf8mb4
 從你的電腦連 MySQL（例如 DBeaver / DataGrip）：
 
 - Host: `127.0.0.1`
-- Port: `3306`
+- Port: `3309`（或你在 `.env` 設定的 `DB_HOST_PORT`）
 - User: `fixture_user`
 - Password: `fixture_pass`
 - Database: `fixture_m_lite`
@@ -89,3 +89,5 @@ docker compose down -v
 
 - API 起不來：先看 `docker compose logs -f api` 是否為 DB 連線字串錯誤。
 - DB 密碼改了：請同步更新 `.env` 的 `DATABASE_URL`（或 DB_* 變數）與 `docker-compose.yml` 的 MySQL 使用者設定。
+- API `8000` port 衝突：把 `.env` 的 `API_HOST_PORT` 改成其他值（例如 `8010`、`8011`）後重啟。
+- DB `3306`/`3307`/`3308` 衝突：把 `.env` 的 `DB_HOST_PORT` 改成其他值（例如 `3309`、`3310`）後重啟。
