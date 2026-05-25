@@ -2,13 +2,26 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.models.inventory import FixtureStockSummary
-from backend.app.models.master import Fixture, Station
+from backend.app.models.master import Fixture, MachineModel, ModelStation, Station
 from backend.app.models.production import FixtureRequirement, MachineCapacitySummary
 
 
 class ProductionRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
+
+    def create_model_station(self, *, model_id: int, station_id: int) -> ModelStation:
+        row = ModelStation(model_id=model_id, station_id=station_id)
+        self.db.add(row)
+        self.db.flush()
+        return row
+
+    def list_model_stations(self) -> list[ModelStation]:
+        stmt = select(ModelStation).order_by(ModelStation.model_id, ModelStation.station_id)
+        return list(self.db.scalars(stmt))
+
+    def get_model(self, model_id: int) -> MachineModel | None:
+        return self.db.get(MachineModel, model_id)
 
     def create_or_update_requirement(self, *, station_id: int, fixture_id: int, required_qty: int) -> FixtureRequirement:
         stmt = select(FixtureRequirement).where(

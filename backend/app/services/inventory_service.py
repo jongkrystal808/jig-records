@@ -54,3 +54,6 @@ class InventoryService:
 
     def list_alerts(self):
         return self.repo.list_stock_alert_rows()
+
+    def list_transactions(self, limit: int):
+        return self.repo.list_transactions(limit)

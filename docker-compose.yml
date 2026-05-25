@@ -1,4 +1,16 @@
 services:
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fixture_m_lite_web
+    ports:
+      - "${WEB_HOST_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+
   api:
     build:
       context: .

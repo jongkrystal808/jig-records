@@ -3,6 +3,17 @@ from pydantic import BaseModel, Field
 from backend.app.schemas.common import ORMModel
 
 
+class ModelStationCreate(BaseModel):
+    model_id: int
+    station_id: int
+
+
+class ModelStationRead(ORMModel):
+    id: int
+    model_id: int
+    station_id: int
+
+
 class FixtureRequirementCreate(BaseModel):
     station_id: int
     fixture_id: int

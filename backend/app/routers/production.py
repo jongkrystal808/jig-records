@@ -2,10 +2,30 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.app.core.database import get_db
-from backend.app.schemas.production import CapacityRead, FixtureRequirementCreate, FixtureRequirementRead
+from backend.app.schemas.production import (
+    CapacityRead,
+    FixtureRequirementCreate,
+    FixtureRequirementRead,
+    ModelStationCreate,
+    ModelStationRead,
+)
 from backend.app.services.production_service import ProductionService
 
 router = APIRouter(prefix="/production", tags=["production"])
+
+
+@router.post("/model-stations", response_model=ModelStationRead, status_code=status.HTTP_201_CREATED)
+def create_model_station(payload: ModelStationCreate, db: Session = Depends(get_db)):
+    service = ProductionService(db)
+    try:
+        return service.create_model_station(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.get("/model-stations", response_model=list[ModelStationRead])
+def list_model_stations(db: Session = Depends(get_db)):
+    return ProductionService(db).list_model_stations()
 
 
 @router.post("/fixture-requirements", response_model=FixtureRequirementRead, status_code=status.HTTP_201_CREATED)

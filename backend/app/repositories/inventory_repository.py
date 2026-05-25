@@ -95,3 +95,51 @@ class InventoryRepository:
             .order_by(Fixture.code)
         )
         return [dict(row._mapping) for row in self.db.execute(stmt).all()]
+
+    def list_transactions(self, limit: int) -> list[dict]:
+        tx_stmt = (
+            select(MaterialTransaction)
+            .order_by(MaterialTransaction.id.desc())
+            .limit(limit)
+        )
+        transactions = list(self.db.scalars(tx_stmt))
+        if not transactions:
+            return []
+
+        tx_ids = [tx.id for tx in transactions]
+        item_stmt = (
+            select(
+                MaterialTransactionItem.transaction_id,
+                MaterialTransactionItem.fixture_id,
+                MaterialTransactionItem.qty,
+                Fixture.code.label("fixture_code"),
+                Fixture.name.label("fixture_name"),
+            )
+            .join(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
+            .where(MaterialTransactionItem.transaction_id.in_(tx_ids))
+            .order_by(MaterialTransactionItem.id.asc())
+        )
+        item_rows = [dict(row._mapping) for row in self.db.execute(item_stmt).all()]
+        item_map: dict[int, list[dict]] = {}
+        for row in item_rows:
+            item_map.setdefault(row["transaction_id"], []).append(
+                {
+                    "fixture_id": row["fixture_id"],
+                    "fixture_code": row["fixture_code"],
+                    "fixture_name": row["fixture_name"],
+                    "qty": row["qty"],
+                }
+            )
+
+        result: list[dict] = []
+        for tx in transactions:
+            result.append(
+                {
+                    "id": tx.id,
+                    "transaction_type": tx.transaction_type,
+                    "note": tx.note,
+                    "created_at": tx.created_at,
+                    "items": item_map.get(tx.id, []),
+                }
+            )
+        return result

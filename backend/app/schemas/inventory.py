@@ -33,3 +33,18 @@ class StockAlertRead(ORMModel):
     stock_qty: int
     min_stock_qty: int
     stock_status: Literal["low_stock", "out_of_stock"]
+
+
+class StockTransactionItemRead(ORMModel):
+    fixture_id: int
+    fixture_code: str
+    fixture_name: str
+    qty: int
+
+
+class StockTransactionRead(ORMModel):
+    id: int
+    transaction_type: Literal["receipt", "return"]
+    note: str | None
+    created_at: datetime
+    items: list[StockTransactionItemRead]

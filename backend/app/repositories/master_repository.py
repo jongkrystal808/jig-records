@@ -1,12 +1,21 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.models.master import Fixture, MachineModel, Station
+from backend.app.models.master import Customer, Fixture, MachineModel, Owner, Station
 
 
 class MasterRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
+
+    def create_customer(self, *, code: str, name: str) -> Customer:
+        customer = Customer(code=code, name=name)
+        self.db.add(customer)
+        self.db.flush()
+        return customer
+
+    def list_customers(self) -> list[Customer]:
+        return list(self.db.scalars(select(Customer).order_by(Customer.code)))
 
     def create_fixture(self, *, code: str, name: str, description: str | None) -> Fixture:
         fixture = Fixture(code=code, name=name, description=description)
@@ -40,3 +49,12 @@ class MasterRepository:
 
     def get_station(self, station_id: int) -> Station | None:
         return self.db.get(Station, station_id)
+
+    def create_owner(self, *, name: str) -> Owner:
+        owner = Owner(name=name)
+        self.db.add(owner)
+        self.db.flush()
+        return owner
+
+    def list_owners(self) -> list[Owner]:
+        return list(self.db.scalars(select(Owner).order_by(Owner.name)))

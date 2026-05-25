@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.core.database import get_db
-from backend.app.schemas.inventory import StockAlertRead, StockSummaryRead, StockTransactionCreate
+from backend.app.schemas.inventory import StockAlertRead, StockSummaryRead, StockTransactionCreate, StockTransactionRead
 from backend.app.services.inventory_service import InventoryService
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
@@ -36,3 +36,9 @@ def list_stock(db: Session = Depends(get_db)):
 def list_alerts(db: Session = Depends(get_db)):
     service = InventoryService(db)
     return service.list_alerts()
+
+
+@router.get("/transactions", response_model=list[StockTransactionRead])
+def list_transactions(limit: int = Query(20, ge=1, le=200), db: Session = Depends(get_db)):
+    service = InventoryService(db)
+    return service.list_transactions(limit)

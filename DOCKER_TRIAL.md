@@ -33,11 +33,18 @@ docker compose ps
 docker compose logs -f api
 ```
 
+5. 查看前端/Nginx log：
+
+```powershell
+docker compose logs -f web
+```
+
 ## 3. 服務位址
 
-- API Health: `http://localhost:${API_HOST_PORT}/health`（預設 `8010`）
-- Swagger: `http://localhost:${API_HOST_PORT}/docs`（預設 `8010`）
-- ReDoc: `http://localhost:${API_HOST_PORT}/redoc`（預設 `8010`）
+- Web App (Vue + Nginx): `http://localhost:${WEB_HOST_PORT}`（預設 `8080`）
+- API Health (direct): `http://localhost:${API_HOST_PORT}/health`（預設 `8010`）
+- Swagger (direct): `http://localhost:${API_HOST_PORT}/docs`（預設 `8010`）
+- API via Nginx: `http://localhost:${WEB_HOST_PORT}/api/v2/*`（預設 `8080`）
 - MySQL Host: `localhost:${DB_HOST_PORT}`（預設 `3309`）
 
 ## 4. 資料庫連線資訊
@@ -90,4 +97,5 @@ docker compose down -v
 - API 起不來：先看 `docker compose logs -f api` 是否為 DB 連線字串錯誤。
 - DB 密碼改了：請同步更新 `.env` 的 `DATABASE_URL`（或 DB_* 變數）與 `docker-compose.yml` 的 MySQL 使用者設定。
 - API `8000` port 衝突：把 `.env` 的 `API_HOST_PORT` 改成其他值（例如 `8010`、`8011`）後重啟。
+- Web `8080` port 衝突：把 `.env` 的 `WEB_HOST_PORT` 改成其他值（例如 `8080`、`8081`）後重啟。
 - DB `3306`/`3307`/`3308` 衝突：把 `.env` 的 `DB_HOST_PORT` 改成其他值（例如 `3309`、`3310`）後重啟。

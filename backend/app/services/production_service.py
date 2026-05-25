@@ -1,15 +1,37 @@
 from math import floor
+from sqlalchemy.exc import IntegrityError
 
 from sqlalchemy.orm import Session
 
 from backend.app.repositories.production_repository import ProductionRepository
-from backend.app.schemas.production import FixtureRequirementCreate
+from backend.app.schemas.production import FixtureRequirementCreate, ModelStationCreate
 
 
 class ProductionService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.repo = ProductionRepository(db)
+
+    def create_model_station(self, payload: ModelStationCreate):
+        model = self.repo.get_model(payload.model_id)
+        if model is None:
+            raise ValueError(f"model {payload.model_id} not found")
+
+        station = self.repo.get_station(payload.station_id)
+        if station is None:
+            raise ValueError(f"station {payload.station_id} not found")
+
+        try:
+            model_station = self.repo.create_model_station(model_id=payload.model_id, station_id=payload.station_id)
+            self.db.commit()
+            self.db.refresh(model_station)
+            return model_station
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise ValueError("model-station mapping already exists") from exc
+
+    def list_model_stations(self):
+        return self.repo.list_model_stations()
 
     def create_fixture_requirement(self, payload: FixtureRequirementCreate):
         fixture = self.repo.get_fixture(payload.fixture_id)
