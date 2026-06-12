@@ -24,6 +24,9 @@ class Settings:
     app_version: str = os.getenv("APP_VERSION", "0.1.0")
     api_v2_prefix: str = "/api/v2"
     database_url: str = _default_database_url()
+    fixture_image_dir: str = os.getenv("FIXTURE_IMAGE_DIR", "./uploads/fixtures")
+    auth_secret_key: str = os.getenv("AUTH_SECRET_KEY", "change-me-in-production")
+    auth_token_ttl_seconds: int = int(os.getenv("AUTH_TOKEN_TTL_SECONDS", "86400"))
 
 
 settings = Settings()

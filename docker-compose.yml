@@ -22,6 +22,9 @@ services:
       APP_NAME: ${APP_NAME:-Fixture-M Lite API}
       APP_VERSION: ${APP_VERSION:-0.1.0}
       DATABASE_URL: ${DATABASE_URL:-mysql+pymysql://fixture_user:fixture_pass@db:3306/fixture_m_lite?charset=utf8mb4}
+      FIXTURE_IMAGE_DIR: ${FIXTURE_IMAGE_DIR:-/data/fixture-images}
+    volumes:
+      - ${FIXTURE_IMAGE_DIR_HOST:-./uploads/fixtures}:/data/fixture-images
     depends_on:
       db:
         condition: service_healthy

@@ -6,15 +6,33 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.models.base import Base, TimestampMixin
 
 
-transaction_type_enum = Enum("receipt", "return", name="transaction_type")
-stock_status_enum = Enum("normal", "low_stock", "out_of_stock", name="stock_status")
+transaction_type_enum = Enum("receipt", "return", name="transaction_type", native_enum=False, validate_strings=True)
+stock_status_enum = Enum("normal", "low_stock", "out_of_stock", name="stock_status", native_enum=False, validate_strings=True)
+material_manage_type_enum = Enum(
+    "datecode",
+    "serial",
+    name="material_manage_type",
+    native_enum=False,
+    validate_strings=True,
+)
+ownership_type_enum = Enum(
+    "customer_supplied",
+    "self_purchased",
+    name="ownership_type",
+    native_enum=False,
+    validate_strings=True,
+)
 
 
 class MaterialTransaction(Base, TimestampMixin):
     __tablename__ = "material_transactions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="RESTRICT"), nullable=False, index=True)
     transaction_type: Mapped[str] = mapped_column(transaction_type_enum, nullable=False)
+    transaction_no: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
     note: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     items = relationship("MaterialTransactionItem", back_populates="transaction", cascade="all, delete-orphan")
@@ -28,7 +46,12 @@ class MaterialTransactionItem(Base):
         ForeignKey("material_transactions.id", ondelete="CASCADE"), nullable=False, index=True
     )
     fixture_id: Mapped[int] = mapped_column(ForeignKey("fixtures.id"), nullable=False, index=True)
-    qty: Mapped[int] = mapped_column(Integer, nullable=False)
+    manage_type: Mapped[str] = mapped_column(material_manage_type_enum, nullable=False)
+    ownership_type: Mapped[str] = mapped_column(ownership_type_enum, nullable=False)
+    datecode: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    serial_number: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     transaction = relationship("MaterialTransaction", back_populates="items")
 

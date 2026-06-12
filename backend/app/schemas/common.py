@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ORMModel(BaseModel):
@@ -10,3 +10,12 @@ class ORMModel(BaseModel):
 class TimestampedResponse(ORMModel):
     created_at: datetime
     updated_at: datetime
+
+
+class CsvImportPayload(BaseModel):
+    filename: str | None = None
+    content: str = Field(min_length=1)
+
+
+class ImportResultRead(BaseModel):
+    imported_count: int

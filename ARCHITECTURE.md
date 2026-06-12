@@ -167,12 +167,51 @@ Includes:
 - Transaction history
 - Export
 - Stock summary
+- Batch paste import for receipt/return
+- On-the-fly fixture creation from pasted rows
+- Similar-fixture confirmation before import
 
 API prefix:
 
 ```text
 /api/v2/inventory/*
 ```
+
+#### Inventory UI behavior
+
+The inventory page supports two entry paths:
+
+- Manual single-row receipt/return submission
+- Batch paste import from clipboard rows
+
+Batch paste import accepts rows in either of these practical formats:
+
+- Two-line pairs:
+  - fixture code line
+  - quantity line
+- Delimited single lines from spreadsheets:
+  - `fixture-code<TAB>value<TAB>quantity`
+  - `fixture-code|value|quantity`
+
+When the pasted fixture code does not exist:
+
+- The UI prompts to create the new fixture
+- If the user declines, the row is skipped
+
+When the pasted fixture code is close to an existing fixture code:
+
+- The UI asks the user to confirm whether it is the same fixture
+- If confirmed, the row is replaced with the existing fixture
+- If denied, the UI falls back to the add-or-skip decision
+
+Batch import still uses the existing inventory transaction APIs:
+
+- `POST /api/v2/inventory/receipts`
+- `POST /api/v2/inventory/returns`
+
+Fixture creation from the batch flow uses the master API:
+
+- `POST /api/v2/master/fixtures`
 
 ---
 
@@ -518,4 +557,3 @@ Core value:
 - Know which models use them
 - Know production capacity instantly
 - Know shortage risks immediately
-

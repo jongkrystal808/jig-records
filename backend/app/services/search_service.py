@@ -7,10 +7,10 @@ class SearchService:
     def __init__(self, db: Session) -> None:
         self.repo = SearchRepository(db)
 
-    def global_search(self, q: str) -> list[dict]:
+    def global_search(self, q: str, customer_id: int | None = None) -> list[dict]:
         results: list[dict] = []
 
-        for row in self.repo.search_fixtures(q):
+        for row in self.repo.search_fixtures(q, customer_id=customer_id):
             results.append(
                 {
                     "entity_type": "fixture",
@@ -23,7 +23,7 @@ class SearchService:
                 }
             )
 
-        for model in self.repo.search_models(q):
+        for model in self.repo.search_models(q, customer_id=customer_id):
             results.append(
                 {
                     "entity_type": "model",
@@ -33,7 +33,7 @@ class SearchService:
                 }
             )
 
-        for station in self.repo.search_stations(q):
+        for station in self.repo.search_stations(q, customer_id=customer_id):
             results.append(
                 {
                     "entity_type": "station",
@@ -43,18 +43,7 @@ class SearchService:
                 }
             )
 
-        for location in self.repo.search_locations(q):
-            results.append(
-                {
-                    "entity_type": "location",
-                    "title": location.code,
-                    "subtitle": "Storage Location",
-                    "reference_id": location.id,
-                    "location_code": location.code,
-                }
-            )
-
-        for serial in self.repo.search_serials(q):
+        for serial in self.repo.search_serials(q, customer_id=customer_id):
             results.append(
                 {
                     "entity_type": "serial",

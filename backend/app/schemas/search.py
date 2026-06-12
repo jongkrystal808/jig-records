@@ -4,7 +4,7 @@ from backend.app.schemas.common import ORMModel
 
 
 class GlobalSearchResult(ORMModel):
-    entity_type: Literal["fixture", "model", "station", "location", "serial"]
+    entity_type: Literal["fixture", "model", "station", "serial"]
     title: str
     subtitle: str | None
     reference_id: int
