@@ -200,6 +200,7 @@ onMounted(async () => {
 
 <template>
   <div class="viewport-shell">
+    <a class="skip-link" href="#main-content">跳到主要內容</a>
     <div class="app-shell">
       <template v-if="!authSession">
         <section class="login-shell">
@@ -210,11 +211,11 @@ onMounted(async () => {
             <form class="login-form" @submit.prevent="login">
               <label>
                 <span>帳號</span>
-                <input v-model="loginForm.username" placeholder="預設 admin" required />
+                <input v-model="loginForm.username" name="username" autocomplete="username" spellcheck="false" placeholder="例如：admin…" required />
               </label>
               <label>
                 <span>密碼</span>
-                <input v-model="loginForm.password" type="password" placeholder="預設 admin123" required />
+                <input v-model="loginForm.password" name="password" autocomplete="current-password" placeholder="例如：admin123…" type="password" required />
               </label>
               <button class="primary-btn" type="submit" :disabled="loggingIn">{{ loggingIn ? "登入中..." : "登入" }}</button>
             </form>
@@ -255,8 +256,8 @@ onMounted(async () => {
               </select>
             </label>
             <form v-if="isAdmin" class="customer-create" @submit.prevent="createCustomer">
-              <input v-model="customerForm.code" placeholder="客戶代碼" />
-              <input v-model="customerForm.name" placeholder="客戶名稱" />
+              <input v-model="customerForm.code" name="customer_code" autocomplete="off" spellcheck="false" placeholder="客戶代碼…" />
+              <input v-model="customerForm.name" name="customer_name" autocomplete="off" placeholder="客戶名稱…" />
               <button class="outline-btn small" type="submit" :disabled="creatingCustomer">
                 {{ creatingCustomer ? "新增中..." : "新增客戶" }}
               </button>
@@ -301,7 +302,7 @@ onMounted(async () => {
             </section>
           </aside>
 
-          <main class="page-content">
+          <main id="main-content" class="page-content">
             <RouterView />
           </main>
         </div>
