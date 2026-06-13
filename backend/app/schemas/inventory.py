@@ -8,28 +8,16 @@ from backend.app.schemas.common import ORMModel
 
 class StockTransactionItemInput(BaseModel):
     fixture_id: int
-    manage_type: Literal["datecode", "serial"]
     ownership_type: Literal["customer_supplied", "self_purchased"]
-    datecode: str | None = Field(default=None, max_length=80)
-    serial_number: str | None = Field(default=None, max_length=120)
+    identifier: str | None = Field(default=None, max_length=120)
     quantity: int = Field(gt=0)
     note: str | None = Field(default=None, max_length=255)
 
     @model_validator(mode="after")
-    def validate_by_manage_type(self):
-        if self.manage_type == "datecode":
-            if not self.datecode:
-                raise ValueError("datecode item requires datecode")
-            if self.serial_number:
-                raise ValueError("datecode item cannot include serial_number")
-            return self
-
-        if not self.serial_number:
-            raise ValueError("serial item requires serial_number")
-        if self.datecode:
-            raise ValueError("serial item cannot include datecode")
-        if self.quantity != 1:
-            raise ValueError("serial item quantity must be 1")
+    def validate_identifier(self):
+        if not self.identifier or not self.identifier.strip():
+            raise ValueError("identifier is required")
+        self.identifier = self.identifier.strip()
         return self
 
 
@@ -64,10 +52,8 @@ class StockTransactionItemRead(ORMModel):
     fixture_id: int
     fixture_code: str
     fixture_name: str
-    manage_type: Literal["datecode", "serial"]
     ownership_type: Literal["customer_supplied", "self_purchased"]
-    datecode: str | None
-    serial_number: str | None
+    identifier: str | None
     quantity: int
     note: str | None
 

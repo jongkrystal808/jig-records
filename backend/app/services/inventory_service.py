@@ -40,56 +40,31 @@ class InventoryService:
             if fixture.customer_id != payload.customer_id:
                 self.db.rollback()
                 raise ValueError(f"治具 {fixture.code} 不屬於目前客戶 {payload.customer_id}")
-            if fixture.manage_type != item.manage_type:
-                self.db.rollback()
-                raise ValueError(f"治具 {fixture.code} 管理型態不符：資料庫是 {fixture.manage_type}，送出是 {item.manage_type}")
 
             if transaction_type == "return":
-                if item.manage_type == "datecode":
-                    datecode = item.datecode or ""
-                    available_qty = self.repo.get_available_datecode_qty(
-                        fixture_id=item.fixture_id,
-                        datecode=datecode,
-                    )
-                    if available_qty <= 0:
-                        self.db.rollback()
-                        raise ValueError(f"datecode {datecode} 不在目前庫存中")
-                    if available_qty < item.quantity:
-                        self.db.rollback()
-                        raise ValueError(f"datecode {datecode} 剩餘可退 {available_qty} pcs，申請退料 {item.quantity} pcs")
-                else:
-                    serial_number = item.serial_number or ""
-                    serial = self.repo.get_fixture_serial(
-                        fixture_id=item.fixture_id,
-                        serial_number=serial_number,
-                    )
-                    if serial is None:
-                        self.db.rollback()
-                        raise ValueError(f"serial {serial_number} 不在目前庫存中")
+                identifier = item.identifier or ""
+                available_qty = self.repo.get_available_identifier_qty(
+                    fixture_id=item.fixture_id,
+                    identifier=identifier,
+                )
+                if available_qty <= 0:
+                    self.db.rollback()
+                    raise ValueError(f"識別碼 {identifier} 不在目前庫存中")
+                if available_qty < item.quantity:
+                    self.db.rollback()
+                    raise ValueError(f"識別碼 {identifier} 剩餘可退 {available_qty} pcs，申請退料 {item.quantity} pcs")
 
             self.repo.add_transaction_item(
                 transaction_id=transaction.id,
                 fixture_id=item.fixture_id,
-                manage_type=item.manage_type,
                 ownership_type=item.ownership_type,
-                datecode=item.datecode,
-                serial_number=item.serial_number,
+                identifier=item.identifier,
                 quantity=item.quantity,
                 note=item.note,
             )
             level = self.repo.get_or_create_stock_level(item.fixture_id)
             summary = self.repo.get_or_create_stock_summary(item.fixture_id)
             delta_quantity = item.quantity
-
-            if item.manage_type == "serial":
-                serial = self.repo.get_fixture_serial(fixture_id=item.fixture_id, serial_number=item.serial_number or "")
-                if transaction_type == "receipt":
-                    if serial is not None:
-                        self.db.rollback()
-                        raise ValueError(f"serial {item.serial_number} 已在目前庫存中")
-                    self.repo.create_fixture_serial(fixture_id=item.fixture_id, serial_number=item.serial_number or "")
-                else:
-                    self.repo.delete_fixture_serial(serial)
 
             if transaction_type == "receipt":
                 summary.stock_qty += delta_quantity
@@ -122,26 +97,22 @@ class InventoryService:
         customer_id: int | None = None,
         *,
         transaction_type: str | None = None,
-        manage_type: str | None = None,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
         fixture_code: str | None = None,
         transaction_no: str | None = None,
-        datecode: str | None = None,
-        serial_number: str | None = None,
+        identifier: str | None = None,
         created_by: str | None = None,
     ):
         return self.repo.list_transactions(
             limit,
             customer_id=customer_id,
             transaction_type=transaction_type,
-            manage_type=manage_type,
             date_from=date_from,
             date_to=date_to,
             fixture_code=fixture_code,
             transaction_no=transaction_no,
-            datecode=datecode,
-            serial_number=serial_number,
+            identifier=identifier,
             created_by=created_by,
         )
 
@@ -151,26 +122,22 @@ class InventoryService:
         customer_id: int | None = None,
         *,
         transaction_type: str | None = None,
-        manage_type: str | None = None,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
         fixture_code: str | None = None,
         transaction_no: str | None = None,
-        datecode: str | None = None,
-        serial_number: str | None = None,
+        identifier: str | None = None,
         created_by: str | None = None,
     ) -> str:
         transactions = self.list_transactions(
             limit,
             customer_id=customer_id,
             transaction_type=transaction_type,
-            manage_type=manage_type,
             date_from=date_from,
             date_to=date_to,
             fixture_code=fixture_code,
             transaction_no=transaction_no,
-            datecode=datecode,
-            serial_number=serial_number,
+            identifier=identifier,
             created_by=created_by,
         )
         rows = []
@@ -181,10 +148,8 @@ class InventoryService:
                         "transaction_type": tx["transaction_type"],
                         "transaction_no": tx["transaction_no"],
                         "fixture_code": item["fixture_code"],
-                        "manage_type": item["manage_type"],
                         "ownership_type": item["ownership_type"],
-                        "datecode": item["datecode"] or "",
-                        "serial_number": item["serial_number"] or "",
+                        "identifier": item["identifier"] or "",
                         "quantity": item["quantity"],
                         "created_by": tx["created_by"],
                         "occurred_at": tx["occurred_at"].isoformat(),
@@ -196,10 +161,8 @@ class InventoryService:
                 "transaction_type",
                 "transaction_no",
                 "fixture_code",
-                "manage_type",
                 "ownership_type",
-                "datecode",
-                "serial_number",
+                "identifier",
                 "quantity",
                 "created_by",
                 "occurred_at",
@@ -214,8 +177,7 @@ class InventoryService:
                 "transaction_type",
                 "fixture_code",
                 "ownership_type",
-                "datecode",
-                "serial_number",
+                "identifier",
                 "quantity",
                 "created_by",
                 "occurred_at",
@@ -226,8 +188,7 @@ class InventoryService:
                     "transaction_type": "receipt",
                     "fixture_code": "C-00001",
                     "ownership_type": "self_purchased",
-                    "datecode": "202605",
-                    "serial_number": "",
+                    "identifier": "2605",
                     "quantity": "10",
                     "created_by": "System Admin",
                     "occurred_at": "2026-05-26T08:30:00+00:00",
@@ -252,8 +213,6 @@ class InventoryService:
                 raise ValueError(f"fixture {fixture_code} does not belong to customer {customer_id}")
             quantity = int(row.get("quantity", "0") or "0")
             if quantity <= 0:
-                quantity = 1 if fixture.manage_type == "serial" else 0
-            if quantity <= 0:
                 continue
             occurred_at_raw = row.get("occurred_at", "")
             occurred_at = datetime.fromisoformat(occurred_at_raw) if occurred_at_raw else None
@@ -265,10 +224,8 @@ class InventoryService:
                 items=[
                     {
                         "fixture_id": fixture.id,
-                        "manage_type": fixture.manage_type,
                         "ownership_type": ownership_type or "self_purchased",
-                        "datecode": row.get("datecode", "") or None,
-                        "serial_number": row.get("serial_number", "") or None,
+                        "identifier": row.get("identifier", "") or row.get("datecode", "") or row.get("serial_number", "") or None,
                         "quantity": quantity,
                         "note": row.get("note", "") or None,
                     }

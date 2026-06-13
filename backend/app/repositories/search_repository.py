@@ -1,7 +1,7 @@
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.models.inventory import FixtureSerial, FixtureStockSummary
+from backend.app.models.inventory import FixtureStockSummary
 from backend.app.models.master import Fixture, MachineModel, Station
 
 
@@ -42,14 +42,3 @@ class SearchRepository:
             stmt = stmt.where(Station.customer_id == customer_id)
         stmt = stmt.limit(20)
         return list(self.db.scalars(stmt))
-
-    def search_serials(self, q: str, customer_id: int | None = None) -> list[dict]:
-        stmt = (
-            select(FixtureSerial.id, FixtureSerial.serial_no, Fixture.code, Fixture.name)
-            .join(Fixture, Fixture.id == FixtureSerial.fixture_id)
-            .where(FixtureSerial.serial_no.ilike(f"%{q}%"))
-            .limit(20)
-        )
-        if customer_id is not None:
-            stmt = stmt.where(Fixture.customer_id == customer_id)
-        return [dict(row._mapping) for row in self.db.execute(stmt).all()]

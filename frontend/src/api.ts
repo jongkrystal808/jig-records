@@ -104,7 +104,6 @@ export const api = {
     owner_id?: number | null;
     code: string;
     name: string;
-    manage_type: "datecode" | "serial";
     storage_location?: string | null;
     min_stock_qty?: number | null;
     description?: string;
@@ -115,7 +114,6 @@ export const api = {
     owner_id?: number | null;
     code: string;
     name: string;
-    manage_type: "datecode" | "serial";
     storage_location?: string | null;
     min_stock_qty?: number | null;
     description?: string;
@@ -170,13 +168,11 @@ export const api = {
     const params = new URLSearchParams({ limit: String(limit) });
     if (customerId) params.set("customer_id", String(customerId));
     if (filters?.transaction_type) params.set("transaction_type", filters.transaction_type);
-    if (filters?.manage_type) params.set("manage_type", filters.manage_type);
     if (filters?.date_from) params.set("date_from", filters.date_from);
     if (filters?.date_to) params.set("date_to", filters.date_to);
     if (filters?.fixture_code) params.set("fixture_code", filters.fixture_code);
     if (filters?.transaction_no) params.set("transaction_no", filters.transaction_no);
-    if (filters?.datecode) params.set("datecode", filters.datecode);
-    if (filters?.serial_number) params.set("serial_number", filters.serial_number);
+    if (filters?.identifier) params.set("identifier", filters.identifier);
     if (filters?.created_by) params.set("created_by", filters.created_by);
     return request<MaterialTransaction[]>(`/inventory/transactions?${params.toString()}`);
   },
@@ -184,13 +180,11 @@ export const api = {
     const params = new URLSearchParams({ limit: String(limit) });
     if (customerId) params.set("customer_id", String(customerId));
     if (filters?.transaction_type) params.set("transaction_type", filters.transaction_type);
-    if (filters?.manage_type) params.set("manage_type", filters.manage_type);
     if (filters?.date_from) params.set("date_from", filters.date_from);
     if (filters?.date_to) params.set("date_to", filters.date_to);
     if (filters?.fixture_code) params.set("fixture_code", filters.fixture_code);
     if (filters?.transaction_no) params.set("transaction_no", filters.transaction_no);
-    if (filters?.datecode) params.set("datecode", filters.datecode);
-    if (filters?.serial_number) params.set("serial_number", filters.serial_number);
+    if (filters?.identifier) params.set("identifier", filters.identifier);
     if (filters?.created_by) params.set("created_by", filters.created_by);
     return requestText(`/inventory/transactions/export?${params.toString()}`);
   },

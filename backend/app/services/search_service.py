@@ -43,14 +43,4 @@ class SearchService:
                 }
             )
 
-        for serial in self.repo.search_serials(q, customer_id=customer_id):
-            results.append(
-                {
-                    "entity_type": "serial",
-                    "title": serial["serial_no"],
-                    "subtitle": f'{serial["code"]} - {serial["name"]}',
-                    "reference_id": serial["id"],
-                }
-            )
-
         return results

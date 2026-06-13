@@ -46,20 +46,18 @@ class InventoryRepository:
         *,
         transaction_id: int,
         fixture_id: int,
-        manage_type: str,
         ownership_type: str,
-        datecode: str | None,
-        serial_number: str | None,
+        identifier: str | None,
         quantity: int,
         note: str | None,
     ) -> MaterialTransactionItem:
         item = MaterialTransactionItem(
             transaction_id=transaction_id,
             fixture_id=fixture_id,
-            manage_type=manage_type,
+            manage_type="datecode",
             ownership_type=ownership_type,
-            datecode=datecode,
-            serial_number=serial_number,
+            datecode=identifier,
+            serial_number=None,
             quantity=quantity,
             note=note,
         )
@@ -102,20 +100,7 @@ class InventoryRepository:
             summary.stock_status = "normal"
         summary.last_transaction_at = datetime.now(tz=timezone.utc)
 
-    def get_fixture_serial(self, *, fixture_id: int, serial_number: str) -> FixtureSerial | None:
-        stmt = select(FixtureSerial).where(
-            FixtureSerial.fixture_id == fixture_id,
-            FixtureSerial.serial_no == serial_number,
-        )
-        return self.db.scalar(stmt)
-
-    def create_fixture_serial(self, *, fixture_id: int, serial_number: str) -> FixtureSerial:
-        serial = FixtureSerial(fixture_id=fixture_id, serial_no=serial_number)
-        self.db.add(serial)
-        self.db.flush()
-        return serial
-
-    def get_available_datecode_qty(self, *, fixture_id: int, datecode: str) -> int:
+    def get_available_identifier_qty(self, *, fixture_id: int, identifier: str) -> int:
         stmt = (
             select(
                 func.coalesce(
@@ -140,14 +125,11 @@ class InventoryRepository:
             .join(MaterialTransaction, MaterialTransaction.id == MaterialTransactionItem.transaction_id)
             .where(
                 MaterialTransactionItem.fixture_id == fixture_id,
-                MaterialTransactionItem.datecode == datecode,
+                func.coalesce(MaterialTransactionItem.datecode, MaterialTransactionItem.serial_number) == identifier,
             )
         )
         row = self.db.execute(stmt).one()
         return int(row.receipt_qty or 0) - int(row.return_qty or 0)
-
-    def delete_fixture_serial(self, serial: FixtureSerial) -> None:
-        self.db.delete(serial)
 
     def list_stock_summary_rows(self, customer_id: int | None = None) -> list[dict]:
         stmt = (
@@ -203,13 +185,11 @@ class InventoryRepository:
         customer_id: int | None = None,
         *,
         transaction_type: str | None = None,
-        manage_type: str | None = None,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
         fixture_code: str | None = None,
         transaction_no: str | None = None,
-        datecode: str | None = None,
-        serial_number: str | None = None,
+        identifier: str | None = None,
         created_by: str | None = None,
     ) -> list[dict]:
         tx_id_stmt = (
@@ -222,8 +202,6 @@ class InventoryRepository:
             tx_id_stmt = tx_id_stmt.where(MaterialTransaction.customer_id == customer_id)
         if transaction_type:
             tx_id_stmt = tx_id_stmt.where(MaterialTransaction.transaction_type == transaction_type)
-        if manage_type:
-            tx_id_stmt = tx_id_stmt.where(MaterialTransactionItem.manage_type == manage_type)
         if date_from is not None:
             tx_id_stmt = tx_id_stmt.where(MaterialTransaction.occurred_at >= date_from)
         if date_to is not None:
@@ -232,10 +210,12 @@ class InventoryRepository:
             tx_id_stmt = tx_id_stmt.where(Fixture.code.ilike(f"%{fixture_code.strip()}%"))
         if transaction_no:
             tx_id_stmt = tx_id_stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
-        if datecode:
-            tx_id_stmt = tx_id_stmt.where(MaterialTransactionItem.datecode.ilike(f"%{datecode.strip()}%"))
-        if serial_number:
-            tx_id_stmt = tx_id_stmt.where(MaterialTransactionItem.serial_number.ilike(f"%{serial_number.strip()}%"))
+        if identifier:
+            tx_id_stmt = tx_id_stmt.where(
+                func.coalesce(MaterialTransactionItem.datecode, MaterialTransactionItem.serial_number).ilike(
+                    f"%{identifier.strip()}%"
+                )
+            )
         if created_by:
             tx_id_stmt = tx_id_stmt.where(MaterialTransaction.created_by.ilike(f"%{created_by.strip()}%"))
         tx_id_stmt = tx_id_stmt.order_by(MaterialTransaction.id.desc()).limit(limit)
@@ -252,7 +232,6 @@ class InventoryRepository:
             select(
                 MaterialTransactionItem.transaction_id,
                 MaterialTransactionItem.fixture_id,
-                MaterialTransactionItem.manage_type,
                 MaterialTransactionItem.ownership_type,
                 MaterialTransactionItem.datecode,
                 MaterialTransactionItem.serial_number,
@@ -273,10 +252,8 @@ class InventoryRepository:
                     "fixture_id": row["fixture_id"],
                     "fixture_code": row["fixture_code"],
                     "fixture_name": row["fixture_name"],
-                    "manage_type": row["manage_type"],
                     "ownership_type": row["ownership_type"],
-                    "datecode": row["datecode"],
-                    "serial_number": row["serial_number"],
+                    "identifier": row["datecode"] or row["serial_number"],
                     "quantity": row["quantity"],
                     "note": row["note"],
                 }

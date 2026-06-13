@@ -57,7 +57,7 @@ flowchart LR
 | Framework | Vue 3 |
 | Build Tool | Vite |
 | Language | TypeScript |
-| State Management | Pinia |
+| State Management | Lightweight reactive app state + composables |
 | UI Style | Industrial Card UI |
 
 ### Backend
@@ -83,30 +83,23 @@ flowchart LR
 ```text
 frontend/
 ├─ src/
-│  ├─ api/
 │  ├─ components/
-│  ├─ layouts/
 │  ├─ pages/
-│  ├─ stores/
 │  ├─ router/
 │  ├─ utils/
-│  └─ styles/
+│  ├─ api.ts
+│  ├─ appState.ts
+│  └─ styles.css
 ```
 
 ### Main frontend pages
 
 ```text
 pages/
-├─ DashboardPage.vue
-├─ GlobalSearchPage.vue
 ├─ InventoryPage.vue
-├─ ReceiptPage.vue
-├─ ReturnPage.vue
-├─ FixturePage.vue
-├─ ModelPage.vue
-├─ StationPage.vue
-├─ LocationPage.vue
-└─ StockAlertPage.vue
+├─ SearchWorkspacePage.vue
+├─ MasterPage.vue
+└─ ProductionPage.vue
 ```
 
 ---
@@ -170,6 +163,8 @@ Includes:
 - Batch paste import for receipt/return
 - On-the-fly fixture creation from pasted rows
 - Similar-fixture confirmation before import
+- Unified single identifier flow for all fixture transactions
+- Free-form transaction number for each batch import
 
 API prefix:
 
@@ -179,19 +174,32 @@ API prefix:
 
 #### Inventory UI behavior
 
-The inventory page supports two entry paths:
+The inventory page now supports one operational entry path and one overview path:
 
-- Manual single-row receipt/return submission
 - Batch paste import from clipboard rows
+- Transaction overview with direct CSV export using current filters
 
 Batch paste import accepts rows in either of these practical formats:
 
 - Two-line pairs:
-  - fixture code line
-  - quantity line
+  - `fixture-code-identifier`
+  - `quantity`
 - Delimited single lines from spreadsheets:
-  - `fixture-code<TAB>value<TAB>quantity`
-  - `fixture-code|value|quantity`
+  - `fixture-code<TAB>identifier<TAB>quantity`
+  - `fixture-code|identifier|quantity`
+
+All imported rows are normalized into:
+
+- `fixture_id`
+- `ownership_type`
+- `identifier`
+- `quantity`
+
+The frontend no longer asks users to pick or maintain:
+
+- `manage_type`
+- `serial_number`
+- separate `datecode` vs `serial` entry flows
 
 When the pasted fixture code does not exist:
 
@@ -212,6 +220,15 @@ Batch import still uses the existing inventory transaction APIs:
 Fixture creation from the batch flow uses the master API:
 
 - `POST /api/v2/master/fixtures`
+
+Transaction query/export filters are unified as:
+
+- transaction type
+- date range
+- fixture code
+- transaction number
+- identifier
+- operator
 
 ---
 
@@ -255,7 +272,7 @@ Includes:
 - Global search
 - Fixture search
 - Model search
-- Location search
+- Search workspace for fixture/model drill-down
 
 API prefix:
 
@@ -310,9 +327,7 @@ fixture_requirements
 
 material_transactions
 material_transaction_items
-
-fixture_serials
-fixture_datecode_inventory
+audit_logs
 ```
 
 ---
@@ -332,8 +347,6 @@ Stores:
 Stores:
 
 - Current stock quantity
-- Customer-supplied stock
-- Self-purchased stock
 - Returned quantity
 - Last transaction time
 
@@ -379,6 +392,23 @@ flowchart LR
     D --> E[Recalculate Capacity]
     E --> F[Update Warning Status]
 ```
+
+Current transaction-item contract on the API surface:
+
+```text
+material_transaction_items
+- fixture_id
+- ownership_type
+- identifier
+- quantity
+- note
+```
+
+Compatibility note:
+
+- The database still retains legacy `manage_type`, `datecode`, and `serial_number` columns internally.
+- The frontend and API surface have already been unified to a single `identifier`.
+- Legacy columns are currently treated as an internal compatibility layer to avoid destructive migration.
 
 ---
 
@@ -442,10 +472,10 @@ Search should support:
 
 - Fixture code
 - Fixture name
-- Serial number
 - Model code
 - Station
 - Storage location
+- Identifier-based transaction lookup through the search workspace
 
 Search result cards should display:
 
@@ -461,23 +491,20 @@ Search result cards should display:
 
 ## 14. UI Layout Direction
 
-Recommended layout:
+Current layout direction:
 
 ```text
-Top:
-- Global search
+Left sidebar:
+- Navigation
 - Current customer
-- Quick actions
-- Warning summary
+- Login / logout status
+- Current time
+- Recent audit summary
 
-Middle:
-- Main result panel
-- Fixture image panel
-- Location panel
-
-Bottom:
-- Transaction history
-- Recent receipt/return records
+Content area:
+- Search workspace / inventory / master / production
+- Summary cards pinned near page top
+- Detail panels scroll inside their own containers
 ```
 
 Style direction:
@@ -524,6 +551,7 @@ flowchart LR
 /api/v2/warehouse/fixture-images
 
 /api/v2/search/global
+/api/v2/audit/logs
 ```
 
 ---

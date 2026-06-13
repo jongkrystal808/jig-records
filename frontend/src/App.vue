@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 
 import { api } from "@/api";
@@ -16,26 +16,22 @@ const todayReceiptQty = ref(0);
 const todayReturnQty = ref(0);
 const lowStockCount = ref(0);
 const loginForm = ref({ username: "", password: "" });
-const customerForm = ref({ code: "", name: "" });
 const loggingIn = ref(false);
-const creatingCustomer = ref(false);
 const mobileMenuOpen = ref(false);
 const sidebarCompact = ref(false);
+const clockNow = ref(new Date());
+let clockTimer: ReturnType<typeof window.setInterval> | null = null;
 
 const currentCustomerId = computed(() => selectedCustomerId.value ?? undefined);
 const selectedCustomer = computed(() => customers.value.find((row) => row.id === selectedCustomerId.value) ?? null);
-const isAdmin = computed(() => authSession.value?.role === "admin");
-const customerScopeLabel = computed(() =>
-  selectedCustomer.value ? `${selectedCustomer.value.code} - ${selectedCustomer.value.name}` : "未選客戶"
+const userInitial = computed(() => authSession.value?.display_name?.trim().charAt(0).toUpperCase() || "U");
+const currentDateTimeLabel = computed(() =>
+  new Intl.DateTimeFormat("zh-TW", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(clockNow.value)
 );
 const today = computed(() => formatDateKey(new Date()));
-
-const topNav = [
-  { label: "查詢", to: "/search" },
-  { label: "收退料", to: "/inventory" },
-  { label: "資料維護", to: "/master" },
-  { label: "產能", to: "/production" }
-];
 
 const sideNav = [
   { label: "收退料作業", short: "作業", to: "/inventory", exact: true },
@@ -110,29 +106,6 @@ async function guestEntry(): Promise<void> {
   }
 }
 
-async function createCustomer(): Promise<void> {
-  if (!customerForm.value.code.trim() || !customerForm.value.name.trim()) {
-    pushToast("請輸入客戶代碼與名稱。", "warning");
-    return;
-  }
-  creatingCustomer.value = true;
-  try {
-    const customer = await api.createCustomer({
-      code: customerForm.value.code.trim(),
-      name: customerForm.value.name.trim()
-    });
-    await loadCustomers();
-    selectedCustomerId.value = customer.id;
-    customerForm.value.code = "";
-    customerForm.value.name = "";
-    pushToast(`已新增客戶：${customer.code}`, "success");
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "新增客戶失敗", "error");
-  } finally {
-    creatingCustomer.value = false;
-  }
-}
-
 function logout(): void {
   resetSession();
   todayReceiptQty.value = 0;
@@ -177,6 +150,10 @@ watch(
 );
 
 onMounted(async () => {
+  clockTimer = window.setInterval(() => {
+    clockNow.value = new Date();
+  }, 60_000);
+
   const savedSession = sessionStorage.getItem(SESSION_KEY);
   if (savedSession) {
     try {
@@ -196,6 +173,13 @@ onMounted(async () => {
     await loadSidebarStats();
   }
 });
+
+onBeforeUnmount(() => {
+  if (clockTimer !== null) {
+    window.clearInterval(clockTimer);
+    clockTimer = null;
+  }
+});
 </script>
 
 <template>
@@ -205,8 +189,13 @@ onMounted(async () => {
       <template v-if="!authSession">
         <section class="login-shell">
           <article class="login-card">
-            <p class="login-eyebrow">Jig Record</p>
-            <h1>人員登入入口</h1>
+            <header class="login-brand">
+              <div class="login-brand-mark" aria-hidden="true">JR</div>
+              <div>
+                <p class="login-eyebrow">Jig Record</p>
+                <h1>人員登入入口</h1>
+              </div>
+            </header>
             <p class="login-copy">請使用帳號密碼登入，或以訪客身分進入系統。</p>
             <form class="login-form" @submit.prevent="login">
               <label>
@@ -225,55 +214,56 @@ onMounted(async () => {
       </template>
 
       <template v-else>
-        <header class="app-top-nav">
-          <button
-            class="outline-btn nav-toggle"
-            type="button"
-            :aria-expanded="mobileMenuOpen"
-            aria-controls="side-nav"
-            @click="mobileMenuOpen = !mobileMenuOpen"
-          >
-            {{ mobileMenuOpen ? "關閉選單" : "功能選單" }}
-          </button>
-
-          <div class="top-nav-group">
-            <RouterLink v-for="item in topNav" :key="item.to" :to="item.to" class="top-item" :class="{ active: isActive(item.to) }">
-              {{ item.label }}
-            </RouterLink>
-          </div>
-
-          <div class="top-meta">
-            <button class="outline-btn small" type="button" @click="toggleSidebarCompact">
-              {{ sidebarCompact ? "展開側欄" : "收合側欄" }}
-            </button>
-            <span class="customer-scope" :class="{ empty: !selectedCustomer }">
-              目前客戶：{{ customerScopeLabel }}
-            </span>
-            <label class="customer-picker">
-              <span>客戶</span>
-              <select v-model.number="selectedCustomerId">
-                <option v-for="customer in customers" :key="customer.id" :value="customer.id">{{ customer.code }} - {{ customer.name }}</option>
-              </select>
-            </label>
-            <form v-if="isAdmin" class="customer-create" @submit.prevent="createCustomer">
-              <input v-model="customerForm.code" name="customer_code" autocomplete="off" spellcheck="false" placeholder="客戶代碼…" />
-              <input v-model="customerForm.name" name="customer_name" autocomplete="off" placeholder="客戶名稱…" />
-              <button class="outline-btn small" type="submit" :disabled="creatingCustomer">
-                {{ creatingCustomer ? "新增中..." : "新增客戶" }}
-              </button>
-            </form>
-            <span class="who">{{ authSession.display_name }}</span>
-            <button class="outline-btn small" type="button" @click="logout">登出</button>
-          </div>
-        </header>
+        <button
+          class="outline-btn nav-toggle shell-menu-toggle"
+          type="button"
+          :aria-expanded="mobileMenuOpen"
+          aria-controls="side-nav"
+          @click="mobileMenuOpen = !mobileMenuOpen"
+        >
+          {{ mobileMenuOpen ? "關閉選單" : "功能選單" }}
+        </button>
 
         <div class="body-shell">
           <aside id="side-nav" class="side-nav" :class="{ open: mobileMenuOpen, compact: sidebarCompact }">
             <div class="brand-block">
-              <p class="brand-title">歡迎使用 MOXA</p>
+              <p class="brand-title" translate="no">Jig Record</p>
               <h1>E 化治具清單</h1>
               <p class="brand-copy">治具庫存 / 機種 / 站點集中維護</p>
             </div>
+
+            <section class="session-card">
+              <div class="session-top">
+                <div>
+                  <p class="session-eyebrow">登入狀態</p>
+                  <strong translate="no">{{ authSession.display_name }}</strong>
+                </div>
+                <button class="user-avatar" type="button" :aria-label="`使用者：${authSession.display_name}`" :title="authSession.display_name">
+                  <span>{{ userInitial }}</span>
+                </button>
+              </div>
+
+              <div class="session-row">
+                <span>客戶</span>
+                <strong translate="no">{{ selectedCustomer ? selectedCustomer.code : "未選客戶" }}</strong>
+              </div>
+              <label class="customer-picker session-picker">
+                <span class="sr-only">客戶</span>
+                <select v-model.number="selectedCustomerId">
+                  <option v-for="customer in customers" :key="customer.id" :value="customer.id">{{ customer.code }} - {{ customer.name }}</option>
+                </select>
+              </label>
+              <div class="session-row">
+                <span>時間</span>
+                <strong>{{ currentDateTimeLabel }}</strong>
+              </div>
+              <div class="session-actions">
+                <button class="outline-btn small" type="button" @click="toggleSidebarCompact">
+                  {{ sidebarCompact ? "展開側欄" : "收合側欄" }}
+                </button>
+                <button class="outline-btn small" type="button" @click="logout">登出</button>
+              </div>
+            </section>
 
             <div class="side-nav-tools">
               <button class="ghost-btn small" type="button" @click="toggleSidebarCompact">
@@ -532,6 +522,10 @@ select {
 .side-nav.compact .brand-copy,
 .side-nav.compact .today-card {
   display: none;
+}
+
+.side-nav.compact .session-card {
+  gap: 8px;
 }
 
 .side-nav.compact .brand-block h1 {
@@ -798,6 +792,10 @@ select {
     align-items: center;
     justify-content: center;
   }
+
+  .shell-menu-toggle {
+    display: inline-flex;
+  }
 }
 
 @media (max-width: 920px) {
@@ -892,6 +890,525 @@ select {
 
   .today-card {
     margin-top: 0;
+  }
+
+  .toast-stack {
+    left: 10px;
+    right: 10px;
+    width: auto;
+    top: auto;
+    bottom: 10px;
+  }
+}
+
+.viewport-shell {
+  min-height: 100dvh;
+  width: 100%;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(47, 110, 229, 0.16), transparent 30%),
+    radial-gradient(circle at 88% 0%, rgba(32, 164, 92, 0.1), transparent 24%),
+    linear-gradient(180deg, #f8fbff 0%, #edf3f9 100%);
+}
+
+.app-shell {
+  position: relative;
+  width: 100%;
+  min-height: 100dvh;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.64) 0%, rgba(255, 255, 255, 0.28) 100%);
+  backdrop-filter: blur(10px);
+}
+
+.shell-menu-toggle {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 40;
+  display: none;
+}
+
+.skip-link {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  z-index: 80;
+  transform: translateY(-180%);
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #0f213e;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 700;
+  box-shadow: 0 12px 24px rgba(15, 33, 62, 0.22);
+  transition: transform 0.16s ease;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+.login-shell {
+  padding: 28px;
+}
+
+.login-card {
+  position: relative;
+  width: min(460px, 100%);
+  padding: 30px;
+  border: 1px solid rgba(214, 224, 238, 0.94);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(247, 250, 255, 0.96) 100%);
+  box-shadow: 0 28px 60px rgba(28, 47, 84, 0.14);
+  overflow: hidden;
+}
+
+.login-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 8px;
+  background: linear-gradient(180deg, #2f6ee5 0%, #20a45c 100%);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.login-brand-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #183055 0%, #0f213e 100%);
+  color: #edf4ff;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  box-shadow: 0 14px 28px rgba(15, 33, 62, 0.18);
+}
+
+.login-card h1 {
+  text-wrap: balance;
+}
+
+.login-form {
+  gap: 14px;
+}
+
+.login-form label {
+  gap: 7px;
+}
+
+.login-form span {
+  color: #51617c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.login-form input {
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+
+.outline-btn,
+.ghost-btn,
+.primary-btn {
+  transform-origin: center;
+}
+
+.outline-btn:hover,
+.ghost-btn:hover,
+.primary-btn:hover {
+  transform: translateY(-1px);
+}
+
+.app-top-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  min-height: 56px;
+  padding: 10px 12px;
+  gap: 10px;
+  border-bottom: 1px solid rgba(221, 229, 240, 0.94);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(16px);
+}
+
+.top-nav-group {
+  gap: 8px;
+}
+
+.top-item {
+  border-radius: 999px;
+  padding: 8px 13px;
+  border-color: rgba(210, 220, 232, 1);
+  background: linear-gradient(180deg, #ffffff 0%, #f6f9fd 100%);
+}
+
+.top-item.active {
+  border-color: rgba(47, 110, 229, 0.24);
+  background: linear-gradient(180deg, rgba(47, 110, 229, 0.12) 0%, rgba(32, 164, 92, 0.1) 100%);
+  color: var(--blue);
+}
+
+.top-meta {
+  gap: 8px;
+}
+
+.customer-scope {
+  border: 1px solid rgba(191, 209, 241, 1);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f1f7ff 0%, #e7f0ff 100%);
+  color: #2550a0;
+  padding: 7px 12px;
+  font-weight: 700;
+}
+
+.customer-scope.empty {
+  border-color: rgba(238, 210, 155, 1);
+  background: linear-gradient(180deg, #fff8ea 0%, #fff1d7 100%);
+  color: #936100;
+}
+
+.customer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chip-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--blue);
+  box-shadow: 0 0 0 4px rgba(47, 110, 229, 0.12);
+}
+
+.customer-scope.empty .chip-dot {
+  background: var(--orange);
+  box-shadow: 0 0 0 4px rgba(224, 138, 30, 0.12);
+}
+
+.customer-picker {
+  gap: 6px;
+  color: #51617c;
+  font-weight: 700;
+}
+
+.customer-picker select {
+  width: 190px;
+  border-radius: 999px;
+}
+
+.customer-create input {
+  width: 116px;
+  border-radius: 999px;
+}
+
+.user-avatar {
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(191, 209, 241, 1);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #173255 0%, #0f213e 100%);
+  color: #eef5ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  box-shadow: 0 10px 18px rgba(15, 33, 62, 0.16);
+}
+
+.body-shell {
+  padding: 12px;
+  gap: 12px;
+  grid-template-columns: minmax(236px, 252px) minmax(0, 1fr);
+}
+
+.side-nav {
+  position: relative;
+  padding: 14px;
+  border: 1px solid rgba(216, 224, 236, 0.95);
+  border-radius: 22px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7f9fd 100%);
+  color: #324462;
+  box-shadow: 0 18px 36px rgba(28, 47, 84, 0.08);
+  overflow: hidden;
+}
+
+.side-nav::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top left, rgba(47, 110, 229, 0.06), transparent 24%),
+    radial-gradient(circle at bottom right, rgba(32, 164, 92, 0.05), transparent 30%);
+  pointer-events: none;
+}
+
+.side-nav > * {
+  position: relative;
+}
+
+.brand-block {
+  margin-bottom: 12px;
+}
+
+.brand-title {
+  margin: 0 0 5px;
+  color: #56708f;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.brand-block h1 {
+  color: #1a2945;
+  font-size: 20px;
+  line-height: 1.12;
+  text-wrap: balance;
+}
+
+.brand-copy {
+  color: #6f7d95;
+}
+
+.session-card {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid #dbe4f1;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef3fb 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.session-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.session-eyebrow {
+  margin: 0 0 4px;
+  color: #6b7891;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.session-top strong {
+  display: block;
+  color: #1f2b45;
+  font-size: 14px;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.session-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.session-row span {
+  color: #6f7d95;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.session-row strong {
+  color: #21314c;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+  word-break: break-word;
+}
+
+.session-picker select {
+  width: 100%;
+}
+
+.session-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.session-actions .outline-btn {
+  flex: 1 1 0;
+}
+
+.side-menu {
+  gap: 8px;
+}
+
+.side-item {
+  display: flex;
+  align-items: center;
+  border-radius: 14px;
+  padding: 10px 12px;
+  border-color: rgba(207, 217, 230, 1);
+  background: #ffffff;
+  color: #324462;
+}
+
+.side-item:hover {
+  border-color: rgba(173, 195, 227, 1);
+  background: #f3f7ff;
+}
+
+.side-item.active {
+  border-color: rgba(120, 170, 255, 0.46);
+  background: linear-gradient(180deg, #eef5ff 0%, #e3eeff 100%);
+  box-shadow: 0 8px 18px rgba(47, 110, 229, 0.08);
+  color: var(--blue);
+}
+
+.today-card {
+  margin-top: auto;
+  padding: 12px;
+  border: 1px solid rgba(216, 224, 236, 0.95);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef3fb 100%);
+  gap: 8px;
+}
+
+.today-card h3 {
+  color: #21314c;
+}
+
+.today-card .stat-row {
+  color: #596b83;
+}
+
+.today-card .stat-row strong {
+  color: #1f2b45;
+}
+
+.page-content {
+  border: 1px solid rgba(216, 224, 236, 0.9);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 22px 48px rgba(28, 47, 84, 0.1);
+}
+
+.toast-stack {
+  top: 66px;
+  right: 16px;
+  width: 320px;
+}
+
+.toast-card {
+  border-radius: 14px;
+  border-color: rgba(216, 224, 236, 0.92);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 1280px) {
+  .body-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .side-nav {
+    display: none;
+  }
+
+  .side-nav.open {
+    display: flex;
+    gap: 12px;
+    max-height: calc(100dvh - 64px);
+  }
+
+  .nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 920px) {
+  .app-top-nav {
+    align-items: stretch;
+  }
+
+  .nav-toggle {
+    width: 100%;
+    order: -1;
+  }
+
+  .top-nav-group,
+  .top-meta {
+    width: 100%;
+  }
+
+  .top-meta {
+    margin-left: 0;
+  }
+
+  .top-meta > .outline-btn.small {
+    width: 100%;
+  }
+
+  .customer-scope,
+  .customer-picker,
+  .customer-create {
+    width: 100%;
+  }
+
+  .customer-picker select,
+  .customer-create input {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .login-shell {
+    padding: 16px;
+  }
+
+  .login-card {
+    padding: 22px;
+    border-radius: 20px;
+  }
+
+  .app-top-nav {
+    padding: 8px;
+  }
+
+  .nav-toggle {
+    padding: 8px 12px;
+  }
+
+  .top-item {
+    flex: 1 1 120px;
+    justify-content: center;
+  }
+
+  .body-shell {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .page-content {
+    border-radius: 16px;
   }
 
   .toast-stack {

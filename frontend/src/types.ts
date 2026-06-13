@@ -14,7 +14,6 @@ export interface Fixture {
   owner_id: number | null;
   code: string;
   name: string;
-  manage_type: "datecode" | "serial";
   storage_location: string | null;
   min_stock_qty: number;
   description: string | null;
@@ -89,7 +88,7 @@ export interface StockSummary {
 }
 
 export interface SearchResult {
-  entity_type: "fixture" | "model" | "station" | "serial";
+  entity_type: "fixture" | "model" | "station";
   title: string;
   subtitle: string | null;
   reference_id: number;
@@ -111,10 +110,8 @@ export interface MaterialTransaction {
     fixture_id: number;
     fixture_code: string;
     fixture_name: string;
-    manage_type: "datecode" | "serial";
     ownership_type: "customer_supplied" | "self_purchased";
-    datecode: string | null;
-    serial_number: string | null;
+    identifier: string | null;
     quantity: number;
     note: string | null;
   }>;
@@ -122,13 +119,11 @@ export interface MaterialTransaction {
 
 export interface TransactionQueryFilters {
   transaction_type?: "receipt" | "return";
-  manage_type?: "datecode" | "serial";
   date_from?: string;
   date_to?: string;
   fixture_code?: string;
   transaction_no?: string;
-  datecode?: string;
-  serial_number?: string;
+  identifier?: string;
   created_by?: string;
 }
 
@@ -136,13 +131,12 @@ export interface StockTransactionCreate {
   customer_id: number;
   created_by: string;
   occurred_at?: string;
+  transaction_no?: string;
   note?: string;
   items: Array<{
     fixture_id: number;
-    manage_type: "datecode" | "serial";
     ownership_type: "customer_supplied" | "self_purchased";
-    datecode?: string;
-    serial_number?: string;
+    identifier: string;
     quantity: number;
     note?: string;
   }>;

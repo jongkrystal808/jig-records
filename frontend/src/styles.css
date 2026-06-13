@@ -38,6 +38,10 @@ body,
   min-height: 100%;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
   overflow: hidden;
@@ -48,6 +52,10 @@ body {
   font-family: "Noto Sans TC", "Avenir Next", "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
   font-size: 12px;
   line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: rgba(47, 110, 229, 0.14);
+  touch-action: manipulation;
 }
 
 body::selection {
@@ -63,6 +71,7 @@ textarea {
 
 button {
   color: inherit;
+  touch-action: manipulation;
 }
 
 input,
@@ -73,6 +82,7 @@ textarea {
   background: #fff;
   color: var(--text);
   transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+  -webkit-appearance: none;
 }
 
 input:focus,
@@ -94,6 +104,10 @@ textarea:focus-visible {
 
 ::placeholder {
   color: #98a6bb;
+}
+
+select {
+  background-color: #fff;
 }
 
 .primary-btn,
@@ -175,6 +189,7 @@ table.mapping-table {
   width: 100%;
   min-width: 100%;
   table-layout: fixed;
+  font-variant-numeric: tabular-nums;
 }
 
 table.data-table thead th,
@@ -237,6 +252,19 @@ table.mapping-table td {
   color: #6b7891;
 }
 
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  text-wrap: balance;
+}
+
+[id] {
+  scroll-margin-top: 88px;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -268,4 +296,15 @@ table.mapping-table td {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(111, 129, 158, 0.5);
   background-clip: padding-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

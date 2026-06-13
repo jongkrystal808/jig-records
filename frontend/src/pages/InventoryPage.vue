@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import { api } from "@/api";
@@ -20,14 +20,9 @@ const transactions = ref<MaterialTransaction[]>([]);
 const overviewTransactions = ref<MaterialTransaction[]>([]);
 const saving = ref(false);
 const overviewLoading = ref(false);
-const viewMode = ref<"all" | "serial">("all");
-const manualFormOpen = ref(false);
 const showBatchPanel = ref(false);
-const transactionImportInput = ref<HTMLInputElement | null>(null);
 const batchPasteText = ref("");
-const fixtureSelectRef = ref<HTMLSelectElement | null>(null);
-const datecodeInputRef = ref<HTMLInputElement | null>(null);
-const serialInputRef = ref<HTMLInputElement | null>(null);
+const batchTransactionNo = ref("");
 
 type BatchImportRow = {
   lineNo: number;
@@ -37,7 +32,6 @@ type BatchImportRow = {
   inputToken: string;
   resolvedFixtureId: number | null;
   resolvedFixtureCode: string;
-  resolvedManageType: "datecode" | "serial" | null;
   suggestedFixtureId: number | null;
   suggestedFixtureCode: string;
   quantity: number;
@@ -48,30 +42,18 @@ type BatchImportRow = {
 
 const batchImportRows = ref<BatchImportRow[]>([]);
 
-const form = ref({
-  fixture_id: 0,
-  ownership_type: "customer_supplied" as "customer_supplied" | "self_purchased",
-  datecode: "",
-  serial_number: "",
-  quantity: 1,
-  note: ""
-});
-
 const overviewFilters = ref({
   transaction_type: "" as "" | "receipt" | "return",
   date_from: "",
   date_to: "",
   fixture_code: "",
   transaction_no: "",
-  datecode: "",
-  serial_number: "",
+  tracking_code: "",
   created_by: ""
 });
 
 const pageMode = computed(() => (route.path.endsWith("/overview") ? "overview" : "operation"));
 const today = computed(() => formatDateKey(new Date()));
-const selectedFixture = computed(() => fixtures.value.find((row) => row.id === form.value.fixture_id) ?? null);
-const isSerialFixture = computed(() => selectedFixture.value?.manage_type === "serial");
 const batchReadyRows = computed(() => batchImportRows.value.filter((row) => row.status === "ready"));
 const batchPendingRows = computed(() => batchImportRows.value.filter((row) => row.status === "needs-confirm" || row.status === "needs-add"));
 const batchErrorRows = computed(() => batchImportRows.value.filter((row) => row.status === "error"));
@@ -79,7 +61,13 @@ const batchImportCount = computed(() => batchReadyRows.value.length);
 const batchPendingCount = computed(() => batchPendingRows.value.length);
 const batchImportErrorCount = computed(() => batchErrorRows.value.length);
 const batchImportLabel = computed(() => (mode.value === "receipt" ? "批次收料" : "批次退料"));
-const batchCanSubmit = computed(() => batchImportCount.value > 0 && batchPendingCount.value === 0 && batchImportErrorCount.value === 0);
+const batchCanSubmit = computed(
+  () =>
+    batchImportCount.value > 0 &&
+    batchPendingCount.value === 0 &&
+    batchImportErrorCount.value === 0 &&
+    batchTransactionNo.value.trim().length > 0
+);
 
 const filteredRows = computed(() =>
   transactions.value.filter((tx) => tx.transaction_type === mode.value).slice(0, 6)
@@ -95,10 +83,8 @@ const overviewRows = computed(() =>
       created_by: tx.created_by,
       fixture_code: item.fixture_code,
       fixture_name: item.fixture_name,
-      manage_type: item.manage_type,
       ownership_type: item.ownership_type,
-      datecode: item.datecode,
-      serial_number: item.serial_number,
+      identifier: item.identifier,
       quantity: item.quantity,
       note: item.note || tx.note || ""
     }))
@@ -124,23 +110,6 @@ function stockWaterLevelPercent(row: StockSummary): number {
     return row.stock_qty > 0 ? 100 : 0;
   }
   return Math.max(0, Math.min(100, Math.round((row.stock_qty / minStock) * 100)));
-}
-
-async function focusManualFormField(): Promise<void> {
-  await nextTick();
-  if (!manualFormOpen.value) return;
-
-  if (isSerialFixture.value) {
-    serialInputRef.value?.focus();
-    return;
-  }
-
-  if (form.value.fixture_id > 0) {
-    datecodeInputRef.value?.focus();
-    return;
-  }
-
-  fixtureSelectRef.value?.focus();
 }
 
 const todayReceiptQty = computed(() =>
@@ -177,7 +146,7 @@ function splitBatchCells(line: string): string[] {
 function isHeaderLikeLine(line: string): boolean {
   const normalized = normalizeBatchText(line).toLowerCase();
   if (!normalized) return true;
-  const hasHeaderWord = /(治具|datecode|流水號|序號|數量|quantity|qty)/i.test(normalized);
+  const hasHeaderWord = /(治具|識別碼|datecode|流水號|序號|數量|quantity|qty)/i.test(normalized);
   const looksLikeCode = /^[a-z]\-\d/i.test(normalized) || /^\d+$/.test(normalized);
   return hasHeaderWord && !looksLikeCode;
 }
@@ -262,7 +231,6 @@ function makeBatchError(lineNo: number, raw: string, message: string): BatchImpo
     inputToken: "",
     resolvedFixtureId: null,
     resolvedFixtureCode: "",
-    resolvedManageType: null,
     suggestedFixtureId: null,
     suggestedFixtureCode: "",
     quantity: 0,
@@ -307,7 +275,7 @@ function buildBatchRow(lineNo: number, rawCodeLine: string, quantityLine: string
   const splitCode = splitCombinedFixtureText(codeText);
   const exactFixture = findFixtureByCode(splitCode.fixtureCode);
   if (exactFixture) {
-    if (exactFixture.manage_type === "serial" && quantity !== 1) {
+    if (!splitCode.token) {
       return {
         lineNo,
         raw,
@@ -316,48 +284,11 @@ function buildBatchRow(lineNo: number, rawCodeLine: string, quantityLine: string
         inputToken: splitCode.token,
         resolvedFixtureId: exactFixture.id,
         resolvedFixtureCode: exactFixture.code,
-        resolvedManageType: exactFixture.manage_type,
         suggestedFixtureId: null,
         suggestedFixtureCode: "",
         quantity,
         status: "error",
-        message: "Serial 類治具數量必須為 1",
-        note: null
-      };
-    }
-    if (exactFixture.manage_type === "datecode" && !splitCode.token) {
-      return {
-        lineNo,
-        raw,
-        rawCode: codeText,
-        inputFixtureCode: splitCode.fixtureCode,
-        inputToken: splitCode.token,
-        resolvedFixtureId: exactFixture.id,
-        resolvedFixtureCode: exactFixture.code,
-        resolvedManageType: exactFixture.manage_type,
-        suggestedFixtureId: null,
-        suggestedFixtureCode: "",
-        quantity,
-        status: "error",
-        message: "缺少 datecode",
-        note: null
-      };
-    }
-    if (exactFixture.manage_type === "serial" && !splitCode.token) {
-      return {
-        lineNo,
-        raw,
-        rawCode: codeText,
-        inputFixtureCode: splitCode.fixtureCode,
-        inputToken: splitCode.token,
-        resolvedFixtureId: exactFixture.id,
-        resolvedFixtureCode: exactFixture.code,
-        resolvedManageType: exactFixture.manage_type,
-        suggestedFixtureId: null,
-        suggestedFixtureCode: "",
-        quantity,
-        status: "error",
-        message: "缺少序號",
+        message: "缺少識別碼",
         note: null
       };
     }
@@ -370,7 +301,6 @@ function buildBatchRow(lineNo: number, rawCodeLine: string, quantityLine: string
       inputToken: splitCode.token,
       resolvedFixtureId: exactFixture.id,
       resolvedFixtureCode: exactFixture.code,
-      resolvedManageType: exactFixture.manage_type,
       suggestedFixtureId: null,
       suggestedFixtureCode: "",
       quantity,
@@ -390,7 +320,6 @@ function buildBatchRow(lineNo: number, rawCodeLine: string, quantityLine: string
       inputToken: splitCode.token,
       resolvedFixtureId: null,
       resolvedFixtureCode: "",
-      resolvedManageType: null,
       suggestedFixtureId: similarFixture.id,
       suggestedFixtureCode: similarFixture.code,
       quantity,
@@ -408,7 +337,6 @@ function buildBatchRow(lineNo: number, rawCodeLine: string, quantityLine: string
     inputToken: splitCode.token,
     resolvedFixtureId: null,
     resolvedFixtureCode: "",
-    resolvedManageType: null,
     suggestedFixtureId: null,
     suggestedFixtureCode: "",
     quantity,
@@ -457,6 +385,7 @@ function refreshBatchImportPreview(): void {
 
 function clearBatchImport(): void {
   batchPasteText.value = "";
+  batchTransactionNo.value = "";
   batchImportRows.value = [];
 }
 
@@ -471,7 +400,6 @@ function handleBatchPaste(event: ClipboardEvent): void {
 function setBatchRowReady(row: BatchImportRow, fixture: Fixture, message: string): void {
   row.resolvedFixtureId = fixture.id;
   row.resolvedFixtureCode = fixture.code;
-  row.resolvedManageType = fixture.manage_type;
   row.suggestedFixtureId = null;
   row.suggestedFixtureCode = "";
   row.status = "ready";
@@ -485,12 +413,11 @@ function skipBatchRow(row: BatchImportRow): void {
   row.note = null;
   row.resolvedFixtureId = null;
   row.resolvedFixtureCode = "";
-  row.resolvedManageType = null;
 }
 
 async function createFixtureForBatchRow(row: BatchImportRow): Promise<void> {
   if (!selectedCustomerId.value) {
-    pushToast("請先在頂欄選擇客戶。", "warning");
+    pushToast("請先在側邊欄選擇客戶。", "warning");
     return;
   }
   if (!row.inputFixtureCode) return;
@@ -501,7 +428,6 @@ async function createFixtureForBatchRow(row: BatchImportRow): Promise<void> {
       customer_id: selectedCustomerId.value,
       code,
       name: code,
-      manage_type: "datecode",
       storage_location: null,
       min_stock_qty: 0,
       description: "由收退料批次匯入建立"
@@ -549,6 +475,22 @@ function downloadCsv(filename: string, content: string): void {
   URL.revokeObjectURL(url);
 }
 
+function escapeCsvCell(value: string | number | null | undefined): string {
+  const text = value === null || value === undefined ? "" : String(value);
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function renderCsv(rows: Array<Record<string, string | number | null | undefined>>, headers: string[]): string {
+  const lines = [headers.join(",")];
+  for (const row of rows) {
+    lines.push(headers.map((header) => escapeCsvCell(row[header])).join(","));
+  }
+  return lines.join("\n");
+}
+
 async function loadData(): Promise<void> {
   const customerId = selectedCustomerId.value ?? undefined;
   try {
@@ -562,9 +504,6 @@ async function loadData(): Promise<void> {
     stockRows.value = stock;
     alerts.value = alertRows;
     transactions.value = tx;
-    if (!form.value.fixture_id && fixtureRows.length > 0) {
-      form.value.fixture_id = fixtureRows[0].id;
-    }
     if (batchPasteText.value.trim()) {
       refreshBatchImportPreview();
     }
@@ -577,13 +516,11 @@ async function loadData(): Promise<void> {
 function buildOverviewFilters(): TransactionQueryFilters {
   return {
     transaction_type: overviewFilters.value.transaction_type || undefined,
-    manage_type: viewMode.value === "serial" ? "serial" : undefined,
     date_from: overviewFilters.value.date_from || undefined,
     date_to: overviewFilters.value.date_to || undefined,
     fixture_code: overviewFilters.value.fixture_code.trim() || undefined,
     transaction_no: overviewFilters.value.transaction_no.trim() || undefined,
-    datecode: viewMode.value === "serial" ? undefined : overviewFilters.value.datecode.trim() || undefined,
-    serial_number: overviewFilters.value.serial_number.trim() || undefined,
+    identifier: overviewFilters.value.tracking_code.trim() || undefined,
     created_by: overviewFilters.value.created_by.trim() || undefined
   };
 }
@@ -601,135 +538,50 @@ async function loadOverview(): Promise<void> {
 
 async function searchOverview(): Promise<void> {
   if (!selectedCustomerId.value) {
-    pushToast("請先在頂欄選擇客戶。", "warning");
+    pushToast("請先在側邊欄選擇客戶。", "warning");
     return;
   }
   await loadOverview();
 }
 
 async function resetOverviewFilters(): Promise<void> {
-  viewMode.value = "all";
   overviewFilters.value = {
     transaction_type: "",
     date_from: "",
     date_to: "",
     fixture_code: "",
     transaction_no: "",
-    datecode: "",
-    serial_number: "",
+    tracking_code: "",
     created_by: ""
   };
   await loadOverview();
 }
 
 async function exportOverviewCsv(): Promise<void> {
+  if (!selectedCustomerId.value) {
+    pushToast("請先在側邊欄選擇客戶。", "warning");
+    return;
+  }
   try {
-    downloadCsv(
-      "transactions.csv",
-      await api.exportTransactionsCsv(500, selectedCustomerId.value ?? undefined, buildOverviewFilters())
-    );
+    const customerId = selectedCustomerId.value ?? undefined;
+    downloadCsv("transactions.csv", await api.exportTransactionsCsv(5000, customerId, buildOverviewFilters()));
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "匯出失敗", "error");
   }
 }
 
-async function downloadTransactionTemplate(): Promise<void> {
-  try {
-    downloadCsv("transactions-template.csv", await api.downloadTransactionTemplateCsv());
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "下載範本失敗", "error");
-  }
-}
-
-function triggerTransactionImport(): void {
-  if (!selectedCustomerId.value) {
-    pushToast("請先在頂欄選擇客戶。", "warning");
-    return;
-  }
-  transactionImportInput.value?.click();
-}
-
-async function importTransactionsCsv(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file || !selectedCustomerId.value) return;
-  try {
-    const content = await file.text();
-    const result = await api.importTransactionsCsv(
-      selectedCustomerId.value,
-      authSession.value?.display_name ?? "訪客",
-      content,
-      file.name
-    );
-    await loadData();
-    pushToast(`匯入完成，共 ${result.imported_count} 筆。`, "success");
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "匯入失敗", "error");
-  } finally {
-    input.value = "";
-  }
-}
-
-async function submit(): Promise<void> {
-  if (!selectedCustomerId.value) {
-    pushToast("請先在頂欄選擇客戶。", "warning");
-    return;
-  }
-  if (!selectedFixture.value) {
-    pushToast("請先選擇治具。", "warning");
-    return;
-  }
-  if (!isSerialFixture.value && !form.value.datecode.trim()) {
-    pushToast("Datecode 類治具必填 datecode。", "warning");
-    return;
-  }
-  if (isSerialFixture.value && !form.value.serial_number.trim()) {
-    pushToast("Serial 類治具必填序號。", "warning");
-    return;
-  }
-  saving.value = true;
-  const payload = {
-    customer_id: selectedCustomerId.value,
-    created_by: authSession.value?.display_name ?? "訪客",
-    note: form.value.note || undefined,
-    items: [
-      {
-        fixture_id: form.value.fixture_id,
-        manage_type: selectedFixture.value.manage_type,
-        ownership_type: form.value.ownership_type,
-        datecode: isSerialFixture.value ? undefined : form.value.datecode.trim(),
-        serial_number: isSerialFixture.value ? form.value.serial_number.trim() : undefined,
-        quantity: isSerialFixture.value ? 1 : form.value.quantity,
-        note: form.value.note || undefined
-      }
-    ]
-  };
-  try {
-    if (mode.value === "receipt") {
-      await api.createReceipt(payload);
-    } else {
-      await api.createReturn(payload);
-    }
-    form.value.datecode = "";
-    form.value.serial_number = "";
-    form.value.quantity = 1;
-    form.value.note = "";
-    await loadData();
-    pushToast(mode.value === "receipt" ? "收料已送出" : "退料已送出", "success");
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "送出失敗", "error");
-  } finally {
-    saving.value = false;
-  }
-}
-
 async function submitBatchImport(): Promise<void> {
   if (!selectedCustomerId.value) {
-    pushToast("請先在頂欄選擇客戶。", "warning");
+    pushToast("請先在側邊欄選擇客戶。", "warning");
     return;
   }
   if (batchImportRows.value.length === 0) {
     pushToast("請先貼上可匯入的表格資料。", "warning");
+    return;
+  }
+  const transactionNo = batchTransactionNo.value.trim();
+  if (!transactionNo) {
+    pushToast("請先填寫這批的單號。", "warning");
     return;
   }
   if (batchPendingCount.value > 0) {
@@ -743,19 +595,18 @@ async function submitBatchImport(): Promise<void> {
 
   const items = batchReadyRows.value.map((row) => ({
     fixture_id: row.resolvedFixtureId as number,
-    manage_type: row.resolvedManageType as "datecode" | "serial",
-    ownership_type: form.value.ownership_type,
-    datecode: row.resolvedManageType === "datecode" ? row.inputToken : undefined,
-    serial_number: row.resolvedManageType === "serial" ? row.inputToken : undefined,
+    ownership_type: "customer_supplied" as const,
+    identifier: row.inputToken,
     quantity: row.quantity,
-    note: form.value.note || undefined
+    note: undefined
   }));
 
   saving.value = true;
   const payload = {
     customer_id: selectedCustomerId.value,
     created_by: authSession.value?.display_name ?? "訪客",
-    note: form.value.note || undefined,
+    transaction_no: transactionNo,
+    note: undefined,
     items
   };
 
@@ -783,30 +634,6 @@ watch(selectedCustomerId, async () => {
   await loadData();
 });
 
-watch(selectedFixture, (fixture) => {
-  form.value.datecode = "";
-  form.value.serial_number = "";
-  form.value.quantity = fixture?.manage_type === "serial" ? 1 : Math.max(form.value.quantity, 1);
-});
-
-watch(manualFormOpen, (open) => {
-  if (open) {
-    void focusManualFormField();
-  }
-});
-
-watch(isSerialFixture, () => {
-  if (manualFormOpen.value) {
-    void focusManualFormField();
-  }
-});
-
-watch(viewMode, () => {
-  if (viewMode.value === "serial") {
-    overviewFilters.value.datecode = "";
-  }
-});
-
 watch(batchPasteText, () => {
   refreshBatchImportPreview();
 });
@@ -825,18 +652,10 @@ watch(batchPasteText, () => {
       <article class="panel op-panel">
         <div class="panel-head">
           <div>
-            <h2>收退料操作區</h2>
-            <p>依治具管理型態切換 `Datecode` 或 `Serial` 輸入，退料時需與收料紀錄一致。</p>
+            <h2>批次貼上匯入</h2>
+            <p>一次處理大量治具資料，解析與確認都在這裡完成，不會影響主畫面布局。</p>
           </div>
           <div class="panel-actions">
-            <button
-              class="toggle-btn"
-              type="button"
-              :aria-expanded="manualFormOpen"
-              @click="manualFormOpen = !manualFormOpen"
-            >
-              {{ manualFormOpen ? "收起表單" : "展開表單" }}
-            </button>
             <div class="segmented-control" role="tablist" aria-label="收退料切換">
               <button class="segmented-btn" :class="{ active: mode === 'receipt' }" type="button" @click="mode = 'receipt'">
                 收料
@@ -848,45 +667,6 @@ watch(batchPasteText, () => {
           </div>
         </div>
 
-        <div v-if="manualFormOpen" class="op-form-wrap">
-          <form class="op-form" @submit.prevent="submit">
-            <label>
-              <span>治具編號</span>
-              <select ref="fixtureSelectRef" v-model.number="form.fixture_id">
-                <option v-for="f in fixtures.filter((row) => row.is_active)" :key="f.id" :value="f.id">
-                  {{ f.code }}
-                </option>
-              </select>
-            </label>
-            <label>
-              <span>來源</span>
-              <select v-model="form.ownership_type">
-                <option value="customer_supplied">客供</option>
-                <option value="self_purchased">自購</option>
-              </select>
-            </label>
-            <label v-if="!isSerialFixture">
-              <span class="sr-only">Datecode</span>
-              <input ref="datecodeInputRef" v-model="form.datecode" placeholder="例如 250601" aria-label="Datecode" />
-            </label>
-            <label v-else>
-              <span class="sr-only">序號</span>
-              <input ref="serialInputRef" v-model="form.serial_number" placeholder="輸入序號" aria-label="序號" />
-            </label>
-            <label>
-              <span>數量</span>
-              <input v-model.number="form.quantity" type="number" min="1" :disabled="isSerialFixture" />
-            </label>
-            <label class="wide">
-              <span>備註</span>
-              <input v-model="form.note" placeholder="選填" />
-            </label>
-            <button class="primary-btn submit-btn" type="submit" :disabled="saving">
-              {{ saving ? "送出中..." : mode === "receipt" ? "確認收料" : "確認退料" }}
-            </button>
-          </form>
-        </div>
-
         <div class="recent-block">
           <div class="sub-head">
             <h3>{{ mode === "receipt" ? "最近收料" : "最近退料" }}</h3>
@@ -896,7 +676,7 @@ watch(batchPasteText, () => {
             <thead>
               <tr>
                 <th>治具</th>
-                <th>Datecode / 序號</th>
+                <th>識別碼</th>
                 <th>數量</th>
                 <th>單號</th>
               </tr>
@@ -904,7 +684,7 @@ watch(batchPasteText, () => {
             <tbody>
               <tr v-for="tx in filteredRows" :key="`tx-${tx.id}`">
                 <td>{{ tx.items[0]?.fixture_code || "-" }}</td>
-                <td>{{ tx.items[0]?.datecode || tx.items[0]?.serial_number || "-" }}</td>
+                <td>{{ tx.items[0]?.identifier || "-" }}</td>
                 <td>{{ tx.items.reduce((sum, item) => sum + item.quantity, 0) }}</td>
                 <td>{{ tx.transaction_no }}</td>
               </tr>
@@ -1021,24 +801,11 @@ watch(batchPasteText, () => {
       <div class="overview-head">
         <div>
           <h2>收 / 退料總檢視</h2>
-          <p>依收退料類型、日期、治具、序號與操作人員快速查詢。</p>
+          <p>依收退料類型、日期、治具、單號、識別碼與操作人員快速查詢。</p>
         </div>
         <div class="overview-tools">
-          <div class="mode-switch">
-            <button class="toggle-btn" :class="{ active: viewMode === 'all' }" type="button" @click="viewMode = 'all'">全部查詢</button>
-            <button class="toggle-btn" :class="{ active: viewMode === 'serial' }" type="button" @click="viewMode = 'serial'">序號查詢</button>
-          </div>
           <div class="toolbar-actions">
-            <button class="outline-btn" type="button" @click="downloadTransactionTemplate">下載範本</button>
-            <button class="outline-btn" type="button" @click="triggerTransactionImport">匯入 CSV</button>
             <button class="outline-btn" type="button" @click="exportOverviewCsv">匯出 CSV</button>
-            <input
-              ref="transactionImportInput"
-              type="file"
-              accept=".csv,text/csv"
-              class="hidden-input"
-              @change="importTransactionsCsv"
-            />
           </div>
         </div>
       </div>
@@ -1068,13 +835,9 @@ watch(batchPasteText, () => {
           <span>單號</span>
           <input v-model="overviewFilters.transaction_no" placeholder="RCV-20260526-000001" />
         </label>
-        <label v-if="viewMode === 'all'">
-          <span>Datecode</span>
-          <input v-model="overviewFilters.datecode" placeholder="輸入 datecode" />
-        </label>
         <label>
-          <span>序號</span>
-          <input v-model="overviewFilters.serial_number" placeholder="輸入 serial number" />
+          <span>識別碼</span>
+          <input v-model="overviewFilters.tracking_code" placeholder="輸入 4 位識別碼" />
         </label>
         <label>
           <span>操作人員</span>
@@ -1095,10 +858,8 @@ watch(batchPasteText, () => {
               <th>類型</th>
               <th>單號</th>
               <th>治具編號</th>
-              <th>管理</th>
               <th>來源</th>
-              <th>Datecode</th>
-              <th>序號</th>
+              <th>識別碼</th>
               <th>數量</th>
               <th>操作人員</th>
               <th>日期</th>
@@ -1110,17 +871,15 @@ watch(batchPasteText, () => {
               <td>{{ row.transaction_type === "receipt" ? "收料" : "退料" }}</td>
               <td>{{ row.transaction_no }}</td>
               <td>{{ row.fixture_code }}</td>
-              <td>{{ row.manage_type === "datecode" ? "Datecode" : "Serial" }}</td>
               <td>{{ ownershipLabel(row.ownership_type) }}</td>
-              <td>{{ row.datecode || "-" }}</td>
-              <td>{{ row.serial_number || "-" }}</td>
+              <td>{{ row.identifier || "-" }}</td>
               <td>{{ row.quantity }}</td>
               <td>{{ row.created_by }}</td>
               <td>{{ new Date(row.occurred_at).toLocaleString("zh-TW") }}</td>
               <td>{{ row.note || "-" }}</td>
             </tr>
             <tr v-if="overviewRows.length === 0">
-              <td colspan="11" class="empty-cell">{{ overviewLoading ? "查詢中..." : "查無資料" }}</td>
+              <td colspan="9" class="empty-cell">{{ overviewLoading ? "查詢中..." : "查無資料" }}</td>
             </tr>
           </tbody>
         </table>
@@ -1140,6 +899,16 @@ watch(batchPasteText, () => {
 
           <div class="batch-modal-body">
             <label class="batch-input">
+              <span>單號</span>
+              <input
+                v-model="batchTransactionNo"
+                placeholder="可自由輸入，例如內部批號、工單號"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <small class="batch-help-text">這個欄位只會作為整批收料 / 退料的單號，不限制格式。</small>
+            </label>
+            <label class="batch-input">
               <span>直接貼上每筆兩行資料</span>
               <textarea
                 v-model="batchPasteText"
@@ -1155,7 +924,7 @@ watch(batchPasteText, () => {
             </div>
             <div class="batch-tips">
               <span>格式支援兩行一筆，也支援單行 Tab / `|` 分欄。</span>
-              <span>讀到新治具會先讓你新增；讀到相似治具會先問是否同一個治具。</span>
+              <span>每筆資料請帶治具編號與 4 位識別碼；讀到新治具會先讓你新增。</span>
             </div>
             <div class="batch-table-wrap">
               <table class="grid-table batch-table">
@@ -1164,7 +933,7 @@ watch(batchPasteText, () => {
                     <th>行</th>
                     <th>原始治具</th>
                     <th>使用治具</th>
-                    <th>Datecode / 序號</th>
+                    <th>識別碼</th>
                     <th>數量</th>
                     <th>狀態 / 操作</th>
                   </tr>
@@ -1421,34 +1190,11 @@ watch(batchPasteText, () => {
   gap: 12px;
 }
 
-.op-form-wrap {
-  display: grid;
-}
-
-.op-form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 10px;
-}
-
-.op-form label {
-  display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
-  gap: 6px 10px;
-  align-items: center;
-}
-
 .overview-form label {
   display: grid;
   gap: 6px;
 }
 
-.op-form .wide {
-  grid-column: 1 / -1;
-  align-items: start;
-}
-
-.op-form span,
 .overview-form span {
   color: #56657f;
   font-size: 12px;
@@ -1496,13 +1242,6 @@ input:disabled {
   padding: 8px 14px;
   min-height: 36px;
   cursor: pointer;
-}
-
-.submit-btn {
-  grid-column: 2 / -1;
-  justify-self: end;
-  width: auto;
-  min-width: 160px;
 }
 
 .primary-btn:hover,
@@ -1591,6 +1330,13 @@ input:disabled {
   color: #56657f;
   font-size: 12px;
   font-weight: 700;
+}
+
+.batch-help-text {
+  color: #6b7a90;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 600;
 }
 
 .batch-input textarea {
@@ -1962,7 +1708,6 @@ input:disabled {
     grid-template-rows: auto;
   }
 
-  .op-form,
   .overview-form {
     grid-template-columns: 1fr;
   }
@@ -1994,15 +1739,6 @@ input:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .op-form {
-    grid-template-columns: 1fr;
-  }
-
-  .op-form .wide,
-  .submit-btn {
-    grid-column: auto;
-  }
-
   .overview-form {
     grid-template-columns: 1fr;
   }
@@ -2023,17 +1759,6 @@ input:disabled {
   .sub-head-actions span,
   .sub-head-actions .toggle-btn {
     width: 100%;
-  }
-
-  .op-form label {
-    grid-template-columns: 1fr;
-  }
-
-  .submit-btn {
-    grid-column: auto;
-    justify-self: stretch;
-    width: 100%;
-    min-width: 0;
   }
 
   .batch-summary-strip {

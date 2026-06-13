@@ -1,5 +1,3 @@
-from typing import Literal
-
 from pydantic import BaseModel, Field, field_validator
 
 from backend.app.schemas.common import TimestampedResponse
@@ -27,7 +25,6 @@ class FixtureCreate(BaseModel):
     customer_id: int
     code: str = Field(min_length=1, max_length=60)
     name: str = Field(min_length=1, max_length=160)
-    manage_type: Literal["datecode", "serial"] = "datecode"
     owner_id: int | None = None
     storage_location: str | None = Field(default=None, max_length=120)
     min_stock_qty: int | None = Field(default=None, ge=0)
@@ -40,7 +37,6 @@ class FixtureUpdate(BaseModel):
     customer_id: int
     code: str = Field(min_length=1, max_length=60)
     name: str = Field(min_length=1, max_length=160)
-    manage_type: Literal["datecode", "serial"] = "datecode"
     owner_id: int | None = None
     storage_location: str | None = Field(default=None, max_length=120)
     min_stock_qty: int | None = Field(default=None, ge=0)
@@ -56,7 +52,6 @@ class FixtureRead(TimestampedResponse):
     owner_id: int | None
     code: str
     name: str
-    manage_type: Literal["datecode", "serial"]
     storage_location: str | None
     min_stock_qty: int
     description: str | None

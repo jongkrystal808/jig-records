@@ -72,7 +72,6 @@ class MasterService:
                 owner_id=payload.owner_id,
                 code=payload.code,
                 name=payload.name,
-                manage_type=payload.manage_type,
                 storage_location=self._normalize_storage_location(payload.storage_location),
                 description=payload.description,
             )
@@ -120,7 +119,6 @@ class MasterService:
                 owner_id=payload.owner_id,
                 code=payload.code,
                 name=payload.name,
-                manage_type=payload.manage_type,
                 storage_location=self._normalize_storage_location(payload.storage_location),
                 description=payload.description,
                 is_active=payload.is_active,
@@ -311,7 +309,6 @@ class MasterService:
             {
                 "code": fixture.code,
                 "name": fixture.name,
-                "manage_type": fixture.manage_type,
                 "storage_location": fixture.storage_location or "",
                 "owner_name": owner_map.get(fixture.owner_id, "") if fixture.owner_id else "",
                 "min_stock_qty": 0 if (level := self.repo.get_stock_level(fixture.id)) is None else level.min_stock_qty,
@@ -321,18 +318,17 @@ class MasterService:
             for fixture in fixtures
         ]
         return render_csv_text(
-            ["code", "name", "manage_type", "storage_location", "owner_name", "min_stock_qty", "description", "is_active"],
+            ["code", "name", "storage_location", "owner_name", "min_stock_qty", "description", "is_active"],
             rows,
         )
 
     def fixture_template_csv(self) -> str:
         return render_csv_text(
-            ["code", "name", "manage_type", "storage_location", "owner_name", "min_stock_qty", "description", "is_active"],
+            ["code", "name", "storage_location", "owner_name", "min_stock_qty", "description", "is_active"],
             [
                 {
                     "code": "C-00001",
                     "name": "RJ45 Fixture",
-                    "manage_type": "datecode",
                     "storage_location": "A-01-01",
                     "owner_name": "",
                     "min_stock_qty": "10",
@@ -351,7 +347,6 @@ class MasterService:
         for row in rows:
             code = row.get("code", "")
             name = row.get("name", "")
-            manage_type = row.get("manage_type", "datecode") or "datecode"
             if not code or not name:
                 continue
             storage_location = self._normalize_storage_location(row.get("storage_location", ""))
@@ -367,7 +362,6 @@ class MasterService:
                     owner_id=owner.id if owner else None,
                     code=code,
                     name=name,
-                    manage_type=manage_type,
                     storage_location=storage_location,
                     description=description,
                 )
@@ -378,7 +372,6 @@ class MasterService:
                     owner_id=owner.id if owner else None,
                     code=code,
                     name=name,
-                    manage_type=manage_type,
                     storage_location=storage_location,
                     description=description,
                     is_active=is_active,
@@ -495,7 +488,6 @@ class MasterService:
             "owner_id": fixture.owner_id,
             "code": fixture.code,
             "name": fixture.name,
-            "manage_type": fixture.manage_type,
             "storage_location": fixture.storage_location,
             "min_stock_qty": min_stock_qty,
             "description": fixture.description,

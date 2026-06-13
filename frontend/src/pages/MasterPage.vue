@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 
 import { api } from "@/api";
-import { authSession, selectedCustomerId } from "@/appState";
+import { authSession, customers, selectedCustomerId } from "@/appState";
 import { pushToast } from "@/toastState";
 import type { AppUser, Fixture, MachineModel, Owner, Station } from "@/types";
 import { fallbackText } from "@/utils/display";
@@ -33,7 +33,6 @@ const selectedUserId = ref<number | null>(null);
 const fixtureForm = ref({
   code: "",
   name: "",
-  manage_type: "datecode" as "datecode" | "serial",
   owner_id: null as number | null,
   storage_location: "",
   min_stock_qty: 0,
@@ -43,6 +42,7 @@ const fixtureForm = ref({
 const modelForm = ref({ code: "", name: "", is_active: true });
 const stationForm = ref({ code: "", name: "", is_active: true });
 const ownerForm = ref({ name: "", is_active: true });
+const customerForm = ref({ code: "", name: "" });
 const userForm = ref({
   username: "",
   display_name: "",
@@ -53,6 +53,8 @@ const userForm = ref({
 });
 const importInput = ref<HTMLInputElement | null>(null);
 const canManageUsers = computed(() => authSession.value?.role === "admin");
+const canManageCustomers = computed(() => authSession.value?.role === "admin");
+const creatingCustomer = ref(false);
 
 const tabTitleMap: Record<MasterTab, string> = {
   fixture: "治具",
@@ -176,6 +178,29 @@ const summaryCards = computed(() => [
   { label: "使用者", value: users.value.length, meta: `啟用 ${users.value.filter((row) => row.is_active).length}` }
 ]);
 
+async function createCustomer(): Promise<void> {
+  if (!customerForm.value.code.trim() || !customerForm.value.name.trim()) {
+    pushToast("請輸入客戶代碼與名稱。", "warning");
+    return;
+  }
+  creatingCustomer.value = true;
+  try {
+    const customer = await api.createCustomer({
+      code: customerForm.value.code.trim(),
+      name: customerForm.value.name.trim()
+    });
+    customers.value = await api.listCustomers();
+    selectedCustomerId.value = customer.id;
+    customerForm.value.code = "";
+    customerForm.value.name = "";
+    pushToast(`已新增客戶：${customer.code}`, "success");
+  } catch (err) {
+    pushToast(err instanceof Error ? err.message : "新增客戶失敗", "error");
+  } finally {
+    creatingCustomer.value = false;
+  }
+}
+
 async function loadData(): Promise<void> {
   loading.value = true;
   try {
@@ -216,7 +241,6 @@ function syncEditorFromSelection(): void {
     fixtureForm.value = {
       code: row.code,
       name: row.name,
-      manage_type: row.manage_type,
       owner_id: row.owner_id,
       storage_location: row.storage_location ?? "",
       min_stock_qty: row.min_stock_qty,
@@ -269,7 +293,6 @@ function startCreate(): void {
     fixtureForm.value = {
       code: "",
       name: "",
-      manage_type: "datecode",
       owner_id: null,
       storage_location: "",
       min_stock_qty: 0,
@@ -324,7 +347,7 @@ async function saveCurrent(): Promise<void> {
     let savedUserId: number | null = null;
     if (activeTab.value === "fixture") {
       if (!selectedCustomerId.value) {
-        pushToast("請先在頂欄選擇客戶。", "warning");
+        pushToast("請先在側邊欄選擇客戶。", "warning");
         return;
       }
       if (selectedFixtureId.value) {
@@ -333,7 +356,6 @@ async function saveCurrent(): Promise<void> {
           owner_id: fixtureForm.value.owner_id,
           code: fixtureForm.value.code.trim(),
           name: fixtureForm.value.name.trim(),
-          manage_type: fixtureForm.value.manage_type,
           storage_location: fixtureForm.value.storage_location.trim() || undefined,
           min_stock_qty: fixtureForm.value.min_stock_qty,
           description: fixtureForm.value.description.trim() || undefined,
@@ -345,7 +367,6 @@ async function saveCurrent(): Promise<void> {
           owner_id: fixtureForm.value.owner_id,
           code: fixtureForm.value.code.trim(),
           name: fixtureForm.value.name.trim(),
-          manage_type: fixtureForm.value.manage_type,
           storage_location: fixtureForm.value.storage_location.trim() || undefined,
           min_stock_qty: fixtureForm.value.min_stock_qty,
           description: fixtureForm.value.description.trim() || undefined
@@ -433,7 +454,7 @@ async function deactivateCurrent(): Promise<void> {
   try {
     if (activeTab.value === "fixture" && selectedFixtureId.value) {
       if (!selectedCustomerId.value) {
-        pushToast("請先在頂欄選擇客戶。", "warning");
+        pushToast("請先在側邊欄選擇客戶。", "warning");
         return;
       }
       await api.updateFixture(selectedFixtureId.value, {
@@ -441,7 +462,6 @@ async function deactivateCurrent(): Promise<void> {
         owner_id: fixtureForm.value.owner_id,
         code: fixtureForm.value.code.trim(),
         name: fixtureForm.value.name.trim(),
-        manage_type: fixtureForm.value.manage_type,
         storage_location: fixtureForm.value.storage_location.trim() || undefined,
         min_stock_qty: fixtureForm.value.min_stock_qty,
         description: fixtureForm.value.description.trim() || undefined,
@@ -694,6 +714,20 @@ onMounted(async () => {
         <button class="outline-btn" type="button" :disabled="loading" @click="downloadCurrent">匯出 JSON</button>
         <input ref="importInput" type="file" accept=".csv,text/csv" class="hidden-input" @change="importCsv" />
       </div>
+
+      <form v-if="canManageCustomers" class="customer-create customer-admin" @submit.prevent="createCustomer">
+        <label>
+          <span>客戶代碼</span>
+          <input v-model="customerForm.code" name="customer_code" autocomplete="off" spellcheck="false" placeholder="例如：666…" />
+        </label>
+        <label>
+          <span>客戶名稱</span>
+          <input v-model="customerForm.name" name="customer_name" autocomplete="off" placeholder="例如：666-hmg…" />
+        </label>
+        <button class="primary-btn" type="submit" :disabled="creatingCustomer">
+          {{ creatingCustomer ? "新增中…" : "新增客戶" }}
+        </button>
+      </form>
     </section>
 
     <section class="content-grid">
@@ -833,7 +867,7 @@ onMounted(async () => {
         <div class="table-scroll">
           <table class="data-table">
             <thead>
-              <tr v-if="activeTab === 'fixture'"><th>治具編號</th><th>治具名稱</th><th>儲位</th><th>管理類型</th><th>狀態</th></tr>
+              <tr v-if="activeTab === 'fixture'"><th>治具編號</th><th>治具名稱</th><th>儲位</th><th>狀態</th></tr>
               <tr v-else-if="activeTab === 'model'"><th>機種編號</th><th>機種名稱</th><th>狀態</th></tr>
               <tr v-else-if="activeTab === 'station'"><th>站點編號</th><th>站點名稱</th><th>狀態</th></tr>
               <tr v-else-if="activeTab === 'owner'"><th>負責人</th><th>狀態</th></tr>
@@ -842,10 +876,10 @@ onMounted(async () => {
 
             <tbody v-if="activeTab === 'fixture'">
               <tr v-for="row in pagedFixtureRows" :key="row.id" :class="{ selected: selectedFixtureId === row.id }" @click="selectRow(row.id)">
-                <td>{{ row.code }}</td><td>{{ row.name }}</td><td>{{ row.storage_location || "-" }}</td><td>{{ row.manage_type === "datecode" ? "Datecode" : "Serial" }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
+                <td>{{ row.code }}</td><td>{{ row.name }}</td><td>{{ row.storage_location || "-" }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
               </tr>
               <tr v-if="!loading && currentRows.length === 0">
-                <td colspan="5" class="empty-cell">{{ emptyStateMessage }}</td>
+                <td colspan="4" class="empty-cell">{{ emptyStateMessage }}</td>
               </tr>
             </tbody>
             <tbody v-else-if="activeTab === 'model'">
@@ -996,6 +1030,31 @@ onMounted(async () => {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
+}
+
+.customer-admin {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.customer-admin label {
+  display: grid;
+  gap: 6px;
+}
+
+.customer-admin span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.customer-admin input {
+  width: 100%;
 }
 
 .content-grid {
@@ -1308,6 +1367,10 @@ textarea {
   .toolbar-actions,
   .action-group {
     width: 100%;
+  }
+
+  .customer-admin {
+    grid-template-columns: 1fr;
   }
 
   .toolbar-actions button,

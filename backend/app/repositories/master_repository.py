@@ -32,7 +32,6 @@ class MasterRepository:
         owner_id: int | None,
         code: str,
         name: str,
-        manage_type: str,
         storage_location: str | None,
         description: str | None,
     ) -> Fixture:
@@ -41,7 +40,6 @@ class MasterRepository:
             owner_id=owner_id,
             code=code,
             name=name,
-            manage_type=manage_type,
             storage_location=storage_location,
             description=description,
         )
@@ -75,7 +73,6 @@ class MasterRepository:
         owner_id: int | None,
         code: str,
         name: str,
-        manage_type: str,
         storage_location: str | None,
         description: str | None,
         is_active: bool,
@@ -84,7 +81,6 @@ class MasterRepository:
         fixture.owner_id = owner_id
         fixture.code = code
         fixture.name = name
-        fixture.manage_type = manage_type
         fixture.storage_location = storage_location
         fixture.description = description
         fixture.is_active = is_active
