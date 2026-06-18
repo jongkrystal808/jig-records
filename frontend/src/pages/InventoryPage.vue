@@ -23,6 +23,7 @@ const overviewLoading = ref(false);
 const showBatchPanel = ref(false);
 const batchPasteText = ref("");
 const batchTransactionNo = ref("");
+const batchNote = ref("");
 
 type BatchImportRow = {
   lineNo: number;
@@ -69,8 +70,19 @@ const batchCanSubmit = computed(
     batchTransactionNo.value.trim().length > 0
 );
 
-const filteredRows = computed(() =>
-  transactions.value.filter((tx) => tx.transaction_type === mode.value).slice(0, 6)
+const recentRows = computed(() =>
+  transactions.value
+    .filter((tx) => tx.transaction_type === mode.value)
+    .flatMap((tx) =>
+      tx.items.map((item, index) => ({
+        id: `${tx.id}-${index}`,
+        transaction_no: tx.transaction_no,
+        fixture_code: item.fixture_code,
+        identifier: item.identifier,
+        quantity: item.quantity
+      }))
+    )
+    .slice(0, 6)
 );
 
 const overviewRows = computed(() =>
@@ -94,6 +106,10 @@ const overviewRows = computed(() =>
 const totalStockQty = computed(() => stockRows.value.reduce((sum, row) => sum + row.stock_qty, 0));
 const outOfStockCount = computed(() => stockRows.value.filter((row) => row.stock_status === "out_of_stock").length);
 const activeFixtureCount = computed(() => stockRows.value.filter((row) => row.stock_qty > 0).length);
+const activeStockRows = computed(() => {
+  const activeFixtureIds = new Set(fixtures.value.filter((row) => row.is_active).map((row) => row.id));
+  return stockRows.value.filter((row) => activeFixtureIds.has(row.fixture_id));
+});
 
 const inventorySummaryCards = computed(() => [
   { label: "治具總數", value: totalStockQty.value, tone: "normal" },
@@ -140,7 +156,30 @@ function splitBatchCells(line: string): string[] {
     return trimmed.split("|").map(normalizeBatchText).filter(Boolean);
   }
 
+  if (/[;,，；]/.test(trimmed)) {
+    return trimmed.split(/[;,，；]/).map(normalizeBatchText).filter(Boolean);
+  }
+
   return trimmed.split(/\s{2,}/).map(normalizeBatchText).filter(Boolean);
+}
+
+function extractInlineBatchGroups(cells: string[]): Array<{ codeLine: string; qtyLine: string }> {
+  const groups: Array<{ codeLine: string; qtyLine: string }> = [];
+  const codeCells: string[] = [];
+
+  for (const cell of cells) {
+    if (/^\d+$/.test(cell) && codeCells.length > 0) {
+      groups.push({
+        codeLine: codeCells.join("\t"),
+        qtyLine: cell
+      });
+      codeCells.length = 0;
+      continue;
+    }
+    codeCells.push(cell);
+  }
+
+  return codeCells.length === 0 ? groups : [];
 }
 
 function isHeaderLikeLine(line: string): boolean {
@@ -358,11 +397,12 @@ function parseBatchImportText(text: string): BatchImportRow[] {
   for (let index = 0; index < lines.length; ) {
     const current = lines[index];
     const currentCells = splitBatchCells(current);
+    const inlineGroups = extractInlineBatchGroups(currentCells);
 
-    if (currentCells.length >= 2 && /^\d+$/.test(currentCells[currentCells.length - 1] ?? "")) {
-      const codeLine = currentCells.slice(0, -1).join(current.includes("|") ? "|" : "\t") || currentCells[0];
-      const qtyLine = currentCells[currentCells.length - 1];
-      rows.push(buildBatchRow(rows.length + 1, codeLine, qtyLine));
+    if (inlineGroups.length > 0) {
+      for (const group of inlineGroups) {
+        rows.push(buildBatchRow(rows.length + 1, group.codeLine, group.qtyLine));
+      }
       index += 1;
       continue;
     }
@@ -386,6 +426,7 @@ function refreshBatchImportPreview(): void {
 function clearBatchImport(): void {
   batchPasteText.value = "";
   batchTransactionNo.value = "";
+  batchNote.value = "";
   batchImportRows.value = [];
 }
 
@@ -507,7 +548,9 @@ async function loadData(): Promise<void> {
     if (batchPasteText.value.trim()) {
       refreshBatchImportPreview();
     }
-    await loadOverview();
+    if (pageMode.value === "overview") {
+      await loadOverview();
+    }
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "載入收退料資料失敗", "error");
   }
@@ -580,6 +623,7 @@ async function submitBatchImport(): Promise<void> {
     return;
   }
   const transactionNo = batchTransactionNo.value.trim();
+  const transactionNote = batchNote.value.trim();
   if (!transactionNo) {
     pushToast("請先填寫這批的單號。", "warning");
     return;
@@ -606,7 +650,7 @@ async function submitBatchImport(): Promise<void> {
     customer_id: selectedCustomerId.value,
     created_by: authSession.value?.display_name ?? "訪客",
     transaction_no: transactionNo,
-    note: undefined,
+    note: transactionNote || undefined,
     items
   };
 
@@ -634,6 +678,12 @@ watch(selectedCustomerId, async () => {
   await loadData();
 });
 
+watch(pageMode, async (value) => {
+  if (value === "overview" && overviewTransactions.value.length === 0) {
+    await loadOverview();
+  }
+});
+
 watch(batchPasteText, () => {
   refreshBatchImportPreview();
 });
@@ -651,10 +701,9 @@ watch(batchPasteText, () => {
 
       <article class="panel op-panel">
         <div class="panel-head">
-          <div>
-            <h2>批次貼上匯入</h2>
-            <p>一次處理大量治具資料，解析與確認都在這裡完成，不會影響主畫面布局。</p>
-          </div>
+          <button class="toggle-btn batch-entry-btn" type="button" @click="showBatchPanel = true">
+            批次貼上匯入
+          </button>
           <div class="panel-actions">
             <div class="segmented-control" role="tablist" aria-label="收退料切換">
               <button class="segmented-btn" :class="{ active: mode === 'receipt' }" type="button" @click="mode = 'receipt'">
@@ -670,7 +719,7 @@ watch(batchPasteText, () => {
         <div class="recent-block">
           <div class="sub-head">
             <h3>{{ mode === "receipt" ? "最近收料" : "最近退料" }}</h3>
-            <span>{{ filteredRows.length }} 筆</span>
+            <span>{{ recentRows.length }} 筆</span>
           </div>
           <table class="grid-table compact-table">
             <thead>
@@ -682,88 +731,58 @@ watch(batchPasteText, () => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="tx in filteredRows" :key="`tx-${tx.id}`">
-                <td>{{ tx.items[0]?.fixture_code || "-" }}</td>
-                <td>{{ tx.items[0]?.identifier || "-" }}</td>
-                <td>{{ tx.items.reduce((sum, item) => sum + item.quantity, 0) }}</td>
-                <td>{{ tx.transaction_no }}</td>
+              <tr v-for="row in recentRows" :key="`tx-${row.id}`">
+                <td>{{ row.fixture_code || "-" }}</td>
+                <td>{{ row.identifier || "-" }}</td>
+                <td>{{ row.quantity }}</td>
+                <td>{{ row.transaction_no }}</td>
               </tr>
-              <tr v-if="filteredRows.length === 0">
+              <tr v-if="recentRows.length === 0">
                 <td colspan="4" class="empty-cell">尚無資料</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <article class="batch-panel">
-          <div class="sub-head">
-            <div>
-              <h3>批次貼上匯入</h3>
-              <p class="section-hint">次要作業改為大型對話框處理，避免解析結果撐開主頁面布局。</p>
-            </div>
-            <div class="sub-head-actions">
-              <span>{{ batchImportCount }} 筆可匯入 / {{ batchPendingCount }} 筆待確認 / {{ batchImportErrorCount }} 筆錯誤</span>
-              <button class="toggle-btn small-toggle" type="button" @click="showBatchPanel = true">
-                開啟批次匯入
-              </button>
-            </div>
-          </div>
-          <div class="batch-summary-strip">
-            <div class="batch-summary-card">
-              <span>可匯入</span>
-              <strong>{{ batchImportCount }}</strong>
-            </div>
-            <div class="batch-summary-card">
-              <span>待確認</span>
-              <strong>{{ batchPendingCount }}</strong>
-            </div>
-            <div class="batch-summary-card">
-              <span>錯誤</span>
-              <strong>{{ batchImportErrorCount }}</strong>
-            </div>
-            <div class="batch-summary-card wide">
-              <span>提示</span>
-              <strong>解析與預覽請在 modal 內完成</strong>
-            </div>
-          </div>
-        </article>
       </article>
 
       <article class="panel stock-panel">
         <div class="sub-head">
           <h2>現有治具庫存</h2>
-          <span>{{ stockRows.length }} 筆</span>
+          <span>{{ activeStockRows.length }} 筆</span>
         </div>
-        <table class="grid-table">
-          <thead>
-            <tr>
-              <th>治具編號 + 流水號</th>
-              <th>數量 (pcs)</th>
-              <th>水位</th>
-              <th>狀態</th>
-            </tr>
-          </thead>
-            <tbody>
-              <tr v-for="row in stockRows" :key="row.fixture_id">
-                <td>{{ row.fixture_code }}</td>
-                <td>{{ row.stock_qty }}</td>
-                <td>
-                  <div class="stock-meter" :class="row.stock_status">
-                    <div class="stock-meter-track">
-                      <div class="stock-meter-fill" :style="{ width: `${stockWaterLevelPercent(row)}%` }"></div>
+        <div class="panel-table-scroll">
+          <table class="grid-table">
+            <thead>
+              <tr>
+                <th>治具編號 + 流水號</th>
+                <th>數量 (pcs)</th>
+                <th>水位</th>
+                <th>狀態</th>
+              </tr>
+            </thead>
+              <tbody>
+                <tr v-for="row in activeStockRows" :key="row.fixture_id">
+                  <td>{{ row.fixture_code }}</td>
+                  <td>{{ row.stock_qty }}</td>
+                  <td>
+                    <div class="stock-meter" :class="row.stock_status">
+                      <div class="stock-meter-track">
+                        <div class="stock-meter-fill" :style="{ width: `${stockWaterLevelPercent(row)}%` }"></div>
+                      </div>
+                      <span>{{ row.stock_qty }} / {{ row.min_stock_qty || 0 }}</span>
                     </div>
-                    <span>{{ row.stock_qty }} / {{ row.min_stock_qty || 0 }}</span>
-                  </div>
-                </td>
-                <td>
-                  <UiStatusPill :label="stockStatusLabel(row.stock_status)" :tone="row.stock_status === 'normal' ? 'normal' : 'danger'" />
-                </td>
-              </tr>
-              <tr v-if="stockRows.length === 0">
-                <td colspan="4" class="empty-cell">目前沒有庫存資料</td>
-              </tr>
-            </tbody>
-          </table>
+                  </td>
+                  <td>
+                    <UiStatusPill :label="stockStatusLabel(row.stock_status)" :tone="row.stock_status === 'normal' ? 'normal' : 'danger'" />
+                  </td>
+                </tr>
+                <tr v-if="activeStockRows.length === 0">
+                  <td colspan="4" class="empty-cell">目前沒有庫存資料</td>
+                </tr>
+              </tbody>
+            </table>
+        </div>
       </article>
 
       <div class="side-stack">
@@ -772,27 +791,29 @@ watch(batchPasteText, () => {
             <h2>低水位提醒</h2>
             <span>{{ alerts.length }} 項</span>
           </div>
-          <table class="grid-table compact-table">
-            <thead>
-              <tr>
-                <th>治具編號</th>
-                <th>目前數量</th>
-                <th>設定水位</th>
-                <th>狀態</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in alerts" :key="`a-${row.fixture_id}`">
-                <td>{{ row.fixture_code }}</td>
-                <td>{{ row.stock_qty }}</td>
-                <td>{{ row.min_stock_qty }}</td>
-                <td><UiStatusPill :label="stockStatusLabel(row.stock_status)" tone="danger" /></td>
-              </tr>
-              <tr v-if="alerts.length === 0">
-                <td colspan="4" class="empty-cell">目前沒有低水位提醒</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="panel-table-scroll">
+            <table class="grid-table compact-table">
+              <thead>
+                <tr>
+                  <th>治具編號</th>
+                  <th>目前數量</th>
+                  <th>設定水位</th>
+                  <th>狀態</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in alerts" :key="`a-${row.fixture_id}`">
+                  <td>{{ row.fixture_code }}</td>
+                  <td>{{ row.stock_qty }}</td>
+                  <td>{{ row.min_stock_qty }}</td>
+                  <td><UiStatusPill :label="stockStatusLabel(row.stock_status)" tone="danger" /></td>
+                </tr>
+                <tr v-if="alerts.length === 0">
+                  <td colspan="4" class="empty-cell">目前沒有低水位提醒</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </article>
       </div>
     </section>
@@ -801,7 +822,6 @@ watch(batchPasteText, () => {
       <div class="overview-head">
         <div>
           <h2>收 / 退料總檢視</h2>
-          <p>依收退料類型、日期、治具、單號、識別碼與操作人員快速查詢。</p>
         </div>
         <div class="overview-tools">
           <div class="toolbar-actions">
@@ -916,6 +936,14 @@ watch(batchPasteText, () => {
                 @paste="handleBatchPaste"
               ></textarea>
             </label>
+            <label class="batch-input">
+              <span>備註（非必填）</span>
+              <input
+                v-model="batchNote"
+                type="text"
+                placeholder="例如：急單補料、內部盤點補登"
+              />
+            </label>
             <div class="batch-actions">
               <button class="outline-btn" type="button" @click="clearBatchImport">清空</button>
               <button class="primary-btn" type="button" :disabled="saving || !batchCanSubmit" @click="submitBatchImport">
@@ -997,11 +1025,12 @@ watch(batchPasteText, () => {
 .inventory-board {
   display: grid;
   grid-template-columns: minmax(0, 1.18fr) minmax(0, 0.92fr) minmax(0, 0.84fr);
-  grid-auto-rows: min-content;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  align-items: stretch;
 }
 
 .inventory-summary-row {
@@ -1051,6 +1080,7 @@ watch(batchPasteText, () => {
   grid-template-rows: auto 1fr;
   gap: 8px;
   min-height: 0;
+  overflow: hidden;
 }
 
 .panel {
@@ -1159,6 +1189,14 @@ watch(batchPasteText, () => {
   justify-items: end;
 }
 
+.batch-entry-btn {
+  width: auto;
+  min-width: 132px;
+  padding-inline: 14px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
 .toggle-btn {
   border: 1px solid var(--line-strong);
   border-radius: 10px;
@@ -1186,7 +1224,7 @@ watch(batchPasteText, () => {
 
 .op-panel {
   display: grid;
-  grid-template-rows: auto auto minmax(260px, 1fr) auto;
+  grid-template-rows: auto minmax(260px, 1fr);
   gap: 12px;
 }
 
@@ -1279,40 +1317,16 @@ input:disabled {
   min-height: 300px;
 }
 
-.batch-panel {
+.stock-panel,
+.alert-panel {
   display: grid;
-  gap: 8px;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.panel-table-scroll {
   min-height: 0;
-}
-
-.batch-summary-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.batch-summary-card {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #f8fafe;
-  padding: 8px 10px;
-  display: grid;
-  gap: 4px;
-}
-
-.batch-summary-card span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.batch-summary-card strong {
-  color: #22314a;
-  font-size: 16px;
-  line-height: 1.1;
-}
-
-.batch-summary-card.wide {
-  grid-column: 1 / -1;
+  overflow: auto;
+  height: 100%;
 }
 
 .batch-panel-body {
@@ -1572,7 +1586,15 @@ input:disabled {
 
 .stock-panel .grid-table,
 .alert-panel .grid-table {
-  height: calc(100% - 34px);
+  min-width: 100%;
+}
+
+.stock-panel thead th,
+.alert-panel thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f7f9fd;
 }
 
 .summary-grid {
@@ -1816,10 +1838,6 @@ input:disabled {
   }
 
   .inventory-summary-row {
-    grid-template-columns: 1fr;
-  }
-
-  .batch-summary-strip {
     grid-template-columns: 1fr;
   }
 

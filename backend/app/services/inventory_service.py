@@ -28,9 +28,10 @@ class InventoryService:
             transaction_type=transaction_type,
             occurred_at=occurred_at,
             created_by=payload.created_by.strip(),
+            transaction_no=payload.transaction_no,
             note=payload.note,
         )
-        changed_station_ids: set[int] = set()
+        changed_station_model_pairs: set[tuple[int, int]] = set()
 
         for item in payload.items:
             fixture = self.repo.get_fixture(item.fixture_id)
@@ -77,10 +78,19 @@ class InventoryService:
                 summary.returned_qty += delta_quantity
 
             self.repo.set_stock_status(summary, level.min_stock_qty)
-            changed_station_ids.update(self.capacity_service.get_affected_station_ids_by_fixture(item.fixture_id))
+            changed_station_model_pairs.update(
+                self.capacity_service.get_affected_station_model_pairs_by_fixture(
+                    item.fixture_id,
+                    customer_id=payload.customer_id,
+                )
+            )
 
-        for station_id in changed_station_ids:
-            self.capacity_service.recalculate_station_capacity(station_id)
+        for station_id, model_id in changed_station_model_pairs:
+            self.capacity_service.recalculate_station_capacity(
+                station_id,
+                model_id=model_id,
+                customer_id=payload.customer_id,
+            )
 
         if commit:
             self.db.commit()
@@ -186,6 +196,7 @@ class InventoryService:
             [
                 {
                     "transaction_type": "receipt",
+                    "transaction_no": "12005436",
                     "fixture_code": "C-00001",
                     "ownership_type": "self_purchased",
                     "identifier": "2605",
@@ -220,12 +231,13 @@ class InventoryService:
                 customer_id=customer_id,
                 created_by=row.get("created_by", "") or operator_name,
                 occurred_at=occurred_at,
+                transaction_no=row.get("transaction_no", "") or None,
                 note=row.get("note", "") or None,
                 items=[
                     {
                         "fixture_id": fixture.id,
                         "ownership_type": ownership_type or "self_purchased",
-                        "identifier": row.get("identifier", "") or row.get("datecode", "") or row.get("serial_number", "") or None,
+                        "identifier": row.get("identifier", "") or None,
                         "quantity": quantity,
                         "note": row.get("note", "") or None,
                     }

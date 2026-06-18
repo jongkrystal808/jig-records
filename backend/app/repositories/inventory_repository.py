@@ -4,7 +4,6 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.models.inventory import (
-    FixtureSerial,
     FixtureStockLevel,
     FixtureStockSummary,
     MaterialTransaction,
@@ -24,9 +23,11 @@ class InventoryRepository:
         transaction_type: str,
         occurred_at: datetime,
         created_by: str,
+        transaction_no: str | None,
         note: str | None,
     ) -> MaterialTransaction:
-        temp_no = f"TMP-{datetime.now(tz=timezone.utc):%Y%m%d%H%M%S%f}-{customer_id}"
+        normalized_transaction_no = (transaction_no or "").strip()
+        temp_no = normalized_transaction_no or f"TMP-{datetime.now(tz=timezone.utc):%Y%m%d%H%M%S%f}-{customer_id}"
         transaction = MaterialTransaction(
             customer_id=customer_id,
             transaction_type=transaction_type,
@@ -37,8 +38,9 @@ class InventoryRepository:
         )
         self.db.add(transaction)
         self.db.flush()
-        prefix = "RCV" if transaction_type == "receipt" else "RTN"
-        transaction.transaction_no = f"{prefix}-{occurred_at:%Y%m%d}-{transaction.id:06d}"
+        if not normalized_transaction_no:
+            prefix = "RCV" if transaction_type == "receipt" else "RTN"
+            transaction.transaction_no = f"{prefix}-{occurred_at:%Y%m%d}-{transaction.id:06d}"
         return transaction
 
     def add_transaction_item(
@@ -54,10 +56,8 @@ class InventoryRepository:
         item = MaterialTransactionItem(
             transaction_id=transaction_id,
             fixture_id=fixture_id,
-            manage_type="datecode",
             ownership_type=ownership_type,
-            datecode=identifier,
-            serial_number=None,
+            identifier=identifier,
             quantity=quantity,
             note=note,
         )
@@ -125,13 +125,18 @@ class InventoryRepository:
             .join(MaterialTransaction, MaterialTransaction.id == MaterialTransactionItem.transaction_id)
             .where(
                 MaterialTransactionItem.fixture_id == fixture_id,
-                func.coalesce(MaterialTransactionItem.datecode, MaterialTransactionItem.serial_number) == identifier,
+                MaterialTransactionItem.identifier == identifier,
             )
         )
         row = self.db.execute(stmt).one()
         return int(row.receipt_qty or 0) - int(row.return_qty or 0)
 
     def list_stock_summary_rows(self, customer_id: int | None = None) -> list[dict]:
+        stock_status_expr = case(
+            (Fixture.is_active.is_(False), "normal"),
+            (FixtureStockSummary.stock_status.is_not(None), FixtureStockSummary.stock_status),
+            else_="normal",
+        )
         stmt = (
             select(
                 Fixture.id.label("fixture_id"),
@@ -141,10 +146,7 @@ class InventoryRepository:
                 case((FixtureStockLevel.min_stock_qty.is_not(None), FixtureStockLevel.min_stock_qty), else_=0).label(
                     "min_stock_qty"
                 ),
-                case(
-                    (FixtureStockSummary.stock_status.is_not(None), FixtureStockSummary.stock_status),
-                    else_="normal",
-                ).label("stock_status"),
+                stock_status_expr.label("stock_status"),
                 FixtureStockSummary.last_transaction_at.label("last_transaction_at"),
             )
             .outerjoin(FixtureStockSummary, FixtureStockSummary.fixture_id == Fixture.id)
@@ -156,6 +158,11 @@ class InventoryRepository:
         return [dict(row._mapping) for row in self.db.execute(stmt).all()]
 
     def list_stock_alert_rows(self, customer_id: int | None = None) -> list[dict]:
+        stock_status_expr = case(
+            (Fixture.is_active.is_(False), "normal"),
+            (FixtureStockSummary.stock_status.is_not(None), FixtureStockSummary.stock_status),
+            else_="normal",
+        )
         stmt = (
             select(
                 Fixture.id.label("fixture_id"),
@@ -165,14 +172,11 @@ class InventoryRepository:
                 case((FixtureStockLevel.min_stock_qty.is_not(None), FixtureStockLevel.min_stock_qty), else_=0).label(
                     "min_stock_qty"
                 ),
-                case(
-                    (FixtureStockSummary.stock_status.is_not(None), FixtureStockSummary.stock_status),
-                    else_="normal",
-                ).label("stock_status"),
+                stock_status_expr.label("stock_status"),
             )
             .outerjoin(FixtureStockSummary, FixtureStockSummary.fixture_id == Fixture.id)
             .outerjoin(FixtureStockLevel, FixtureStockLevel.fixture_id == Fixture.id)
-            .where(FixtureStockSummary.stock_status.in_(["low_stock", "out_of_stock"]))
+            .where(Fixture.is_active.is_(True), stock_status_expr.in_(["low_stock", "out_of_stock"]))
             .order_by(Fixture.code)
         )
         if customer_id is not None:
@@ -212,9 +216,7 @@ class InventoryRepository:
             tx_id_stmt = tx_id_stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
         if identifier:
             tx_id_stmt = tx_id_stmt.where(
-                func.coalesce(MaterialTransactionItem.datecode, MaterialTransactionItem.serial_number).ilike(
-                    f"%{identifier.strip()}%"
-                )
+                MaterialTransactionItem.identifier.ilike(f"%{identifier.strip()}%")
             )
         if created_by:
             tx_id_stmt = tx_id_stmt.where(MaterialTransaction.created_by.ilike(f"%{created_by.strip()}%"))
@@ -233,8 +235,7 @@ class InventoryRepository:
                 MaterialTransactionItem.transaction_id,
                 MaterialTransactionItem.fixture_id,
                 MaterialTransactionItem.ownership_type,
-                MaterialTransactionItem.datecode,
-                MaterialTransactionItem.serial_number,
+                MaterialTransactionItem.identifier,
                 MaterialTransactionItem.quantity,
                 MaterialTransactionItem.note,
                 Fixture.code.label("fixture_code"),
@@ -253,7 +254,7 @@ class InventoryRepository:
                     "fixture_code": row["fixture_code"],
                     "fixture_name": row["fixture_name"],
                     "ownership_type": row["ownership_type"],
-                    "identifier": row["datecode"] or row["serial_number"],
+                    "identifier": row["identifier"],
                     "quantity": row["quantity"],
                     "note": row["note"],
                 }

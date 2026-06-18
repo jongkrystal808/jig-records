@@ -21,8 +21,11 @@ services:
     environment:
       APP_NAME: ${APP_NAME:-Fixture-M Lite API}
       APP_VERSION: ${APP_VERSION:-0.1.0}
-      DATABASE_URL: ${DATABASE_URL:-mysql+pymysql://fixture_user:fixture_pass@db:3306/fixture_m_lite?charset=utf8mb4}
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env for docker testing}
       FIXTURE_IMAGE_DIR: ${FIXTURE_IMAGE_DIR:-/data/fixture-images}
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:?set AUTH_SECRET_KEY in .env for docker testing}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-admin123}
     volumes:
       - ${FIXTURE_IMAGE_DIR_HOST:-./uploads/fixtures}:/data/fixture-images
     depends_on:
@@ -34,10 +37,10 @@ services:
     image: mysql:8.4
     container_name: fixture_m_lite_db
     environment:
-      MYSQL_ROOT_PASSWORD: root_pass
-      MYSQL_DATABASE: fixture_m_lite
-      MYSQL_USER: fixture_user
-      MYSQL_PASSWORD: fixture_pass
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env for docker testing}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?set MYSQL_DATABASE in .env for docker testing}
+      MYSQL_USER: ${MYSQL_USER:?set MYSQL_USER in .env for docker testing}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env for docker testing}
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -46,7 +49,7 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot_pass"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 5s
       timeout: 5s
       retries: 20

@@ -13,19 +13,27 @@ def _validate_fixture_code(value: str) -> str:
 class CustomerCreate(BaseModel):
     code: str = Field(min_length=1, max_length=40)
     name: str = Field(min_length=1, max_length=120)
+    assigned_user_ids: list[int] = Field(default_factory=list)
+
+
+class CustomerUpdate(BaseModel):
+    code: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=120)
+    assigned_user_ids: list[int] = Field(default_factory=list)
 
 
 class CustomerRead(TimestampedResponse):
     id: int
     code: str
     name: str
+    assigned_user_ids: list[int] = Field(default_factory=list)
 
 
 class FixtureCreate(BaseModel):
     customer_id: int
     code: str = Field(min_length=1, max_length=60)
     name: str = Field(min_length=1, max_length=160)
-    owner_id: int | None = None
+    responsible_user_id: int | None = None
     storage_location: str | None = Field(default=None, max_length=120)
     min_stock_qty: int | None = Field(default=None, ge=0)
     description: str | None = None
@@ -37,7 +45,7 @@ class FixtureUpdate(BaseModel):
     customer_id: int
     code: str = Field(min_length=1, max_length=60)
     name: str = Field(min_length=1, max_length=160)
-    owner_id: int | None = None
+    responsible_user_id: int | None = None
     storage_location: str | None = Field(default=None, max_length=120)
     min_stock_qty: int | None = Field(default=None, ge=0)
     description: str | None = None
@@ -49,7 +57,7 @@ class FixtureUpdate(BaseModel):
 class FixtureRead(TimestampedResponse):
     id: int
     customer_id: int
-    owner_id: int | None
+    responsible_user_id: int | None
     code: str
     name: str
     storage_location: str | None
@@ -96,20 +104,5 @@ class StationRead(TimestampedResponse):
     id: int
     customer_id: int
     code: str
-    name: str
-    is_active: bool
-
-
-class OwnerCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
-
-
-class OwnerUpdate(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
-    is_active: bool = True
-
-
-class OwnerRead(TimestampedResponse):
-    id: int
     name: str
     is_active: bool

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Response
 from sqlalchemy.orm import Session
 
-from backend.app.core.auth import require_permission
+from backend.app.core.auth import SessionContext, require_permission, resolve_customer_scope
 from backend.app.core.database import get_db
 from backend.app.schemas.common import CsvImportPayload, ImportResultRead
 from backend.app.schemas.inventory import StockAlertRead, StockSummaryRead, StockTransactionCreate, StockTransactionRead
@@ -14,7 +14,12 @@ router = APIRouter(prefix="/inventory", tags=["inventory"], dependencies=[Depend
 
 
 @router.post("/receipts", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("write"))])
-def create_receipt(payload: StockTransactionCreate, db: Session = Depends(get_db)):
+def create_receipt(
+    payload: StockTransactionCreate,
+    session: SessionContext = Depends(require_permission("write")),
+    db: Session = Depends(get_db),
+):
+    resolve_customer_scope(session, db, payload.customer_id, allow_empty=False)
     service = InventoryService(db)
     try:
         service.receipt(payload)
@@ -23,7 +28,12 @@ def create_receipt(payload: StockTransactionCreate, db: Session = Depends(get_db
 
 
 @router.post("/returns", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("write"))])
-def create_return(payload: StockTransactionCreate, db: Session = Depends(get_db)):
+def create_return(
+    payload: StockTransactionCreate,
+    session: SessionContext = Depends(require_permission("write")),
+    db: Session = Depends(get_db),
+):
+    resolve_customer_scope(session, db, payload.customer_id, allow_empty=False)
     service = InventoryService(db)
     try:
         service.return_material(payload)
@@ -32,13 +42,23 @@ def create_return(payload: StockTransactionCreate, db: Session = Depends(get_db)
 
 
 @router.get("/stock", response_model=list[StockSummaryRead])
-def list_stock(customer_id: int | None = Query(default=None), db: Session = Depends(get_db)):
+def list_stock(
+    customer_id: int | None = Query(default=None),
+    session: SessionContext = Depends(require_permission("read")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
     service = InventoryService(db)
     return service.list_stock_summary(customer_id=customer_id)
 
 
 @router.get("/alerts", response_model=list[StockAlertRead])
-def list_alerts(customer_id: int | None = Query(default=None), db: Session = Depends(get_db)):
+def list_alerts(
+    customer_id: int | None = Query(default=None),
+    session: SessionContext = Depends(require_permission("read")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
     service = InventoryService(db)
     return service.list_alerts(customer_id=customer_id)
 
@@ -54,8 +74,10 @@ def list_transactions(
     transaction_no: str | None = Query(default=None),
     identifier: str | None = Query(default=None),
     created_by: str | None = Query(default=None),
+    session: SessionContext = Depends(require_permission("read")),
     db: Session = Depends(get_db),
 ):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
     service = InventoryService(db)
     dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc) if date_from else None
     dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc) if date_to else None
@@ -83,8 +105,10 @@ def export_transactions(
     transaction_no: str | None = Query(default=None),
     identifier: str | None = Query(default=None),
     created_by: str | None = Query(default=None),
+    session: SessionContext = Depends(require_permission("read")),
     db: Session = Depends(get_db),
 ):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
     service = InventoryService(db)
     dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc) if date_from else None
     dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc) if date_to else None
@@ -121,10 +145,13 @@ def import_transactions(
     customer_id: int = Query(...),
     operator_name: str = Query(..., min_length=1),
     payload: CsvImportPayload = ...,
+    session: SessionContext = Depends(require_permission("write")),
     db: Session = Depends(get_db),
 ):
+    resolve_customer_scope(session, db, customer_id, allow_empty=False)
     service = InventoryService(db)
     try:
         return {"imported_count": service.import_transactions_csv(customer_id, operator_name, payload)}
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+

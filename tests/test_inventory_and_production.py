@@ -22,7 +22,6 @@ def test_inventory_capacity_and_search_flow(app_client):
             "customer_id": customer_id,
             "code": "T-001",
             "name": "Test Fixture",
-            "manage_type": "datecode",
             "storage_location": "A-01",
             "min_stock_qty": 2,
             "description": "pytest",
@@ -57,7 +56,7 @@ def test_inventory_capacity_and_search_flow(app_client):
 
     requirement = app_client.post(
         "/api/v2/production/fixture-requirements",
-        json={"customer_id": customer_id, "station_id": station_id, "fixture_id": fixture_id, "required_qty": 2},
+        json={"customer_id": customer_id, "model_id": model_id, "station_id": station_id, "fixture_id": fixture_id, "required_qty": 2},
         headers=headers,
     )
     assert requirement.status_code == 201
@@ -70,9 +69,8 @@ def test_inventory_capacity_and_search_flow(app_client):
             "items": [
                 {
                     "fixture_id": fixture_id,
-                    "manage_type": "datecode",
                     "ownership_type": "self_purchased",
-                    "datecode": "202606",
+                    "identifier": "202606",
                     "quantity": 6,
                 }
             ],
@@ -85,10 +83,13 @@ def test_inventory_capacity_and_search_flow(app_client):
     assert stock.status_code == 200
     assert stock.json()[0]["stock_qty"] == 6
 
-    capacity = app_client.get(f"/api/v2/production/capacity/stations/{station_id}", headers=headers)
+    capacity = app_client.get(
+        f"/api/v2/production/capacity/stations/{station_id}",
+        params={"model_id": model_id, "customer_id": customer_id},
+        headers=headers,
+    )
     assert capacity.status_code == 200
     payload = capacity.json()
-    assert payload["current_open_station_count"] == 1
     assert payload["max_open_station_count"] == 3
 
     search = app_client.get("/api/v2/search/global", params={"q": "T-001"}, headers=headers)
@@ -103,7 +104,7 @@ def test_csv_import_flow(app_client):
 
     payload = {
         "filename": "fixtures.csv",
-        "content": "code,name,manage_type,storage_location,owner_name,min_stock_qty,description,is_active\nT-CSV,CSV Fixture,datecode,A-02,,1,imported,true\n",
+        "content": "code,name,storage_location,min_stock_qty,description,is_active\nT-CSV,CSV Fixture,A-02,1,imported,true\n",
     }
     response = app_client.post(
         f"/api/v2/master/fixtures/import?customer_id={customer_id}",

@@ -10,10 +10,10 @@ The system is designed for:
 
 - Production fixture inventory control
 - Production station planning
-- Warehouse visibility
+- Fixture location lookup
 - Fixture demand management
 - Stock warning management
-- Fixture image management
+- Optional file-based fixture image preview
 - Fast search workflow
 
 The Lite version intentionally avoids heavy lifecycle management logic.
@@ -102,6 +102,13 @@ pages/
 └─ ProductionPage.vue
 ```
 
+Application shell notes:
+
+- Login / guest entry is rendered in the root app shell before route content
+- `/inventory` is the operation-focused receipt/return page
+- `/inventory/overview` reuses the inventory page with overview-first behavior
+- guest users do not see `資料維護`, and router guard blocks direct `/master` access
+
 ---
 
 ## 6. Backend Architecture
@@ -140,7 +147,8 @@ Includes:
 - Fixtures
 - Models
 - Stations
-- Owners
+- Customer-to-user assignment
+- Fixture responsible-user assignment
 
 API prefix:
 
@@ -198,8 +206,7 @@ All imported rows are normalized into:
 The frontend no longer asks users to pick or maintain:
 
 - `manage_type`
-- `serial_number`
-- separate `datecode` vs `serial` entry flows
+- separate legacy identifier categories
 
 When the pasted fixture code does not exist:
 
@@ -239,6 +246,9 @@ Includes:
 - Model-station mapping
 - Fixture requirements
 - Capacity calculation
+- Station-scoped model query
+- Batch paste import with similarity confirmation
+- Shared-station multi-model support
 
 API prefix:
 
@@ -246,26 +256,30 @@ API prefix:
 /api/v2/production/*
 ```
 
----
+#### Production domain rule
 
-### 7.4 Warehouse Module
+The production module now treats:
 
-Includes:
+- `model` as the top-level planning unit
+- `station` as a reusable route marker
+- `fixture requirement` as a resource rule bound to `model + station`
 
-- Storage locations
-- Fixture image management
-- Location assignment
-- Quick lookup
+This means:
 
-API prefix:
+- Multiple models may share the same station
+- The same station may require different fixtures for different models
+- The same fixture may be reused across multiple stations or models
+- Capacity calculation must never infer model from station alone
+
+Authoritative requirement scope:
 
 ```text
-/api/v2/warehouse/*
+model_id + station_id + fixture_id
 ```
 
 ---
 
-### 7.5 Search Module
+### 7.4 Search Module
 
 Includes:
 
@@ -320,19 +334,29 @@ user_customers
 fixtures
 machine_models
 stations
-owners
 
 model_stations
 fixture_requirements
 
 material_transactions
 material_transaction_items
+fixture_stock_levels
+fixture_stock_summary
+machine_capacity_summary
 audit_logs
 ```
 
+Important table-level rules:
+
+- `fixtures` uses `(customer_id, code)` as the authoritative unique key
+- `machine_models` uses `(customer_id, code)` as the authoritative unique key
+- `stations` uses `(customer_id, code)` as the authoritative unique key
+- `fixtures.responsible_user_id` points to `users.id` and is nullable
+- customer assignment for normal users is represented by `user_customers`
+
 ---
 
-### New tables
+### Supporting tables
 
 #### fixture_stock_levels
 
@@ -350,37 +374,83 @@ Stores:
 - Returned quantity
 - Last transaction time
 
-#### storage_locations
-
-Stores:
-
-- Location code
-- Area
-- Rack
-- Layer
-- Description
-- Optional image path
-
 #### machine_capacity_summary
 
 Stores:
 
-- Model ID
 - Station ID
 - Maximum open station count
-- Bottleneck fixture
-- Calculation timestamp
+- Bottleneck fixture code
+- Cache timestamps (`created_at`, `updated_at`)
 
-#### fixture_images
+Note:
 
-Stores:
+- This table is now treated as optional cache-style summary data only.
+- The authoritative runtime calculation is performed from `fixture_requirements` scoped by `model_id + station_id`.
+- UI and API no longer expose a derived `current_open_station_count`.
 
-- Fixture ID
-- Image path
-- Thumbnail path
-- Main image flag
+## Customer Access Scope
 
----
+- `admin` can see all customers.
+- non-admin authenticated users can only see customers assigned in `user_customers`.
+- `guest` can also see all customers, but stays read-only.
+- customer-scoped APIs reject requests without `customer_id` for non-admin users.
+- customer assignment is edited from the `customer` maintenance tab, not from the `user` tab.
+- users assigned to a customer are also the selectable responsible-person candidates for that customer's fixtures.
+
+## Role Matrix
+
+### admin
+
+- Customer visibility: all customers
+- Data edit: allowed
+- Master page access: allowed
+- Customer management: allowed
+- User management: allowed
+
+### guest
+
+- Customer visibility: all customers
+- Data edit: not allowed
+- Master page access: not allowed
+- Customer management: not allowed
+- User management: not allowed
+
+### user
+
+- Customer visibility: only customers assigned in `user_customers`
+- Assigned customer count: may be `0` at creation time, then assigned from customer maintenance
+- Data edit: allowed, but only within assigned customers
+- Master page access: allowed
+- Customer management: not allowed
+- User management: not allowed
+
+## Permission Model
+
+- `read`
+  - `admin`, `user`, and `guest` can use read-only APIs
+- `write`
+  - `admin` and `user` can create/update/import business data
+  - `guest` is always read-only
+- `manage`
+  - only `admin` can manage customers and users
+
+Current master-data write scope:
+
+- `fixtures`
+- `machine_models`
+- `stations`
+
+Current admin-only scope:
+
+- `customers`
+- `users`
+
+Frontend rule:
+
+- guest mode does not show the `資料維護` navigation entry
+- direct navigation to `/master` is redirected away for guest mode
+- current customer, login state, time, and today summary are all surfaced in the left sidebar
 
 ## 10. Inventory Flow
 
@@ -404,11 +474,10 @@ material_transaction_items
 - note
 ```
 
-Compatibility note:
+Storage note:
 
-- The database still retains legacy `manage_type`, `datecode`, and `serial_number` columns internally.
-- The frontend and API surface have already been unified to a single `identifier`.
-- Legacy columns are currently treated as an internal compatibility layer to avoid destructive migration.
+- The database contract is now centered on a single `identifier` column.
+- The frontend and API surface use the same `identifier` field end to end.
 
 ---
 
@@ -426,6 +495,30 @@ Handled by:
 CapacityService
 ```
 
+Final business definition:
+
+```text
+For a given model + station:
+in the "open only this station" scenario,
+maximum open station count =
+the minimum of floor(available stock / required_qty)
+across all fixtures required by that model at that station
+```
+
+Important constraints:
+
+- Do not calculate across all stations of the model
+- Do not calculate "after T1 opens, how many T2 remain"
+- Do not infer fixture requirements by station alone
+- Do not deduct stock between different stations during this single-station capacity query
+
+Lookup rule:
+
+```sql
+WHERE model_id = ?
+  AND station_id = ?
+```
+
 Example:
 
 ```text
@@ -440,6 +533,20 @@ Current inventory:
 Maximum open station count:
 min(326/1, 263/1) = 263
 ```
+
+Example interpretation using the current metaphor:
+
+- `Model` = car
+- `Station` = road segment / route marker
+- `Fixture requirement` = resources that a specific car needs when passing that road
+
+You cannot determine the car just by looking at the road.
+You must always know both:
+
+- which car
+- which road
+
+before deciding the required fixtures and capacity.
 
 ---
 
@@ -474,7 +581,7 @@ Search should support:
 - Fixture name
 - Model code
 - Station
-- Storage location
+- Free-form storage location text
 - Identifier-based transaction lookup through the search workspace
 
 Search result cards should display:
@@ -483,9 +590,16 @@ Search result cards should display:
 - Fixture code
 - Current stock
 - Stock status
-- Storage location
+- Storage location text
 - Related models
 - Maximum capacity summary
+
+Search behavior updates:
+
+- Fixture-side related-model display is derived from `fixture_requirements.model_id`
+- The search workspace no longer back-infers models from stations
+- Fixture detail drill-down now shows `model + station + required_qty`
+- Model detail drill-down is limited to the selected model and selected station context where applicable
 
 ---
 
@@ -499,6 +613,7 @@ Left sidebar:
 - Current customer
 - Login / logout status
 - Current time
+- Today receipt / return / low-stock summary
 - Recent audit summary
 
 Content area:
@@ -531,11 +646,14 @@ flowchart LR
 
 ```text
 /api/v2/auth
+/api/v2/auth/users
+/api/v2/auth/users/{user_id}/reset-password
 /api/v2/master/customers
+/api/v2/master/customers/{customer_id}/users
 /api/v2/master/fixtures
+/api/v2/master/fixtures/{fixture_code}/image
 /api/v2/master/models
 /api/v2/master/stations
-/api/v2/master/owners
 
 /api/v2/inventory/receipts
 /api/v2/inventory/returns
@@ -547,35 +665,75 @@ flowchart LR
 /api/v2/production/fixture-requirements
 /api/v2/production/capacity
 
-/api/v2/warehouse/locations
-/api/v2/warehouse/fixture-images
-
 /api/v2/search/global
 /api/v2/audit/logs
 ```
 
+Production API notes:
+
+- `GET /api/v2/production/capacity/stations/{station_id}` requires `model_id`
+- `GET /api/v2/production/models/{model_id}/query` supports optional `station_id`
+- `POST/PUT /api/v2/production/fixture-requirements` require `model_id`
+- Capacity responses no longer include `current_open_station_count`
+
+Master/Auth API notes:
+
+- `POST /api/v2/auth/login` returns a JWT-backed session payload
+- `POST /api/v2/auth/guest` returns a guest-mode session payload
+- `GET /api/v2/master/customers` returns only accessible customers for the current session
+- `GET /api/v2/master/customers/{customer_id}/users` returns the responsible-user candidate set for that customer
+
 ---
 
-## 17. Future Expansion
+## 17. Migration Notes
+
+Recent schema evolution:
+
+- `fixture_requirements` is now uniquely scoped by:
+  - `model_id`
+  - `station_id`
+  - `fixture_id`
+- legacy unique key on `station_id + fixture_id` has been replaced
+- Alembic revision `0004_model_station_scope` formalizes this change
+- Alembic revision `0005_remove_warehouse_tables` removes warehouse-profile/location/image tables in favor of `fixtures.storage_location`
+- Alembic revision `0006_identifier_cleanup` removes legacy `manage_type` / `datecode` / `serial_number` concepts and standardizes on `identifier`
+- Alembic revision `0007_user_customer_scope` formalizes per-user customer visibility in `user_customers`
+- Alembic revision `0008_fixture_responsible_user` adds `fixtures.responsible_user_id`
+- Alembic revision `0009_remove_owners_and_scope_fixture_code` removes `owners` and changes fixture uniqueness to `(customer_id, code)`
+
+Compatibility behavior:
+
+- runtime migration preflight expands `alembic_version.version_num` for MySQL/MariaDB if needed
+- legacy revision id `0004_model_station_fixture_requirements` is normalized to `0004_model_station_scope`
+- startup migration support is designed to recover partially upgraded environments
+
+Data migration caveat:
+
+- old `fixture_requirements` rows that only had `station_id` could not fully express model scope
+- legacy backfill assigns `model_id` using the first matching `model_station`
+- environments with historically mixed multi-model requirements on one station should still be manually reviewed
+- environments upgrading from legacy owner-based fixture responsibility should verify that owner semantics have been replaced by customer-scoped user assignment where needed
+
+---
+
+## 18. Future Expansion
 
 Possible future modules:
 
 - Barcode scanning
 - QR code lookup
-- Mobile warehouse mode
 - Fixture borrowing system
-- Multi-warehouse support
 - Notification center
 - Excel import/export improvement
 
 ---
 
-## 18. Final Positioning
+## 19. Final Positioning
 
 Fixture-M Lite is positioned as:
 
 ```text
-Production Fixture Warehouse + Capacity Platform
+Production Fixture Inventory + Capacity Platform
 ```
 
 Core value:

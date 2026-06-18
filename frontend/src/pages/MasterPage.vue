@@ -2,20 +2,21 @@
 import { computed, onMounted, ref, watch } from "vue";
 
 import { api } from "@/api";
-import { authSession, customers, selectedCustomerId } from "@/appState";
+import { authSession, selectedCustomerId } from "@/appState";
 import { pushToast } from "@/toastState";
-import type { AppUser, Fixture, MachineModel, Owner, Station } from "@/types";
+import type { AppUser, Customer, Fixture, MachineModel, Station } from "@/types";
 import { fallbackText } from "@/utils/display";
 import UiStatusPill from "@/components/UiStatusPill.vue";
 import UiFormActions from "@/components/UiFormActions.vue";
 
-type MasterTab = "fixture" | "model" | "station" | "owner" | "user";
+type MasterTab = "fixture" | "model" | "station" | "customer" | "user";
 
 const fixtures = ref<Fixture[]>([]);
 const models = ref<MachineModel[]>([]);
 const stations = ref<Station[]>([]);
-const owners = ref<Owner[]>([]);
 const users = ref<AppUser[]>([]);
+const customerRows = ref<Customer[]>([]);
+const customerAssignedUsers = ref<AppUser[]>([]);
 
 const activeTab = ref<MasterTab>("fixture");
 const keyword = ref("");
@@ -27,13 +28,13 @@ const listPageSize = 10;
 const selectedFixtureId = ref<number | null>(null);
 const selectedModelId = ref<number | null>(null);
 const selectedStationId = ref<number | null>(null);
-const selectedOwnerId = ref<number | null>(null);
 const selectedUserId = ref<number | null>(null);
+const selectedCustomerRowId = ref<number | null>(null);
 
 const fixtureForm = ref({
   code: "",
   name: "",
-  owner_id: null as number | null,
+  responsible_user_id: null as number | null,
   storage_location: "",
   min_stock_qty: 0,
   description: "",
@@ -41,7 +42,6 @@ const fixtureForm = ref({
 });
 const modelForm = ref({ code: "", name: "", is_active: true });
 const stationForm = ref({ code: "", name: "", is_active: true });
-const ownerForm = ref({ name: "", is_active: true });
 const customerForm = ref({ code: "", name: "" });
 const userForm = ref({
   username: "",
@@ -54,14 +54,15 @@ const userForm = ref({
 const importInput = ref<HTMLInputElement | null>(null);
 const canManageUsers = computed(() => authSession.value?.role === "admin");
 const canManageCustomers = computed(() => authSession.value?.role === "admin");
-const creatingCustomer = ref(false);
+const selectedCustomerScopeCount = computed(() => customerFormAssignedUserIds.value.length);
+const customerFormAssignedUserIds = ref<number[]>([]);
 
 const tabTitleMap: Record<MasterTab, string> = {
   fixture: "治具",
   model: "機種",
   station: "站點",
-  owner: "負責人",
-  user: "使用者"
+  user: "使用者",
+  customer: "客戶"
 };
 
 const searchPlaceholder = computed(() => `搜尋${tabTitleMap[activeTab.value]}編號 / 名稱`);
@@ -98,8 +99,13 @@ const filteredStations = computed(() =>
   )
 );
 
-const filteredOwners = computed(() =>
-  owners.value.filter((row) => !keyword.value || row.name.toLowerCase().includes(keyword.value.toLowerCase()))
+const filteredCustomers = computed(() =>
+  customerRows.value.filter(
+    (row) =>
+      !keyword.value ||
+      row.code.toLowerCase().includes(keyword.value.toLowerCase()) ||
+      row.name.toLowerCase().includes(keyword.value.toLowerCase())
+  )
 );
 
 const filteredUsers = computed(() =>
@@ -120,7 +126,7 @@ const currentRows = computed(() => {
   if (activeTab.value === "fixture") return filteredFixtures.value;
   if (activeTab.value === "model") return filteredModels.value;
   if (activeTab.value === "station") return filteredStations.value;
-  if (activeTab.value === "owner") return filteredOwners.value;
+  if (activeTab.value === "customer") return filteredCustomers.value;
   return filteredUsers.value;
 });
 
@@ -128,7 +134,7 @@ const listTotalPages = computed(() => Math.max(1, Math.ceil(currentRows.value.le
 const pagedFixtureRows = computed(() => filteredFixtures.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
 const pagedModelRows = computed(() => filteredModels.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
 const pagedStationRows = computed(() => filteredStations.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
-const pagedOwnerRows = computed(() => filteredOwners.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
+const pagedCustomerRows = computed(() => filteredCustomers.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
 const pagedUserRows = computed(() => filteredUsers.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
 
 const emptyStateMessage = computed(() => {
@@ -141,14 +147,14 @@ const emptyStateMessage = computed(() => {
 const selectedFixture = computed(() => fixtures.value.find((row) => row.id === selectedFixtureId.value) ?? null);
 const selectedModel = computed(() => models.value.find((row) => row.id === selectedModelId.value) ?? null);
 const selectedStation = computed(() => stations.value.find((row) => row.id === selectedStationId.value) ?? null);
-const selectedOwner = computed(() => owners.value.find((row) => row.id === selectedOwnerId.value) ?? null);
 const selectedUser = computed(() => users.value.find((row) => row.id === selectedUserId.value) ?? null);
+const selectedCustomerRow = computed(() => customerRows.value.find((row) => row.id === selectedCustomerRowId.value) ?? null);
 const selectedDetailLabel = computed(() =>
   fallbackText(
-    selectedFixture.value?.code ||
+      selectedFixture.value?.code ||
       selectedModel.value?.code ||
       selectedStation.value?.code ||
-      selectedOwner.value?.name ||
+      selectedCustomerRow.value?.code ||
       selectedUser.value?.username
   )
 );
@@ -160,9 +166,9 @@ const selectedStatusBadge = computed(() => {
         ? selectedModel.value
         : activeTab.value === "station"
           ? selectedStation.value
-          : activeTab.value === "owner"
-            ? selectedOwner.value
-            : selectedUser.value;
+          : activeTab.value === "customer"
+            ? null
+          : selectedUser.value;
   if (!row) return null;
   return {
     label: row.is_active ? "啟用中" : "停用",
@@ -174,55 +180,34 @@ const summaryCards = computed(() => [
   { label: "治具總數", value: fixtures.value.length, meta: `啟用 ${fixtures.value.filter((row) => row.is_active).length}` },
   { label: "機種總數", value: models.value.length, meta: `啟用 ${models.value.filter((row) => row.is_active).length}` },
   { label: "站點總數", value: stations.value.length, meta: `啟用 ${stations.value.filter((row) => row.is_active).length}` },
-  { label: "負責人", value: owners.value.length, meta: `啟用 ${owners.value.filter((row) => row.is_active).length}` },
+  { label: "客戶", value: customerRows.value.length, meta: `可見 ${customerRows.value.length}` },
   { label: "使用者", value: users.value.length, meta: `啟用 ${users.value.filter((row) => row.is_active).length}` }
 ]);
-
-async function createCustomer(): Promise<void> {
-  if (!customerForm.value.code.trim() || !customerForm.value.name.trim()) {
-    pushToast("請輸入客戶代碼與名稱。", "warning");
-    return;
-  }
-  creatingCustomer.value = true;
-  try {
-    const customer = await api.createCustomer({
-      code: customerForm.value.code.trim(),
-      name: customerForm.value.name.trim()
-    });
-    customers.value = await api.listCustomers();
-    selectedCustomerId.value = customer.id;
-    customerForm.value.code = "";
-    customerForm.value.name = "";
-    pushToast(`已新增客戶：${customer.code}`, "success");
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "新增客戶失敗", "error");
-  } finally {
-    creatingCustomer.value = false;
-  }
-}
 
 async function loadData(): Promise<void> {
   loading.value = true;
   try {
     const customerId = selectedCustomerId.value ?? undefined;
-    const [f, m, s, o, u] = await Promise.all([
+    const [f, m, s, u, c, customerUsers] = await Promise.all([
       api.listFixtures(customerId),
       customerId ? api.listModels(customerId) : Promise.resolve([]),
       customerId ? api.listStations(customerId) : Promise.resolve([]),
-      api.listOwners(),
-      canManageUsers.value ? api.listUsers() : Promise.resolve([])
+      canManageUsers.value ? api.listUsers() : Promise.resolve([]),
+      api.listCustomers(),
+      customerId ? api.listCustomerUsers(customerId) : Promise.resolve([])
     ]);
     fixtures.value = f;
     models.value = m;
     stations.value = s;
-    owners.value = o;
     users.value = u;
+    customerRows.value = c;
+    customerAssignedUsers.value = customerUsers;
 
     selectedFixtureId.value = f.find((row) => row.id === selectedFixtureId.value)?.id ?? f[0]?.id ?? null;
     selectedModelId.value = m.find((row) => row.id === selectedModelId.value)?.id ?? m[0]?.id ?? null;
     selectedStationId.value = s.find((row) => row.id === selectedStationId.value)?.id ?? s[0]?.id ?? null;
-    selectedOwnerId.value = o.find((row) => row.id === selectedOwnerId.value)?.id ?? o[0]?.id ?? null;
     selectedUserId.value = u.find((row) => row.id === selectedUserId.value)?.id ?? u[0]?.id ?? null;
+    selectedCustomerRowId.value = c.find((row) => row.id === selectedCustomerRowId.value)?.id ?? c[0]?.id ?? null;
     if (!canManageUsers.value && activeTab.value === "user") {
       activeTab.value = "fixture";
     }
@@ -241,7 +226,7 @@ function syncEditorFromSelection(): void {
     fixtureForm.value = {
       code: row.code,
       name: row.name,
-      owner_id: row.owner_id,
+      responsible_user_id: row.responsible_user_id,
       storage_location: row.storage_location ?? "",
       min_stock_qty: row.min_stock_qty,
       description: row.description ?? "",
@@ -261,6 +246,13 @@ function syncEditorFromSelection(): void {
     stationForm.value = { code: row.code, name: row.name, is_active: row.is_active };
     return;
   }
+  if (activeTab.value === "customer") {
+    const row = selectedCustomerRow.value;
+    if (!row) return;
+    customerForm.value = { code: row.code, name: row.name };
+    customerFormAssignedUserIds.value = [...row.assigned_user_ids];
+    return;
+  }
   if (activeTab.value === "user") {
     const row = selectedUser.value;
     if (!row) return;
@@ -274,9 +266,6 @@ function syncEditorFromSelection(): void {
     };
     return;
   }
-  const row = selectedOwner.value;
-  if (!row) return;
-  ownerForm.value = { name: row.name, is_active: row.is_active };
 }
 
 function switchTab(tab: MasterTab): void {
@@ -293,7 +282,7 @@ function startCreate(): void {
     fixtureForm.value = {
       code: "",
       name: "",
-      owner_id: null,
+      responsible_user_id: null,
       storage_location: "",
       min_stock_qty: 0,
       description: "",
@@ -323,17 +312,35 @@ function startCreate(): void {
     };
     return;
   }
-  selectedOwnerId.value = null;
-  ownerForm.value = { name: "", is_active: true };
+  if (activeTab.value === "customer") {
+    selectedCustomerRowId.value = null;
+    customerForm.value = { code: "", name: "" };
+    customerFormAssignedUserIds.value = [];
+    return;
+  }
 }
 
 function selectRow(id: number): void {
   if (activeTab.value === "fixture") selectedFixtureId.value = id;
   if (activeTab.value === "model") selectedModelId.value = id;
   if (activeTab.value === "station") selectedStationId.value = id;
-  if (activeTab.value === "owner") selectedOwnerId.value = id;
+  if (activeTab.value === "customer") selectedCustomerRowId.value = id;
   if (activeTab.value === "user") selectedUserId.value = id;
   syncEditorFromSelection();
+}
+
+function toggleAssignedUser(userId: number, checked: boolean): void {
+  const current = new Set(customerFormAssignedUserIds.value);
+  if (checked) {
+    current.add(userId);
+  } else {
+    current.delete(userId);
+  }
+  customerFormAssignedUserIds.value = [...current].sort((a, b) => a - b);
+}
+
+function hasAssignedUser(userId: number): boolean {
+  return customerFormAssignedUserIds.value.includes(userId);
 }
 
 async function saveCurrent(): Promise<void> {
@@ -341,7 +348,7 @@ async function saveCurrent(): Promise<void> {
     (activeTab.value === "fixture" && selectedFixtureId.value !== null) ||
     (activeTab.value === "model" && selectedModelId.value !== null) ||
     (activeTab.value === "station" && selectedStationId.value !== null) ||
-    (activeTab.value === "owner" && selectedOwnerId.value !== null) ||
+    (activeTab.value === "customer" && selectedCustomerRowId.value !== null) ||
     (activeTab.value === "user" && selectedUserId.value !== null);
   try {
     let savedUserId: number | null = null;
@@ -353,7 +360,7 @@ async function saveCurrent(): Promise<void> {
       if (selectedFixtureId.value) {
         await api.updateFixture(selectedFixtureId.value, {
           customer_id: selectedCustomerId.value,
-          owner_id: fixtureForm.value.owner_id,
+          responsible_user_id: fixtureForm.value.responsible_user_id,
           code: fixtureForm.value.code.trim(),
           name: fixtureForm.value.name.trim(),
           storage_location: fixtureForm.value.storage_location.trim() || undefined,
@@ -364,7 +371,7 @@ async function saveCurrent(): Promise<void> {
       } else {
         await api.createFixture({
           customer_id: selectedCustomerId.value,
-          owner_id: fixtureForm.value.owner_id,
+          responsible_user_id: fixtureForm.value.responsible_user_id,
           code: fixtureForm.value.code.trim(),
           name: fixtureForm.value.name.trim(),
           storage_location: fixtureForm.value.storage_location.trim() || undefined,
@@ -410,12 +417,30 @@ async function saveCurrent(): Promise<void> {
           name: stationForm.value.name.trim()
         });
       }
+    } else if (activeTab.value === "customer") {
+      const assignedUserIds = [...customerFormAssignedUserIds.value].sort((a, b) => a - b);
+      if (selectedCustomerRowId.value) {
+        await api.updateCustomer(selectedCustomerRowId.value, {
+          code: customerForm.value.code.trim(),
+          name: customerForm.value.name.trim(),
+          assigned_user_ids: assignedUserIds
+        });
+      } else {
+        const customer = await api.createCustomer({
+          code: customerForm.value.code.trim(),
+          name: customerForm.value.name.trim(),
+          assigned_user_ids: assignedUserIds
+        });
+        selectedCustomerId.value = customer.id;
+        selectedCustomerRowId.value = customer.id;
+      }
     } else if (activeTab.value === "user") {
       if (selectedUserId.value) {
         const user = await api.updateUser(selectedUserId.value, {
           display_name: userForm.value.display_name.trim(),
           role: userForm.value.role,
-          is_active: userForm.value.is_active
+          is_active: userForm.value.is_active,
+          allowed_customer_ids: []
         });
         savedUserId = user.id;
       } else {
@@ -428,15 +453,10 @@ async function saveCurrent(): Promise<void> {
           password: userForm.value.password.trim(),
           display_name: userForm.value.display_name.trim(),
           role: userForm.value.role,
-          is_active: userForm.value.is_active
+          is_active: userForm.value.is_active,
+          allowed_customer_ids: []
         });
         savedUserId = user.id;
-      }
-    } else {
-      if (selectedOwnerId.value) {
-        await api.updateOwner(selectedOwnerId.value, { name: ownerForm.value.name.trim(), is_active: ownerForm.value.is_active });
-      } else {
-        await api.createOwner({ name: ownerForm.value.name.trim() });
       }
     }
     await loadData();
@@ -459,7 +479,7 @@ async function deactivateCurrent(): Promise<void> {
       }
       await api.updateFixture(selectedFixtureId.value, {
         customer_id: selectedCustomerId.value,
-        owner_id: fixtureForm.value.owner_id,
+        responsible_user_id: fixtureForm.value.responsible_user_id,
         code: fixtureForm.value.code.trim(),
         name: fixtureForm.value.name.trim(),
         storage_location: fixtureForm.value.storage_location.trim() || undefined,
@@ -489,16 +509,15 @@ async function deactivateCurrent(): Promise<void> {
         name: stationForm.value.name.trim(),
         is_active: false
       });
-    } else if (activeTab.value === "owner" && selectedOwnerId.value) {
-      await api.updateOwner(selectedOwnerId.value, { name: ownerForm.value.name.trim(), is_active: false });
     } else if (activeTab.value === "user" && selectedUserId.value) {
       await api.updateUser(selectedUserId.value, {
         display_name: userForm.value.display_name.trim(),
         role: userForm.value.role,
-        is_active: false
+        is_active: false,
+        allowed_customer_ids: []
       });
     } else {
-      pushToast("請先選擇要停用的資料。", "warning");
+      pushToast(activeTab.value === "customer" ? "客戶分頁不提供停用。":"請先選擇要停用的資料。", "warning");
       return;
     }
     await loadData();
@@ -703,31 +722,19 @@ onMounted(async () => {
         <button class="tab-btn" :class="{ active: activeTab === 'fixture' }" @click="switchTab('fixture')">治具資訊</button>
         <button class="tab-btn" :class="{ active: activeTab === 'model' }" @click="switchTab('model')">機種資訊</button>
         <button class="tab-btn" :class="{ active: activeTab === 'station' }" @click="switchTab('station')">站點資訊</button>
-        <button class="tab-btn" :class="{ active: activeTab === 'owner' }" @click="switchTab('owner')">負責人</button>
+        <button v-if="canManageCustomers" class="tab-btn" :class="{ active: activeTab === 'customer' }" @click="switchTab('customer')">客戶</button>
         <button v-if="canManageUsers" class="tab-btn" :class="{ active: activeTab === 'user' }" @click="switchTab('user')">使用者</button>
       </div>
 
-      <div class="toolbar-actions">
-        <button class="outline-btn" type="button" :disabled="loading" @click="downloadTemplate">下載範本</button>
-        <button class="outline-btn" type="button" :disabled="loading" @click="triggerImport">匯入 CSV</button>
-        <button class="outline-btn" type="button" :disabled="loading" @click="exportActiveCsv">匯出 CSV</button>
-        <button class="outline-btn" type="button" :disabled="loading" @click="downloadCurrent">匯出 JSON</button>
-        <input ref="importInput" type="file" accept=".csv,text/csv" class="hidden-input" @change="importCsv" />
+      <div class="toolbar-side">
+        <div class="toolbar-actions">
+          <button class="outline-btn" type="button" :disabled="loading" @click="downloadTemplate">下載範本</button>
+          <button class="outline-btn" type="button" :disabled="loading" @click="triggerImport">匯入 CSV</button>
+          <button class="outline-btn" type="button" :disabled="loading" @click="exportActiveCsv">匯出 CSV</button>
+          <button class="outline-btn" type="button" :disabled="loading" @click="downloadCurrent">匯出 JSON</button>
+          <input ref="importInput" type="file" accept=".csv,text/csv" class="hidden-input" @change="importCsv" />
+        </div>
       </div>
-
-      <form v-if="canManageCustomers" class="customer-create customer-admin" @submit.prevent="createCustomer">
-        <label>
-          <span>客戶代碼</span>
-          <input v-model="customerForm.code" name="customer_code" autocomplete="off" spellcheck="false" placeholder="例如：666…" />
-        </label>
-        <label>
-          <span>客戶名稱</span>
-          <input v-model="customerForm.name" name="customer_name" autocomplete="off" placeholder="例如：666-hmg…" />
-        </label>
-        <button class="primary-btn" type="submit" :disabled="creatingCustomer">
-          {{ creatingCustomer ? "新增中…" : "新增客戶" }}
-        </button>
-      </form>
     </section>
 
     <section class="content-grid">
@@ -754,19 +761,18 @@ onMounted(async () => {
             <label>
               <span>治具編號 *</span>
               <input v-model="fixtureForm.code" required />
-              <small class="field-hint">可輸入中文、英文、數字與符號，前後空白會自動移除。</small>
             </label>
             <label><span>治具名稱 *</span><input v-model="fixtureForm.name" required /></label>
             <label><span>儲位</span><input v-model="fixtureForm.storage_location" placeholder="A-01-03" /></label>
             <label><span>最低庫存</span><input v-model.number="fixtureForm.min_stock_qty" type="number" min="0" /></label>
-            <label class="full">
+            <label>
               <span>負責人</span>
-              <select v-model="fixtureForm.owner_id">
+              <select v-model="fixtureForm.responsible_user_id">
                 <option :value="null">未指定</option>
-                <option v-for="owner in owners.filter((row) => row.is_active)" :key="owner.id" :value="owner.id">{{ owner.name }}</option>
+                <option v-for="user in customerAssignedUsers.filter((row) => row.is_active)" :key="user.id" :value="user.id">{{ user.display_name }}</option>
               </select>
             </label>
-            <label class="full">
+            <label>
               <span>狀態</span>
               <select v-model="fixtureForm.is_active" :disabled="selectedFixtureId !== null">
                 <option :value="true">啟用中</option>
@@ -800,15 +806,32 @@ onMounted(async () => {
             </label>
           </template>
 
-          <template v-else-if="activeTab === 'owner'">
-            <label class="full"><span>負責人名稱 *</span><input v-model="ownerForm.name" required /></label>
-            <label class="full">
-              <span>狀態</span>
-              <select v-model="ownerForm.is_active">
-                <option :value="true">啟用中</option>
-                <option :value="false">停用</option>
-              </select>
-            </label>
+          <template v-else-if="activeTab === 'customer' && canManageCustomers">
+            <label><span>客戶代碼 *</span><input v-model="customerForm.code" required /></label>
+            <label><span>客戶名稱 *</span><input v-model="customerForm.name" required /></label>
+            <div class="full role-scope-panel">
+              <span>指派使用者</span>
+              <div class="customer-scope-panel">
+                <div class="customer-scope-summary">已選 {{ selectedCustomerScopeCount }} 位使用者</div>
+                <div class="customer-scope-list">
+                  <label v-for="user in users" :key="user.id" class="customer-scope-item">
+                    <input
+                      class="customer-scope-checkbox"
+                      :checked="hasAssignedUser(user.id)"
+                      type="checkbox"
+                      @change="toggleAssignedUser(user.id, ($event.target as HTMLInputElement).checked)"
+                    />
+                    <span class="customer-scope-indicator" :class="{ selected: hasAssignedUser(user.id) }" aria-hidden="true"></span>
+                    <span class="customer-scope-text">
+                      <strong>{{ user.display_name }}</strong>
+                      <small>{{ user.username }}</small>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <label class="full"><span>建立時間</span><input :value="selectedCustomerRow?.created_at ? new Date(selectedCustomerRow.created_at).toLocaleString('zh-TW') : '-'" disabled /></label>
+            <label class="full"><span>更新時間</span><input :value="selectedCustomerRow?.updated_at ? new Date(selectedCustomerRow.updated_at).toLocaleString('zh-TW') : '-'" disabled /></label>
           </template>
 
           <template v-else-if="canManageUsers">
@@ -830,13 +853,13 @@ onMounted(async () => {
 
           <UiFormActions
             class="form-actions-full"
-            :editing="selectedFixtureId !== null || selectedModelId !== null || selectedStationId !== null || selectedOwnerId !== null || selectedUserId !== null"
+            :editing="selectedFixtureId !== null || selectedModelId !== null || selectedStationId !== null || selectedCustomerRowId !== null || selectedUserId !== null"
             :saving="loading"
             submit-label="儲存"
             saving-label="儲存中..."
             cancel-label="取消"
             delete-label="停用"
-            :show-delete="true"
+            :show-delete="activeTab !== 'customer'"
             :state-text="selectedDetailLabel === '-' ? '新增模式' : '編輯模式'"
             @cancel="startCreate"
             @delete="deactivateCurrent"
@@ -859,7 +882,7 @@ onMounted(async () => {
             <option value="active">狀態：啟用中</option>
             <option value="inactive">狀態：停用</option>
           </select>
-          <button class="primary-btn" type="button" :disabled="loading" @click="startCreate">+ 新增{{ tabTitleMap[activeTab] }}</button>
+          <button class="primary-btn" type="button" :disabled="loading || (activeTab === 'customer' && !canManageCustomers)" @click="startCreate">+ 新增{{ tabTitleMap[activeTab] }}</button>
         </div>
 
         <div v-if="loading" class="loading-banner">資料載入中，請稍候...</div>
@@ -870,7 +893,7 @@ onMounted(async () => {
               <tr v-if="activeTab === 'fixture'"><th>治具編號</th><th>治具名稱</th><th>儲位</th><th>狀態</th></tr>
               <tr v-else-if="activeTab === 'model'"><th>機種編號</th><th>機種名稱</th><th>狀態</th></tr>
               <tr v-else-if="activeTab === 'station'"><th>站點編號</th><th>站點名稱</th><th>狀態</th></tr>
-              <tr v-else-if="activeTab === 'owner'"><th>負責人</th><th>狀態</th></tr>
+              <tr v-else-if="activeTab === 'customer'"><th>客戶代碼</th><th>客戶名稱</th></tr>
               <tr v-else><th>帳號</th><th>顯示名稱</th><th>角色</th><th>狀態</th></tr>
             </thead>
 
@@ -898,9 +921,9 @@ onMounted(async () => {
                 <td colspan="3" class="empty-cell">{{ emptyStateMessage }}</td>
               </tr>
             </tbody>
-            <tbody v-else-if="activeTab === 'owner'">
-              <tr v-for="row in pagedOwnerRows" :key="row.id" :class="{ selected: selectedOwnerId === row.id }" @click="selectRow(row.id)">
-                <td>{{ row.name }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
+            <tbody v-else-if="activeTab === 'customer'">
+              <tr v-for="row in pagedCustomerRows" :key="row.id" :class="{ selected: selectedCustomerRowId === row.id }" @click="selectRow(row.id)">
+                <td>{{ row.code }}</td><td>{{ row.name }}</td>
               </tr>
               <tr v-if="!loading && currentRows.length === 0">
                 <td colspan="2" class="empty-cell">{{ emptyStateMessage }}</td>
@@ -992,17 +1015,22 @@ onMounted(async () => {
 }
 
 .toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(420px, 0.8fr);
+  gap: 10px 14px;
+  align-items: start;
 }
 
 .tab-bar {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.toolbar-side {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
 }
 
 .tab-btn {
@@ -1032,14 +1060,17 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 
+.toolbar-actions {
+  justify-content: flex-end;
+}
+
 .customer-admin {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
   gap: 8px;
   align-items: end;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
 }
 
 .customer-admin label {
@@ -1159,6 +1190,105 @@ textarea {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 6px;
+}
+
+.customer-scope-note {
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #5d6d89;
+  background: #f7f9fd;
+}
+
+.role-scope-panel {
+  display: grid;
+  gap: 6px;
+}
+
+.customer-scope-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.customer-scope-summary {
+  color: #5d6d89;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.customer-scope-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  background: #fbfcff;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.customer-scope-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #d9e3f2;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.customer-scope-item:hover {
+  border-color: #b8c9e6;
+  background: #f8fbff;
+}
+
+.customer-scope-checkbox {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.customer-scope-indicator {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  flex: 0 0 16px;
+  border-radius: 999px;
+  border: 2px solid #d24b4b;
+  background: #fff;
+  box-shadow: inset 0 0 0 3px #fff;
+}
+
+.customer-scope-indicator.selected {
+  background: #d24b4b;
+}
+
+.customer-scope-text {
+  color: #22314a;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.customer-scope-text strong,
+.customer-scope-text small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.customer-scope-text strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.customer-scope-text small {
+  color: #5d6d89;
+  font-size: 11px;
 }
 
 .actions {
@@ -1340,12 +1470,15 @@ textarea {
   }
 
   .toolbar {
-    flex-direction: column;
-    align-items: stretch;
+    grid-template-columns: 1fr;
   }
 
   .list-toolbar,
   .detail-form {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-scope-list {
     grid-template-columns: 1fr;
   }
 
@@ -1376,6 +1509,10 @@ textarea {
   .toolbar-actions button,
   .action-group button {
     flex: 1 1 120px;
+  }
+
+  .toolbar-actions {
+    justify-content: flex-start;
   }
 
   .detail-form,

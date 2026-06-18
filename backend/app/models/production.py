@@ -6,9 +6,12 @@ from backend.app.models.base import Base, TimestampMixin
 
 class FixtureRequirement(Base, TimestampMixin):
     __tablename__ = "fixture_requirements"
-    __table_args__ = (UniqueConstraint("station_id", "fixture_id", name="uq_station_fixture_requirement"),)
+    __table_args__ = (
+        UniqueConstraint("model_id", "station_id", "fixture_id", name="uq_model_station_fixture_requirement"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    model_id: Mapped[int] = mapped_column(ForeignKey("machine_models.id", ondelete="CASCADE"), nullable=False, index=True)
     station_id: Mapped[int] = mapped_column(ForeignKey("stations.id", ondelete="CASCADE"), nullable=False, index=True)
     fixture_id: Mapped[int] = mapped_column(ForeignKey("fixtures.id", ondelete="CASCADE"), nullable=False, index=True)
     required_qty: Mapped[int] = mapped_column(Integer, nullable=False)

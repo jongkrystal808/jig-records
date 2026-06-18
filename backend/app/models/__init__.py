@@ -1,7 +1,7 @@
 from backend.app.models.base import Base
 from backend.app.models.audit import AuditLog
-from backend.app.models.inventory import FixtureSerial, FixtureStockLevel, FixtureStockSummary, MaterialTransaction, MaterialTransactionItem
-from backend.app.models.master import Customer, Fixture, MachineModel, ModelStation, Owner, Station, User
+from backend.app.models.inventory import FixtureStockLevel, FixtureStockSummary, MaterialTransaction, MaterialTransactionItem
+from backend.app.models.master import Customer, Fixture, MachineModel, ModelStation, Station, User, UserCustomer
 from backend.app.models.production import FixtureRequirement, MachineCapacitySummary
 
 __all__ = [
@@ -11,12 +11,11 @@ __all__ = [
     "Fixture",
     "MachineModel",
     "Station",
-    "Owner",
     "User",
+    "UserCustomer",
     "ModelStation",
     "MaterialTransaction",
     "MaterialTransactionItem",
-    "FixtureSerial",
     "FixtureStockLevel",
     "FixtureStockSummary",
     "FixtureRequirement",

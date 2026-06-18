@@ -98,6 +98,10 @@ class ProductionService:
         self.db.commit()
 
     def create_fixture_requirement(self, payload: FixtureRequirementCreate, actor: SessionContext | None = None):
+        model = self.repo.get_model(payload.model_id, customer_id=payload.customer_id)
+        if model is None:
+            raise ValueError(f"model {payload.model_id} not found")
+
         fixture = self.repo.get_fixture(payload.fixture_id, customer_id=payload.customer_id)
         if fixture is None:
             raise ValueError(f"fixture {payload.fixture_id} not found")
@@ -106,16 +110,21 @@ class ProductionService:
         if station is None:
             raise ValueError(f"station {payload.station_id} not found")
 
+        if self.repo.get_model_station(payload.model_id, payload.station_id, customer_id=payload.customer_id) is None:
+            raise ValueError("station is not mapped to the selected model")
+
         requirement = self.repo.create_or_update_requirement(
-            station_id=payload.station_id, fixture_id=payload.fixture_id, required_qty=payload.required_qty
+            model_id=payload.model_id,
+            station_id=payload.station_id,
+            fixture_id=payload.fixture_id,
+            required_qty=payload.required_qty,
         )
-        self.recalculate_station_capacity(payload.station_id, customer_id=payload.customer_id)
         self.audit.record(
             customer_id=payload.customer_id,
             entity_type="fixture_requirement",
-            entity_key=f"{station.code}->{fixture.code}",
+            entity_key=f"{model.code}->{station.code}->{fixture.code}",
             action="create",
-            summary=f"建立治具需求 {station.code} / {fixture.code} = {payload.required_qty}",
+            summary=f"建立治具需求 {model.code} / {station.code} / {fixture.code} = {payload.required_qty}",
             actor=actor,
         )
         self.db.commit()
@@ -126,7 +135,10 @@ class ProductionService:
         requirement = self.repo.get_requirement_by_id(requirement_id, customer_id=payload.customer_id)
         if requirement is None:
             raise ValueError(f"requirement {requirement_id} not found")
-        old_station_id = requirement.station_id
+
+        model = self.repo.get_model(payload.model_id, customer_id=payload.customer_id)
+        if model is None:
+            raise ValueError(f"model {payload.model_id} not found")
 
         fixture = self.repo.get_fixture(payload.fixture_id, customer_id=payload.customer_id)
         if fixture is None:
@@ -136,26 +148,31 @@ class ProductionService:
         if station is None:
             raise ValueError(f"station {payload.station_id} not found")
 
-        existing = self.repo.get_requirement(station_id=payload.station_id, fixture_id=payload.fixture_id)
+        if self.repo.get_model_station(payload.model_id, payload.station_id, customer_id=payload.customer_id) is None:
+            raise ValueError("station is not mapped to the selected model")
+
+        existing = self.repo.get_requirement(
+            model_id=payload.model_id,
+            station_id=payload.station_id,
+            fixture_id=payload.fixture_id,
+        )
         if existing is not None and existing.id != requirement_id:
             raise ValueError("fixture requirement already exists")
 
         try:
             updated = self.repo.update_requirement(
                 requirement,
+                model_id=payload.model_id,
                 station_id=payload.station_id,
                 fixture_id=payload.fixture_id,
                 required_qty=payload.required_qty,
             )
-            self.recalculate_station_capacity(payload.station_id, customer_id=payload.customer_id)
-            if old_station_id != payload.station_id:
-                self.recalculate_station_capacity(old_station_id, customer_id=payload.customer_id)
             self.audit.record(
                 customer_id=payload.customer_id,
                 entity_type="fixture_requirement",
-                entity_key=f"{station.code}->{fixture.code}",
+                entity_key=f"{model.code}->{station.code}->{fixture.code}",
                 action="update",
-                summary=f"更新治具需求 {station.code} / {fixture.code} = {payload.required_qty}",
+                summary=f"更新治具需求 {model.code} / {station.code} / {fixture.code} = {payload.required_qty}",
                 actor=actor,
             )
             self.db.commit()
@@ -169,17 +186,24 @@ class ProductionService:
         requirement = self.repo.get_requirement_by_id(requirement_id, customer_id=customer_id)
         if requirement is None:
             raise ValueError(f"requirement {requirement_id} not found")
-        station_id = requirement.station_id
+        model = self.repo.get_model(requirement.model_id, customer_id=customer_id)
         station = self.repo.get_station(requirement.station_id, customer_id=customer_id)
         fixture = self.repo.get_fixture(requirement.fixture_id, customer_id=customer_id)
         self.repo.delete_requirement(requirement)
-        self.recalculate_station_capacity(station_id, customer_id=customer_id)
         self.audit.record(
             customer_id=customer_id,
             entity_type="fixture_requirement",
-            entity_key=f"{station.code if station else station_id}->{fixture.code if fixture else requirement.fixture_id}",
+            entity_key=(
+                f"{model.code if model else requirement.model_id}->"
+                f"{station.code if station else requirement.station_id}->"
+                f"{fixture.code if fixture else requirement.fixture_id}"
+            ),
             action="delete",
-            summary=f"刪除治具需求 {station.code if station else station_id} / {fixture.code if fixture else requirement.fixture_id}",
+            summary=(
+                f"刪除治具需求 {model.code if model else requirement.model_id} / "
+                f"{station.code if station else requirement.station_id} / "
+                f"{fixture.code if fixture else requirement.fixture_id}"
+            ),
             actor=actor,
         )
         self.db.commit()
@@ -187,10 +211,22 @@ class ProductionService:
     def get_affected_station_ids_by_fixture(self, fixture_id: int, customer_id: int | None = None) -> list[int]:
         return self.repo.list_affected_station_ids_by_fixture(fixture_id, customer_id=customer_id)
 
-    def recalculate_station_capacity(self, station_id: int, customer_id: int | None = None) -> tuple[int, str | None]:
-        requirements = self.repo.list_station_requirements(station_id, customer_id=customer_id)
+    def get_affected_station_model_pairs_by_fixture(
+        self,
+        fixture_id: int,
+        customer_id: int | None = None,
+    ) -> list[tuple[int, int]]:
+        return self.repo.list_affected_station_model_pairs_by_fixture(fixture_id, customer_id=customer_id)
+
+    def recalculate_station_capacity(
+        self,
+        station_id: int,
+        *,
+        model_id: int,
+        customer_id: int | None = None,
+    ) -> tuple[int, str | None]:
+        requirements = self.repo.list_station_requirements(station_id, model_id=model_id, customer_id=customer_id)
         if not requirements:
-            self.repo.upsert_station_capacity(station_id=station_id, max_count=0, bottleneck_fixture_code=None)
             return 0, None
 
         min_capacity: int | None = None
@@ -209,36 +245,58 @@ class ProductionService:
                 bottleneck_code = fixture_code
 
         max_count = 0 if min_capacity is None else min_capacity
-        self.repo.upsert_station_capacity(station_id=station_id, max_count=max_count, bottleneck_fixture_code=bottleneck_code)
         return max_count, bottleneck_code
 
-    def get_station_capacity(self, station_id: int, customer_id: int | None = None) -> dict:
+    def get_station_capacity(self, station_id: int, model_id: int, customer_id: int | None = None) -> dict:
+        model = self.repo.get_model(model_id, customer_id=customer_id)
+        if model is None:
+            raise ValueError(f"model {model_id} not found")
         station = self.repo.get_station(station_id, customer_id=customer_id)
         if station is None:
             raise ValueError(f"station {station_id} not found")
+        if self.repo.get_model_station(model_id, station_id, customer_id=customer_id) is None:
+            raise ValueError("station is not mapped to the selected model")
 
-        max_count, bottleneck = self.recalculate_station_capacity(station_id, customer_id=customer_id)
-        current_open_count = self.repo.count_mapped_models_by_station(station_id, customer_id=customer_id)
+        max_count, bottleneck = self.recalculate_station_capacity(
+            station_id,
+            model_id=model_id,
+            customer_id=customer_id,
+        )
         self.db.commit()
         return {
+            "model_id": model.id,
+            "model_code": model.code,
             "station_id": station.id,
             "station_code": station.code,
             "station_name": station.name,
-            "current_open_station_count": current_open_count,
             "max_open_station_count": max_count,
             "bottleneck_fixture_code": bottleneck,
         }
 
-    def get_model_query(self, model_id: int, customer_id: int | None = None) -> dict:
+    def get_model_query(self, model_id: int, station_id: int | None = None, customer_id: int | None = None) -> dict:
         model = self.repo.get_model(model_id, customer_id=customer_id)
         if model is None:
             raise ValueError(f"model {model_id} not found")
 
         station_ids = self.repo.list_station_ids_by_model(model_id, customer_id=customer_id)
-        station_rows_raw = self.repo.list_stations_by_model(model_id, customer_id=customer_id)
+        if station_id is not None:
+            if station_id not in station_ids:
+                raise ValueError("station is not mapped to the selected model")
+            station_ids = [station_id]
+
+        station_id_set = set(station_ids)
+        station_rows_raw = [
+            row
+            for row in self.repo.list_stations_by_model(model_id, customer_id=customer_id)
+            if row["station_id"] in station_id_set
+        ]
         station_requirements: dict[int, list] = {}
         for station_id in station_ids:
-            station_requirements[station_id] = self.repo.list_station_requirements(station_id, customer_id=customer_id)
+            station_requirements[station_id] = self.repo.list_station_requirements(
+                station_id,
+                model_id=model_id,
+                customer_id=customer_id,
+            )
 
         fixture_rows: dict[int, dict] = {}
         station_requirement_rows: list[dict] = []
@@ -266,6 +324,8 @@ class ProductionService:
                 capacity = floor(stock_qty / req.required_qty)
                 station_requirement_rows.append(
                     {
+                        "model_id": model.id,
+                        "model_code": model.code,
                         "station_id": station_row["station_id"],
                         "station_code": station_row["station_code"],
                         "fixture_id": fixture.id,
@@ -319,7 +379,7 @@ class ProductionService:
 
         fixtures.sort(key=lambda item: item["fixture_code"])
         station_query_rows.sort(key=lambda item: item["station_code"])
-        model_max_open = 0 if not station_capacity_values else min(station_capacity_values)
+        model_max_open = 0 if not station_capacity_values else station_capacity_values[0]
 
         return {
             "model_id": model.id,
@@ -383,28 +443,30 @@ class ProductionService:
         requirements = self.repo.list_all_requirements(customer_id=customer_id)
         rows = []
         for row in requirements:
+            model = self.repo.get_model(row.model_id, customer_id=customer_id)
             station = self.repo.get_station(row.station_id, customer_id=customer_id)
             fixture = self.repo.get_fixture(row.fixture_id, customer_id=customer_id)
             rows.append(
                 {
+                    "model_code": model.code if model else "",
                     "station_code": station.code if station else "",
                     "fixture_code": fixture.code if fixture else "",
                     "required_qty": row.required_qty,
                 }
-        )
-        return render_csv_text(["station_code", "fixture_code", "required_qty"], rows)
+            )
+        return render_csv_text(["model_code", "station_code", "fixture_code", "required_qty"], rows)
 
     def list_fixture_requirements(self, customer_id: int | None = None) -> list[dict]:
         return self.repo.list_requirement_rows(customer_id=customer_id)
 
-    def list_station_requirements(self, station_id: int, customer_id: int | None = None) -> list[dict]:
+    def list_station_requirements(self, station_id: int, model_id: int, customer_id: int | None = None) -> list[dict]:
         rows = self.repo.list_requirement_rows(customer_id=customer_id)
-        return [row for row in rows if row["station_id"] == station_id]
+        return [row for row in rows if row["station_id"] == station_id and row["model_id"] == model_id]
 
     def fixture_requirement_template_csv(self) -> str:
         return render_csv_text(
-            ["station_code", "fixture_code", "required_qty"],
-            [{"station_code": "ST-01", "fixture_code": "C-00001", "required_qty": "2"}],
+            ["model_code", "station_code", "fixture_code", "required_qty"],
+            [{"model_code": "VPort-254", "station_code": "ST-01", "fixture_code": "C-00001", "required_qty": "2"}],
         )
 
     def import_fixture_requirements_csv(self, customer_id: int | None, payload: CsvImportPayload, actor: SessionContext | None = None) -> int:
@@ -412,22 +474,27 @@ class ProductionService:
             raise ValueError("customer_id is required")
         rows = parse_csv_bytes(payload.content.encode("utf-8"))
         imported_count = 0
-        touched_stations: set[int] = set()
         for row in rows:
+            model_code = row.get("model_code", "")
             station_code = row.get("station_code", "")
             fixture_code = row.get("fixture_code", "")
             required_qty = int(row.get("required_qty", "0") or "0")
-            if not station_code or not fixture_code or required_qty <= 0:
+            if not model_code or not station_code or not fixture_code or required_qty <= 0:
                 continue
+            model = self.repo.get_model_by_code(model_code, customer_id=customer_id)
             station = self.repo.get_station_by_code(station_code, customer_id=customer_id)
             fixture = self.repo.get_fixture_by_code(fixture_code, customer_id=customer_id)
-            if station is None or fixture is None:
-                raise ValueError(f"requirement not found: {station_code} / {fixture_code}")
-            self.repo.create_or_update_requirement(station_id=station.id, fixture_id=fixture.id, required_qty=required_qty)
-            touched_stations.add(station.id)
+            if model is None or station is None or fixture is None:
+                raise ValueError(f"requirement not found: {model_code} / {station_code} / {fixture_code}")
+            if self.repo.get_model_station(model.id, station.id, customer_id=customer_id) is None:
+                raise ValueError(f"mapping not found: {model_code} / {station_code}")
+            self.repo.create_or_update_requirement(
+                model_id=model.id,
+                station_id=station.id,
+                fixture_id=fixture.id,
+                required_qty=required_qty,
+            )
             imported_count += 1
-        for station_id in touched_stations:
-            self.recalculate_station_capacity(station_id, customer_id=customer_id)
         self.audit.record(
             customer_id=customer_id,
             entity_type="fixture_requirement",

@@ -17,6 +17,7 @@ class ModelStationRead(ORMModel):
 
 class FixtureRequirementCreate(BaseModel):
     customer_id: int
+    model_id: int
     station_id: int
     fixture_id: int
     required_qty: int = Field(gt=0)
@@ -24,6 +25,7 @@ class FixtureRequirementCreate(BaseModel):
 
 class FixtureRequirementRead(ORMModel):
     id: int
+    model_id: int
     station_id: int
     fixture_id: int
     required_qty: int
@@ -31,6 +33,8 @@ class FixtureRequirementRead(ORMModel):
 
 class FixtureRequirementListItemRead(ORMModel):
     id: int
+    model_id: int
+    model_code: str
     station_id: int
     station_code: str
     fixture_id: int
@@ -40,10 +44,11 @@ class FixtureRequirementListItemRead(ORMModel):
 
 
 class CapacityRead(ORMModel):
+    model_id: int
+    model_code: str
     station_id: int
     station_code: str
     station_name: str
-    current_open_station_count: int
     max_open_station_count: int
     bottleneck_fixture_code: str | None
 
@@ -68,6 +73,8 @@ class ModelQueryStationRead(ORMModel):
 
 
 class ModelQueryStationRequirementRead(ORMModel):
+    model_id: int
+    model_code: str
     station_id: int
     station_code: str
     fixture_id: int

@@ -4,6 +4,7 @@ export interface Customer {
   id: number;
   code: string;
   name: string;
+  assigned_user_ids: number[];
   created_at?: string;
   updated_at?: string;
 }
@@ -11,7 +12,7 @@ export interface Customer {
 export interface Fixture {
   id: number;
   customer_id: number;
-  owner_id: number | null;
+  responsible_user_id: number | null;
   code: string;
   name: string;
   storage_location: string | null;
@@ -38,18 +39,13 @@ export interface Station {
   is_active: boolean;
 }
 
-export interface Owner {
-  id: number;
-  name: string;
-  is_active: boolean;
-}
-
 export interface AppUser {
   id: number;
   username: string;
   display_name: string;
   role: string;
   is_active: boolean;
+  allowed_customer_ids: number[];
   created_at: string;
   updated_at: string;
 }
@@ -150,6 +146,7 @@ export interface ModelStation {
 
 export interface FixtureRequirement {
   id: number;
+  model_id: number;
   station_id: number;
   fixture_id: number;
   required_qty: number;
@@ -157,6 +154,8 @@ export interface FixtureRequirement {
 
 export interface FixtureRequirementListItem {
   id: number;
+  model_id: number;
+  model_code: string;
   station_id: number;
   station_code: string;
   fixture_id: number;
@@ -166,10 +165,11 @@ export interface FixtureRequirementListItem {
 }
 
 export interface StationCapacity {
+  model_id: number;
+  model_code: string;
   station_id: number;
   station_code: string;
   station_name: string;
-  current_open_station_count: number;
   max_open_station_count: number;
   bottleneck_fixture_code: string | null;
 }

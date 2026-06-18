@@ -1,50 +1,121 @@
 # Project Map Index
 
-這份是索引頁。實際查找請優先看：
+這份文件是索引頁。實際查找請優先看：
 
 - `frontend-map.md`
-  - 前端頁面、按鈕、API 對應
-  - 全域狀態、路由、樣式入口
-  - 哪個畫面要改哪個 `.vue`
+  - 前端頁面、互動、API 對應
+  - 共用元件 / 共用工具
+  - 改哪個畫面要進哪個 `.vue`
 
 - `backend-map.md`
   - 後端 router / service / repository / model / schema 對應
-  - 各資料表欄位目前被哪些頁面使用
-  - 改欄位時需要連動的後端層
+  - 各資料表欄位目前的使用面
+  - 改 API / 欄位時需要連動的後端層
 
 ## 最快定位
 
-- 改登入、客戶切換、頂欄、側邊欄：`frontend/src/App.vue`
-- 改查詢頁：`frontend/src/pages/SearchWorkspacePage.vue`
-- 改收退料頁：`frontend/src/pages/InventoryPage.vue`
-- 改資料維護頁：`frontend/src/pages/MasterPage.vue`
-- 改產能頁：`frontend/src/pages/ProductionPage.vue`
-- 改儲位/圖片頁：`frontend/src/pages/WarehousePage.vue`
-- 改前端 API 方法：`frontend/src/api.ts`
-- 改前端資料型別：`frontend/src/types.ts`
+### 前端
 
-- 改登入/使用者 API：`backend/app/routers/auth.py`
-- 改主資料 API：`backend/app/routers/master.py`
-- 改收退料/庫存 API：`backend/app/routers/inventory.py`
-- 改查詢 API：`backend/app/routers/search.py`
-- 改產能 API：`backend/app/routers/production.py`
-- 改儲位/圖片 API：`backend/app/routers/warehouse.py`
+- 改登入、訪客入口、側邊欄、customer picker、today summary、最近異動
+  - `frontend/src/App.vue`
 
-- 改資料表：`backend/app/models/*.py`
-- 改後端驗證 schema：`backend/app/schemas/*.py`
-- 改資料查寫：`backend/app/repositories/*.py`
-- 改業務規則：`backend/app/services/*.py`
-- 改舊 DB 補欄位：`backend/app/core/schema_patch.py`
+- 改查詢頁
+  - `frontend/src/pages/SearchWorkspacePage.vue`
+
+- 改收退料作業 / overview / 批次貼上匯入
+  - `frontend/src/pages/InventoryPage.vue`
+
+- 改資料維護頁
+  - `frontend/src/pages/MasterPage.vue`
+
+- 改產能頁
+  - `frontend/src/pages/ProductionPage.vue`
+  - `frontend/src/components/production/ProductionCapacityPanel.vue`
+
+- 改前端 API 方法
+  - `frontend/src/api.ts`
+
+- 改前端資料型別
+  - `frontend/src/types.ts`
+
+- 改全域狀態
+  - `frontend/src/appState.ts`
+
+- 改全域 toast
+  - `frontend/src/toastState.ts`
+
+- 改共用顯示 / 日期 / error parsing
+  - `frontend/src/utils/display.ts`
+  - `frontend/src/utils/date.ts`
+  - `frontend/src/utils/apiError.ts`
+
+### 後端
+
+- 改登入 / 使用者 API
+  - `backend/app/routers/auth.py`
+  - `backend/app/services/auth_service.py`
+
+- 改主資料 API
+  - `backend/app/routers/master.py`
+  - `backend/app/services/master_service.py`
+
+- 改收退料 / 庫存 API
+  - `backend/app/routers/inventory.py`
+  - `backend/app/services/inventory_service.py`
+
+- 改 production API
+  - `backend/app/routers/production.py`
+  - `backend/app/services/production_service.py`
+
+- 改查詢 API
+  - `backend/app/routers/search.py`
+
+- 改審計 API
+  - `backend/app/routers/audit.py`
+  - `backend/app/services/audit_service.py`
+
+- 改資料表
+  - `backend/app/models/*.py`
+
+- 改後端 schema
+  - `backend/app/schemas/*.py`
+
+- 改資料查寫
+  - `backend/app/repositories/*.py`
+
+- 改權限 / customer scope
+  - `backend/app/core/auth.py`
+
+- 改 migration / 啟動兼容
+  - `backend/alembic/versions/*.py`
+  - `backend/app/core/migrations.py`
+  - `backend/app/core/schema_patch.py`
+
+## 常見修改路徑
+
+- 改 API 欄位
+  - 先看 `frontend/src/types.ts`
+  - 再看 `frontend/src/api.ts`
+  - 再看 `backend-map.md` 對應 model / schema / service
+
+- 改 customer scope / 權限
+  - 先看 `backend/app/core/auth.py`
+  - 再看 `backend/app/routers/*`
+  - 前端顯示面通常在 `frontend/src/App.vue` 與 `frontend/src/router/index.ts`
+
+- 改 fixture / model / station 資料模型
+  - 先看 `backend-map.md` 的資料表欄位使用面
+  - 再同步 `frontend/src/types.ts`、`frontend/src/api.ts`、對應 page
+
+- 改批次貼上匯入
+  - inventory：`frontend/src/pages/InventoryPage.vue`
+  - production：`frontend/src/pages/ProductionPage.vue`
+  - 如需新主檔建立，還要同步 `frontend/src/api.ts` 與 `backend/app/routers/master.py`
 
 ## 編輯原則
 
-- 前端只改 `.ts`、`.vue`
+- 前端只改 `.ts`、`.vue`、`.css`
 - 不要改 `frontend/src/*.js`
 - 不要改 `frontend/src/**/*.js.map`
 - 不要改 `__pycache__`
-
-## 建議使用方式
-
-- 先到 `frontend-map.md` 找頁面與按鈕
-- 再到 `backend-map.md` 找對應 API 與資料表
-- 如果是欄位調整，直接看 `backend-map.md` 的「資料表欄位使用面」
+- 如果有欄位或 API 變更，記得一起更新 `task.md`、`ARCHITECTURE.md`、map 文件

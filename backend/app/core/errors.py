@@ -27,7 +27,7 @@ def register_error_handlers(app: FastAPI) -> None:
             code = "not_found"
         elif exc.status_code == status.HTTP_409_CONFLICT:
             code = "conflict"
-        elif exc.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY:
+        elif exc.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT:
             code = "validation_error"
         return JSONResponse(
             status_code=exc.status_code,
@@ -37,7 +37,7 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content=_build_error_payload("validation_error", "欄位驗證失敗", details=exc.errors()),
         )
 

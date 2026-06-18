@@ -97,9 +97,8 @@ def _ensure_default_customer(connection: Connection) -> None:
 
 
 def _patch_fixture_master(connection: Connection) -> None:
-    _add_column_if_missing(connection, "fixtures", "owner_id", "INTEGER NULL")
-    _add_column_if_missing(connection, "fixtures", "manage_type", "VARCHAR(32) NOT NULL DEFAULT 'datecode'")
     _add_column_if_missing(connection, "fixtures", "storage_location", "VARCHAR(120) NULL")
+    _replace_single_code_unique_with_customer_code_unique(connection, "fixtures", "uq_fixtures_customer_code")
 
 
 def _patch_machine_models(connection: Connection) -> None:
@@ -254,50 +253,28 @@ def _patch_material_transactions(connection: Connection) -> None:
 
 
 def _patch_material_transaction_items(connection: Connection) -> None:
-    _add_column_if_missing(connection, "material_transaction_items", "manage_type", "VARCHAR(32) NULL")
     _add_column_if_missing(
         connection,
         "material_transaction_items",
         "ownership_type",
         "VARCHAR(32) NOT NULL DEFAULT 'self_purchased'",
     )
-    _add_column_if_missing(connection, "material_transaction_items", "datecode", "VARCHAR(80) NULL")
-    _add_column_if_missing(connection, "material_transaction_items", "serial_number", "VARCHAR(120) NULL")
+    _add_column_if_missing(connection, "material_transaction_items", "identifier", "VARCHAR(120) NULL")
     _add_column_if_missing(connection, "material_transaction_items", "quantity", "INTEGER NULL")
     _add_column_if_missing(connection, "material_transaction_items", "note", "VARCHAR(255) NULL")
 
-    if _column_exists(connection, "material_transaction_items", "manage_type"):
-        if connection.dialect.name == "sqlite":
-            rows = connection.execute(
-                text(
-                    """
-                    SELECT ti.id AS id, COALESCE(f.manage_type, 'datecode') AS manage_type
-                    FROM material_transaction_items ti
-                    JOIN fixtures f ON f.id = ti.fixture_id
-                    WHERE ti.manage_type IS NULL OR ti.manage_type = ''
-                    """
-                )
-            ).all()
-            for row in rows:
-                connection.execute(
-                    text("UPDATE material_transaction_items SET manage_type = :manage_type WHERE id = :id"),
-                    {"manage_type": row.manage_type, "id": int(row.id)},
-                )
-        else:
+    if _column_exists(connection, "material_transaction_items", "identifier"):
+        if _column_exists(connection, "material_transaction_items", "datecode"):
+            connection.execute(
+                text("UPDATE material_transaction_items SET identifier = datecode WHERE identifier IS NULL AND datecode IS NOT NULL")
+            )
+        if _column_exists(connection, "material_transaction_items", "serial_number"):
             connection.execute(
                 text(
-                    """
-                    UPDATE material_transaction_items ti
-                    JOIN fixtures f ON f.id = ti.fixture_id
-                    SET ti.manage_type = COALESCE(f.manage_type, 'datecode')
-                    WHERE ti.manage_type IS NULL OR ti.manage_type = ''
-                    """
+                    "UPDATE material_transaction_items SET identifier = serial_number "
+                    "WHERE identifier IS NULL AND serial_number IS NOT NULL"
                 )
             )
-        try:
-            connection.execute(text("ALTER TABLE material_transaction_items MODIFY COLUMN manage_type VARCHAR(32) NOT NULL"))
-        except Exception:
-            pass
 
     if _column_exists(connection, "material_transaction_items", "quantity"):
         if _column_exists(connection, "material_transaction_items", "qty"):
@@ -323,12 +300,49 @@ def _patch_material_transaction_items(connection: Connection) -> None:
             pass
 
 
+def _patch_fixture_requirements_model_scope(connection: Connection) -> None:
+    inspector = inspect(connection)
+    if "fixture_requirements" not in inspector.get_table_names():
+        return
+
+    if not _column_exists(connection, "fixture_requirements", "model_id"):
+        connection.execute(text("ALTER TABLE fixture_requirements ADD COLUMN model_id INTEGER NULL"))
+
+    if _column_exists(connection, "fixture_requirements", "model_id"):
+        connection.execute(
+            text(
+                """
+                UPDATE fixture_requirements
+                SET model_id = (
+                    SELECT MIN(model_stations.model_id)
+                    FROM model_stations
+                    WHERE model_stations.station_id = fixture_requirements.station_id
+                )
+                WHERE model_id IS NULL
+                """
+            )
+        )
+        try:
+            connection.execute(text("CREATE INDEX ix_fixture_requirements_model_id ON fixture_requirements(model_id)"))
+        except Exception:
+            pass
+
+    _drop_object_if_exists(connection, "fixture_requirements", "uq_station_fixture_requirement", is_constraint=True)
+    try:
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX uq_model_station_fixture_requirement "
+                "ON fixture_requirements(model_id, station_id, fixture_id)"
+            )
+        )
+    except Exception:
+        pass
+
+
 def run_schema_patches(connection: Connection) -> None:
     # Backfill columns for environments that started before explicit migrations were added.
     _add_column_if_missing(connection, "machine_models", "is_active", "BOOLEAN NOT NULL DEFAULT 1")
     _add_column_if_missing(connection, "stations", "is_active", "BOOLEAN NOT NULL DEFAULT 1")
-    _add_column_if_missing(connection, "owners", "is_active", "BOOLEAN NOT NULL DEFAULT 1")
-    _add_column_if_missing(connection, "storage_locations", "is_active", "BOOLEAN NOT NULL DEFAULT 1")
     _ensure_default_customer(connection)
     _patch_fixture_customer(connection)
     _patch_fixture_master(connection)
@@ -336,3 +350,4 @@ def run_schema_patches(connection: Connection) -> None:
     _patch_stations(connection)
     _patch_material_transactions(connection)
     _patch_material_transaction_items(connection)
+    _patch_fixture_requirements_model_scope(connection)

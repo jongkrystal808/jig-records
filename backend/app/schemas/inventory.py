@@ -25,6 +25,7 @@ class StockTransactionCreate(BaseModel):
     customer_id: int
     created_by: str = Field(min_length=1, max_length=120)
     occurred_at: datetime | None = None
+    transaction_no: str | None = Field(default=None, min_length=1, max_length=64)
     note: str | None = None
     items: list[StockTransactionItemInput] = Field(min_length=1)
 

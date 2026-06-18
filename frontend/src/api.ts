@@ -10,7 +10,6 @@ import type {
   MaterialTransaction,
   ModelQuery,
   ModelStation,
-  Owner,
   SearchResult,
   Station,
   StationCapacity,
@@ -25,6 +24,18 @@ const API_ROOT = "/api/v2";
 
 export function fixtureImageUrlByCode(fixtureCode: string): string {
   return `${API_ROOT}/master/fixtures/${encodeURIComponent(fixtureCode)}/image`;
+}
+
+export async function fetchFixtureImageObjectUrl(fixtureCode: string): Promise<string> {
+  const headers = buildHeaders(undefined, true);
+  const response = await fetch(fixtureImageUrlByCode(fixtureCode), {
+    headers
+  });
+  if (!response.ok) {
+    throw new Error(extractErrorMessage(await response.text(), `Request failed: ${response.status}`));
+  }
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
 }
 
 function buildHeaders(init?: RequestInit, withAuth = true): Headers {
@@ -82,14 +93,17 @@ export const api = {
     request<AuthSession>("/auth/login", { method: "POST", body: JSON.stringify(payload) }, false),
   guestEntry: () => request<AuthSession>("/auth/guest", { method: "POST" }, false),
   listUsers: () => request<AppUser[]>("/auth/users"),
-  createUser: (payload: { username: string; password: string; display_name: string; role: string; is_active: boolean }) =>
+  listCustomerUsers: (customerId: number) => request<AppUser[]>(`/master/customers/${customerId}/users`),
+  createUser: (payload: { username: string; password: string; display_name: string; role: string; is_active: boolean; allowed_customer_ids: number[] }) =>
     request<AppUser>("/auth/users", { method: "POST", body: JSON.stringify(payload) }),
-  updateUser: (userId: number, payload: { display_name: string; role: string; is_active: boolean }) =>
+  updateUser: (userId: number, payload: { display_name: string; role: string; is_active: boolean; allowed_customer_ids: number[] }) =>
     request<AppUser>(`/auth/users/${userId}`, { method: "PUT", body: JSON.stringify(payload) }),
   resetUserPassword: (userId: number, password: string) =>
     request<void>(`/auth/users/${userId}/reset-password`, { method: "POST", body: JSON.stringify({ password }) }),
-  createCustomer: (payload: { code: string; name: string }) =>
+  createCustomer: (payload: { code: string; name: string; assigned_user_ids?: number[] }) =>
     request<Customer>("/master/customers", { method: "POST", body: JSON.stringify(payload) }),
+  updateCustomer: (customerId: number, payload: { code: string; name: string; assigned_user_ids?: number[] }) =>
+    request<Customer>(`/master/customers/${customerId}`, { method: "PUT", body: JSON.stringify(payload) }),
   listFixtures: (customerId?: number) =>
     request<Fixture[]>(customerId ? `/master/fixtures?customer_id=${customerId}` : "/master/fixtures"),
   exportFixturesCsv: (customerId: number) => requestText(`/master/fixtures/export?customer_id=${customerId}`),
@@ -101,7 +115,7 @@ export const api = {
     }),
   createFixture: (payload: {
     customer_id: number;
-    owner_id?: number | null;
+    responsible_user_id?: number | null;
     code: string;
     name: string;
     storage_location?: string | null;
@@ -111,7 +125,7 @@ export const api = {
     request<Fixture>("/master/fixtures", { method: "POST", body: JSON.stringify(payload) }),
   updateFixture: (fixtureId: number, payload: {
     customer_id: number;
-    owner_id?: number | null;
+    responsible_user_id?: number | null;
     code: string;
     name: string;
     storage_location?: string | null;
@@ -154,11 +168,6 @@ export const api = {
     request<Station>("/master/stations", { method: "POST", body: JSON.stringify(payload) }),
   updateStation: (stationId: number, payload: { customer_id: number; code: string; name: string; is_active: boolean }) =>
     request<Station>(`/master/stations/${stationId}`, { method: "PUT", body: JSON.stringify(payload) }),
-  listOwners: () => request<Owner[]>("/master/owners"),
-  createOwner: (payload: { name: string }) =>
-    request<Owner>("/master/owners", { method: "POST", body: JSON.stringify(payload) }),
-  updateOwner: (ownerId: number, payload: { name: string; is_active: boolean }) =>
-    request<Owner>(`/master/owners/${ownerId}`, { method: "PUT", body: JSON.stringify(payload) }),
   listStock: (customerId?: number) => request<StockSummary[]>(customerId ? `/inventory/stock?customer_id=${customerId}` : "/inventory/stock"),
   listAlerts: (customerId?: number) =>
     request<Array<{ fixture_id: number; fixture_code: string; fixture_name: string; stock_qty: number; min_stock_qty: number; stock_status: "low_stock" | "out_of_stock" }>>(
@@ -232,11 +241,11 @@ export const api = {
       body: JSON.stringify({ filename, content })
       }
   ),
-  createFixtureRequirement: (payload: { customer_id: number; station_id: number; fixture_id: number; required_qty: number }) =>
+  createFixtureRequirement: (payload: { customer_id: number; model_id: number; station_id: number; fixture_id: number; required_qty: number }) =>
     request<FixtureRequirement>("/production/fixture-requirements", { method: "POST", body: JSON.stringify(payload) }),
   updateFixtureRequirement: (
     requirementId: number,
-    payload: { customer_id: number; station_id: number; fixture_id: number; required_qty: number }
+    payload: { customer_id: number; model_id: number; station_id: number; fixture_id: number; required_qty: number }
   ) => request<FixtureRequirement>(`/production/fixture-requirements/${requirementId}`, { method: "PUT", body: JSON.stringify(payload) }),
   listFixtureRequirements: (customerId?: number) =>
     request<FixtureRequirementListItem[]>(customerId ? `/production/fixture-requirements?customer_id=${customerId}` : "/production/fixture-requirements"),
@@ -247,10 +256,17 @@ export const api = {
         : `/production/fixture-requirements/${requirementId}`,
       { method: "DELETE" }
     ),
-  getStationCapacity: (stationId: number, customerId?: number) =>
+  getStationCapacity: (stationId: number, modelId: number, customerId?: number) =>
     request<StationCapacity>(
-      customerId ? `/production/capacity/stations/${stationId}?customer_id=${customerId}` : `/production/capacity/stations/${stationId}`
+      customerId
+        ? `/production/capacity/stations/${stationId}?model_id=${modelId}&customer_id=${customerId}`
+        : `/production/capacity/stations/${stationId}?model_id=${modelId}`
     ),
-  getModelQuery: (modelId: number, customerId?: number) =>
-    request<ModelQuery>(customerId ? `/production/models/${modelId}/query?customer_id=${customerId}` : `/production/models/${modelId}/query`),
+  getModelQuery: (modelId: number, stationId?: number, customerId?: number) => {
+    const params = new URLSearchParams();
+    if (stationId) params.set("station_id", String(stationId));
+    if (customerId) params.set("customer_id", String(customerId));
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return request<ModelQuery>(`/production/models/${modelId}/query${suffix}`);
+  },
 };

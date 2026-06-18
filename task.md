@@ -13,31 +13,30 @@
 - [x] 前端新增全域客戶切換下拉
 - [x] 前端在各模組請求帶入 `customer_id`
 - [x] 新增 `users` 表（帳號、密碼雜湊、名稱、角色、啟用狀態）
+- [x] 新增 `user_customers` 表，維護一般使用者可見客戶清單
 - [x] 新增 `POST /auth/login`、`POST /auth/guest`、`GET /auth/users`
 - [x] 前端新增登入頁，支援「帳密登入」與「訪客入口」
+- [x] `admin` 可看全部客戶且可編輯全部資料
+- [x] `guest` 可看全部客戶但不可編輯，且不可進入 `資料維護`
+- [x] `user` 只能看授權客戶，客戶指派改由客戶分頁維護
+- [x] `user` 可編輯授權客戶下的業務資料，但不可管理客戶與使用者
 
 ### 1) 資料維護停用能力一致化
 - [x] `machine_models` 加入 `is_active`
 - [x] `stations` 加入 `is_active`
-- [x] `owners` 加入 `is_active`
 - [x] 後端 `PUT` API 支援 `is_active`
-- [x] 前端 `資料維護` 頁面可對治具/機種/站點/負責人執行停用
+- [x] 前端 `資料維護` 頁面可對治具/機種/站點執行停用
 
-### 2) Warehouse 倉庫主卡改為真實資料
-- [x] 新增 `warehouse_profiles`（代碼、名稱、狀態、備註）
-- [x] 新增 `GET /warehouse/profile`
-- [x] 新增 `PUT /warehouse/profile`
-- [x] 前端 `Warehouse 介面` 改為讀取/更新 profile
-
-### 3) 儲位狀態改為正式欄位
-- [x] `storage_locations` 加入 `is_active`
-- [x] location create/update/list schema 帶入 `is_active`
-- [x] 前端儲位狀態改為讀寫 `is_active`，移除 description 推測狀態
+### 2) 儲位策略收斂
+- [x] 治具儲位只保留 `fixtures.storage_location`
+- [x] 移除 `warehouse_profiles`、`storage_locations`、`fixture_location_assignments`、`fixture_images`
+- [x] 查詢與主檔統一使用文字儲位顯示
 
 ### 4) 產能頁目前開站數改為後端計算
-- [x] `CapacityRead` 增加 `current_open_station_count`
-- [x] `get_station_capacity` 回傳真實值（先以該站綁定機種數作為目前開站數）
+- [x] `get_station_capacity` 以 `model_id + station_id` 為查詢範圍，回傳真實最大開站量
 - [x] 前端 `產能` 頁改用 API 回傳值，移除 hardcoded `0`
+- [x] `current_open_station_count` 已正式退場，不再出現在 production schema / API / frontend type
+- [x] 產能頁改為只呈現「指定機種 + 指定站點」的單站獨立最大開站量語意
 
 ### 5) 查詢頁展示欄位去除示意值
 - [x] 移除 `---` 類示意值
@@ -46,7 +45,7 @@
 
 ### 6) Schema 演進機制（無 migration 下的保底）
 - [x] 新增 startup schema patch（針對現有 DB 自動補欄位）
-- [x] 補 `is_active` 新欄位 patch（model/station/owner/location）
+- [x] 補 `is_active` 新欄位 patch（model/station 等既有主檔）
 - [x] 不破壞既有資料
 
 ## Validation Checklist
@@ -56,7 +55,6 @@
 - [x] `python -m compileall backend/app` pass
 - [x] `npm run build` pass
 - [x] `master` 可新增/編輯/停用四類主檔
-- [x] `warehouse` 可編輯倉庫主卡、儲位狀態、綁定解除、圖片操作
 - [x] `production` 的目前開站數非固定值
 - [x] `search` 不再出現示意字串 `---`
 
@@ -82,6 +80,7 @@
 ### 9) 治具主檔擴充
 - [x] 治具主檔新增「庫存水位」欄位（可選填）
 - [x] 治具主檔新增「負責人」欄位（可選填）
+- [x] 負責人來源改為「該客戶已指派使用者」
 - [x] 治具命名規則改為：不可符號開頭，其餘不限制
 
 ### 10) 收退料資料模型調整
@@ -116,8 +115,8 @@
 - 所有收退料明細都必填 `ownership_type`
 
 ### 11) 儲位與圖片整合
-- [x] 治具儲位頁可直接填寫 / 維護治具儲位
-- [x] 治具儲位頁可直接維護治具圖片
+- [x] 治具主檔可直接填寫 / 維護文字儲位
+- [x] 查詢頁可依治具代碼讀取檔案式圖片預覽
 
 ### 12) Review / Hardening Backlog
 - [x] 密碼雜湊改為帶 salt 的 PBKDF2，並相容舊的 sha256 密碼資料
@@ -126,9 +125,9 @@
 - [x] CSV 匯入改為批次原子操作，避免部分成功、部分失敗
 - [x] 今日統計改用本地日期邏輯，並避免只看最近 50 筆
 - [x] 忽略前端生成檔與 build 產物，降低 repo 雜訊
-- [ ] 正式導入 Alembic migration，逐步移除 runtime schema patch
-- [ ] 為登入 / 角色權限補上真正的後端授權機制
-- [ ] 補上 backend 與 frontend 的測試覆蓋，至少涵蓋 auth / inventory / capacity / CSV
+- [x] 正式導入 Alembic migration，逐步移除 runtime schema patch
+- [x] 為登入 / 角色權限補上真正的後端授權機制
+- [x] 補上 backend 與 frontend 的測試覆蓋，至少涵蓋 auth / inventory / capacity / CSV
 
 ### 13) 優先級優化待辦
 
@@ -156,7 +155,7 @@
 - [ ] 將 `InventoryPage`、`MasterPage`、`ProductionPage` 等大型頁面再拆小，降低後續維護成本
 - [x] 補更完整的審計資訊，例如誰在什麼時間修改了哪些主資料
 - [x] 若資料量持續增加，針對查詢與列表頁開始規劃分頁、索引與查詢效能優化
-- [ ] 重新整理首頁資訊層級，讓客戶資訊、登入狀態、今日統計、導航區更清楚
+- [x] 重新整理首頁資訊層級，讓客戶資訊、登入狀態、今日統計、導航區更清楚
 
 ### 14) 前端布局優化與 UX 深度改良 (針對 100% 縮放全可視化)
 
@@ -199,6 +198,50 @@
 - [x] 查詢頁改成內容區內滾動，避免資訊超出視窗
 - [x] 查詢頁移除重複治具資訊欄位
 - [x] 查詢頁治具主檔展示移除 `manage_type`
+- [x] 查詢頁治具關聯機種改為直接使用 `fixture_requirements.model_id`，不再從站點反推機種
+- [x] 查詢頁治具站點詳細改為顯示 `機種 + 站點 + 所需數量`
+
+### 16) Production 多機種共站模型定案
+- [x] `fixture_requirements` 正式改為 `model_id + station_id + fixture_id`
+- [x] 同一站點可被多機種共用，但每個機種在該站點的治具需求各自獨立
+- [x] `get_station_capacity` 強制要求 `model_id`
+- [x] `get_model_query` 支援 `station_id`
+- [x] `Fixture Requirement` create/update/import/export 全面帶入 `model_id`
+- [x] 產能頁站點下拉只顯示當前機種已綁定站點
+- [x] 切換機種後，站點選擇會自動收斂到該機種可用站點
+- [x] 查詢頁與產能頁已移除 `station -> model` 執行期反推邏輯
+
+### 17) Migration / 啟動穩定性修補
+- [x] 新增 Alembic migration `0004_model_station_scope`
+- [x] 新增 Alembic migration `0005_remove_warehouse_tables`
+- [x] 新增 Alembic migration `0006_identifier_cleanup`
+- [x] 新增 Alembic migration `0007_user_customer_scope`
+- [x] 新增 Alembic migration `0008_fixture_responsible_user`
+- [x] 新增 Alembic migration `0009_remove_owners_and_scope_fixture_code`
+- [x] 修正舊 revision id 過長導致 `alembic_version.version_num` 寫入失敗問題
+- [x] 啟動前自動放寬 MySQL/MariaDB `alembic_version.version_num` 欄位
+- [x] 啟動前自動將舊 revision id `0004_model_station_fixture_requirements` 正規化為 `0004_model_station_scope`
+- [x] `fixtures.code` 改為 `(customer_id, code)` 唯一鍵，允許不同客戶使用相同治具代碼
+- [x] 舊 `owners` 資料表正式移除，責任人收斂為 `fixtures.responsible_user_id`
+- [x] Docker 環境已驗證 migration 可正常完成且 API 可正常啟動
+
+### 18) 測試補強
+- [x] 新增 migration preflight 測試
+- [x] 新增 production service 測試，覆蓋同站點多機種共用情境
+- [x] 新增 production API 測試，驗證同站點多機種共用時 capacity / query 不互相污染
+- [x] 新增 auth / customer scope 測試，驗證 `admin` / `guest` / `user` 三種角色行為
+
+### 19) 角色與客戶權限定案
+- [x] `admin` 不限制客戶可視範圍，且可編輯全部資料
+- [x] `guest` 不限制客戶可視範圍，但只能讀取
+- [x] `guest` 不顯示 `資料維護` 導航，且不可直接進入 `/master`
+- [x] `user` 可先建立帳號，再由客戶分頁指派可見客戶
+- [x] `user` 可編輯 `fixtures / models / stations`
+- [x] `user` 不可管理 `customers / users`
+- [x] 所有 customer-scoped API 對 `user` 強制檢查 `customer_id`
+- [x] 使用者分頁不再維護客戶勾選；改由客戶分頁維護 `assigned_user_ids`
+- [x] 客戶已指派使用者同時作為該客戶治具的負責人候選名單
+- [x] 負責人分頁已移除
 
 ## Update Log
 
@@ -274,8 +317,31 @@
 - 已把 `datecode / serial_number` 對外概念統一為單一 `identifier`。
 - 已更新前端 API、型別與頁面，只收發 `identifier`，不再使用 `manage_type` / `serial_number`。
 - 已更新後端 inventory / master / search 的 schema、router、service、repository，對外不再暴露 `manage_type` / `serial_number`。
-- 已保留資料庫內舊欄位作為相容層，避免直接破壞既有資料；目前統一發生在 UI 與 API surface。
+- 已於後續 migration 正式移除 `manage_type / datecode / serial_number` 與 `fixture_serials`，資料庫也改成單一 `identifier`。
 - 已重構查詢頁為 `治具 / 機種` 兩種模式，並加入固定統計方格。
 - 已讓查詢頁改為面板內滾動，避免內容超出頁面高度。
 - 已依圖片移除查詢頁右側重複的治具名稱卡片。
 - 已驗證 `npm run build` 與 `python -m compileall backend/app` 通過。
+
+### 2026-06-15
+
+- 已將 production requirement 的正式資料模型定案為 `model_id + station_id + fixture_id`。
+- 已將 production 展開與計算邏輯定案為：
+  - `機種 -> 機種已綁定站點 -> 該機種該站點的治具需求`
+- 已修正 production 頁站點選擇邏輯，切換機種後不再保留無效 `station_id`。
+- 已修正 production 頁 requirement 清單過濾，改為 `model_id + station_id`，不再只看 `station_id`。
+- 已修正查詢頁治具關聯機種與站點詳細，不再從站點反推機種。
+- 已將 production capacity UI 改為單站獨立語意，不再展示誤導性的「目前開站 / 剩餘開站」資訊。
+- 已將 `current_open_station_count` 從 backend schema / service、frontend types / page props / UI 中正式移除。
+- 已修正 Alembic `0004` revision id 過長造成的 MySQL `alembic_version.version_num` 寫入失敗問題。
+- 已將 migration revision 正式收斂為 `0004_model_station_scope`，並補上 legacy revision alias normalization。
+- 已驗證 docker compose 下的 API 與 Web 可正常重建與啟動。
+- 已修正批次收退料自定義單號不生效問題，後端現在會保留使用者輸入的 `transaction_no`。
+- 已新增 migration 測試與 production API / service 測試，特別覆蓋「同站點多機種共用」情境。
+- 已移除 warehouse 相關資料表，正式收斂為 `fixtures.storage_location` 單一文字儲位策略。
+- 已新增 Alembic `0006_identifier_cleanup`，將 `material_transaction_items` 正式改為 `identifier` 欄位，並移除 legacy `manage_type / datecode / serial_number` 與 `fixture_serials`。
+- 已將客戶可見範圍維護入口從使用者分頁移到客戶分頁，改由 `assigned_user_ids` 管理 `user_customers`。
+- 已將治具負責人收斂為客戶已指派使用者，並移除前端負責人分頁與對應 API 使用。
+- 已新增 Alembic `0007_user_customer_scope`，將一般使用者的客戶可見範圍正式落到 `user_customers`。
+- 已新增 Alembic `0008_fixture_responsible_user`，在 `fixtures` 補上 `responsible_user_id`。
+- 已新增 Alembic `0009_remove_owners_and_scope_fixture_code`，移除 `owners` 並將治具代碼唯一鍵收斂為 `(customer_id, code)`。

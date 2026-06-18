@@ -1,11 +1,12 @@
 # Frontend Map
 
-這份文件回答兩件事：
+這份文件回答三件事：
 
-- 每個頁面/按鈕對應哪個 API
-- 要改畫面時應該進哪個檔案
+- 每個頁面 / 主要操作對應哪個 API
+- 要改畫面或互動時應該進哪個檔案
+- 目前有哪些共用元件 / 共用工具已經抽出
 
-## 入口檔
+## 入口檔與全域骨架
 
 - `frontend/src/main.ts`
   - Vue 啟動入口
@@ -15,19 +16,20 @@
   - 路由表
   - `/search` -> `SearchWorkspacePage.vue`
   - `/inventory` -> `InventoryPage.vue`
+  - `/inventory/overview` -> `InventoryPage.vue`
   - `/master` -> `MasterPage.vue`
   - `/production` -> `ProductionPage.vue`
+  - guest 進 `/master` 會被導回 `/search`
 
 - `frontend/src/App.vue`
   - 全域 shell
-  - 登入畫面
-  - 頂欄
+  - 登入畫面 / 訪客入口
   - 左側導覽
-  - 客戶切換
-  - 新增客戶
-  - 今日統計
+  - customer picker
+  - today summary
+  - 最近異動
   - 全域 toast 顯示
-  - 固定 `1841 x 841` 畫布縮放
+  - sidebar compact state / sessionStorage 持久化
 
 - `frontend/src/api.ts`
   - 前端所有 API 呼叫集中處
@@ -36,15 +38,36 @@
   - 前端型別定義
 
 - `frontend/src/appState.ts`
-  - 全域登入 session、客戶選擇
+  - 全域登入 session
+  - customer 選擇
 
 - `frontend/src/toastState.ts`
   - 全域 toast 狀態
 
 - `frontend/src/styles.css`
-  - 共用樣式骨架
+  - 全域 CSS 變數與共用基底樣式
 
-## 全域 API 對應
+## 共用元件 / 工具
+
+- `frontend/src/components/UiFormActions.vue`
+  - 新增 / 編輯 / 取消 / 停用動作列
+
+- `frontend/src/components/UiStatusPill.vue`
+  - 主資料 / 狀態標籤顯示
+
+- `frontend/src/components/production/ProductionCapacityPanel.vue`
+  - 產能視覺化區塊
+
+- `frontend/src/utils/date.ts`
+  - 本地日期 key / 顯示輔助
+
+- `frontend/src/utils/apiError.ts`
+  - API error message 解析
+
+- `frontend/src/utils/display.ts`
+  - fallback text / ownership label / stock status label 等顯示工具
+
+## 全域流程 API 對應
 
 ### `frontend/src/App.vue`
 
@@ -54,24 +77,24 @@
 - 訪客入口按鈕
   - `api.guestEntry`
 
-- 頁面初始化載入客戶
+- 初始化 / session 恢復後載入 customer
   - `api.listCustomers`
 
-- 新增客戶按鈕
-  - `api.createCustomer`
-
-- 客戶切換後更新左側今日統計
+- customer 切換後更新 today summary
   - `api.listAlerts`
   - `api.listTransactions`
 
-### 畫面外觀與全域流程
+- 最近異動
+  - `api.listAuditLogs`
 
-- 如果你要改登入卡片、頂欄、側邊欄、客戶選擇位置
-  - 改 `frontend/src/App.vue`
+### 改全域畫面時去哪裡
 
-- 如果你要改全域 toast 顯示樣式
-  - 改 `frontend/src/App.vue`
-  - 補充邏輯在 `frontend/src/toastState.ts`
+- 改登入卡片 / 左側導覽 / customer picker / today summary / 最近異動
+  - `frontend/src/App.vue`
+
+- 改全域 toast 樣式
+  - `frontend/src/App.vue`
+  - 狀態邏輯在 `frontend/src/toastState.ts`
 
 ## 查詢頁
 
@@ -79,10 +102,14 @@
 
 ### 主要功能
 
-- 治具查詢
-- 收料/退料記錄切換
-- 機種查詢
-- 右側圖片、儲位、最近異動
+- 雙模式查詢：`治具` / `機種`
+- 固定 KPI 方格
+- fixture detail
+- model detail
+- fixture 圖片預覽
+- transaction context
+- 可收合篩選區
+- 分頁顯示
 
 ### API 對應
 
@@ -90,32 +117,32 @@
   - `api.listStock`
   - `api.listTransactions`
   - `api.listModels`
+  - `api.listStations`
 
-- 一般查詢按鈕
+- fixture / 一般查詢
   - `api.globalSearch`
 
-- 機種查詢按鈕
+- model query
   - `api.getModelQuery`
 
 - 常用機種快捷按鈕
   - `api.getModelQuery`
 
-- 載入治具圖片
-  - `api.listFixtureImages`
-  - `GET /api/v2/warehouse/fixture-images/by-code/{fixture_code}`
+- fixture 圖片
+  - `fixtureImageUrlByCode`
+  - `fetchFixtureImageObjectUrl`
+  - `GET /api/v2/master/fixtures/{fixture_code}/image`
 
-- 補治具上下文
-  - `api.globalSearch`
+### 改查詢頁時去哪裡
 
-### 你要改什麼就去哪裡
-
-- 改查詢模式 radio、搜尋框、查詢按鈕
+- 改模式切換 / 篩選區 / 查詢按鈕
   - `frontend/src/pages/SearchWorkspacePage.vue`
 
-- 改查詢結果表格
+- 改 fixture detail / model detail / transaction 表格
   - `frontend/src/pages/SearchWorkspacePage.vue`
 
-- 改右側圖片/儲位/最近異動
+- 改 fixture 圖片 URL 或載入策略
+  - `frontend/src/api.ts`
   - `frontend/src/pages/SearchWorkspacePage.vue`
 
 ## 收退料頁
@@ -124,16 +151,23 @@
 
 ### 主要功能
 
-- 收料 / 退料整合頁
-- 依治具 `manage_type` 切 `datecode` / `serial`
-- 庫存總覽
-- 最近收/退料紀錄
-- 低水位提醒
-- 收退料總檢視
-- CSV 匯入匯出
-- 表格貼上批次匯入
+- `receipt` / `return` segmented control
+- 操作頁與 overview 頁共用同一支 page
+- 批次貼上匯入 modal
 - 新治具即時建立
-- 相似治具確認與替換
+- 相似治具確認 / 替換
+- 庫存總覽
+- 低水位提醒
+- 最近收退料紀錄
+- 收退料總檢視
+- 交易 CSV 匯入匯出 / 範本下載
+
+### 路由模式
+
+- `/inventory`
+  - operation-first
+- `/inventory/overview`
+  - overview-first
 
 ### API 對應
 
@@ -149,39 +183,34 @@
 - 送出退料
   - `api.createReturn`
 
-- 總檢視查詢按鈕
+- overview 查詢
   - `api.listTransactions`
 
-- 總檢視重設按鈕
-  - `api.listTransactions`
-
-- 下載收退料範本
-  - `api.downloadTransactionTemplateCsv`
-
-- 匯入 CSV
-  - `api.importTransactionsCsv`
-
-- 批次貼上匯入
-  - `api.listFixtures`
-  - `api.createFixture`
-  - `api.createReceipt`
-  - `api.createReturn`
-
-- 匯出總檢視 CSV
+- overview 匯出 CSV
   - `api.exportTransactionsCsv`
 
-### 你要改什麼就去哪裡
+- 交易範本下載
+  - `api.downloadTransactionTemplateCsv`
 
-- 改收料/退料表單
+- 交易 CSV 匯入
+  - `api.importTransactionsCsv`
+
+- 批次貼上匯入內的新治具建立
+  - `api.createFixture`
+
+### 改收退料頁時去哪裡
+
+- 改批次貼上解析規則 / 相似治具比對 / 匯入預覽表
   - `frontend/src/pages/InventoryPage.vue`
 
-- 改 `datecode` / `serial` 顯示邏輯
-  - `frontend/src/pages/InventoryPage.vue`
-
-- 改交易總檢視篩選欄位
+- 改交易篩選欄位或 payload
   - `frontend/src/pages/InventoryPage.vue`
   - `frontend/src/types.ts`
   - `frontend/src/api.ts`
+
+- 改 `identifier` / `ownership_type` 顯示文案
+  - `frontend/src/utils/display.ts`
+  - `frontend/src/pages/InventoryPage.vue`
 
 ## 資料維護頁
 
@@ -189,78 +218,76 @@
 
 ### 主要功能
 
-- 治具
-- 機種
-- 站點
-- 負責人
-- 使用者
-- CSV 匯入匯出
-
-### Hero 區按鈕
-
-- 下載範本
-  - 治具：`api.downloadFixtureTemplateCsv`
-  - 機種：`api.downloadModelTemplateCsv`
-  - 站點：`api.downloadStationTemplateCsv`
-
-- 匯入 CSV
-  - 治具：`api.importFixturesCsv`
-  - 機種：`api.importModelsCsv`
-  - 站點：`api.importStationsCsv`
-
-- 匯出 CSV
-  - 治具：`api.exportFixturesCsv`
-  - 機種：`api.exportModelsCsv`
-  - 站點：`api.exportStationsCsv`
-
-- 匯出 JSON
-  - 前端本地匯出，不打 API
+- fixture / model / station / customer / user 五個 tab
+- tab 清單分頁
+- 狀態篩選 / 關鍵字搜尋
+- fixture 維護 `responsible_user_id` / `min_stock_qty` / `storage_location`
+- customer 維護 `assigned_user_ids`
+- user 建立 / 更新 / 停用 / 重設密碼
+- fixture / model / station CSV 匯入匯出 / 範本下載
 
 ### 頁面初始化
 
 - `api.listFixtures`
 - `api.listModels`
 - `api.listStations`
-- `api.listOwners`
+- `api.listCustomers`
+- `api.listCustomerUsers`
 - `api.listUsers`
 
 ### 各 tab API
 
-- 治具 tab
+- fixture tab
   - 新增：`api.createFixture`
   - 更新：`api.updateFixture`
   - 停用：`api.updateFixture`
+  - 匯出：`api.exportFixturesCsv`
+  - 匯入：`api.importFixturesCsv`
+  - 範本：`api.downloadFixtureTemplateCsv`
 
-- 機種 tab
+- model tab
   - 新增：`api.createModel`
   - 更新：`api.updateModel`
   - 停用：`api.updateModel`
+  - 匯出：`api.exportModelsCsv`
+  - 匯入：`api.importModelsCsv`
+  - 範本：`api.downloadModelTemplateCsv`
 
-- 站點 tab
+- station tab
   - 新增：`api.createStation`
   - 更新：`api.updateStation`
   - 停用：`api.updateStation`
+  - 匯出：`api.exportStationsCsv`
+  - 匯入：`api.importStationsCsv`
+  - 範本：`api.downloadStationTemplateCsv`
 
-- 負責人 tab
-  - 新增：`api.createOwner`
-  - 更新：`api.updateOwner`
-  - 停用：`api.updateOwner`
+- customer tab
+  - 新增：`api.createCustomer`
+  - 更新：`api.updateCustomer`
+  - 顯示責任人候選：`api.listCustomerUsers`
+  - 實際指派清單來源：`api.listUsers`
 
-- 使用者 tab
+- user tab
   - 新增：`api.createUser`
   - 更新：`api.updateUser`
   - 停用：`api.updateUser`
   - 重設密碼：`api.resetUserPassword`
 
-### 你要改什麼就去哪裡
+### 權限行為
 
-- 改 tab、清單欄位、詳細表單
+- `guest` 不可進這頁
+- `user` 可維護 fixture / model / station
+- `customer` / `user` tab 實際上是 admin 能力
+
+### 改資料維護頁時去哪裡
+
+- 改 tab、列表欄位、詳細編輯表單
   - `frontend/src/pages/MasterPage.vue`
 
 - 改主資料型別
   - `frontend/src/types.ts`
 
-- 改主資料 API 名稱或參數
+- 改主資料 API path / payload
   - `frontend/src/api.ts`
 
 ## 產能頁
@@ -269,12 +296,13 @@
 
 ### 主要功能
 
-- Production 介面總覽
 - Model-Station Mapping
 - Fixture Requirement
 - Station Capacity
 - Model Query
-- CSV 匯入匯出
+- Mapping / Requirement CSV 匯入匯出
+- Mapping / Requirement 批次貼上匯入 modal
+- 相似資料確認與即時建立新 model / station / fixture
 
 ### API 對應
 
@@ -283,123 +311,70 @@
   - `api.listStations`
   - `api.listFixtures`
   - `api.listModelStations`
+  - `api.listFixtureRequirements`
 
-- Model-Station Mapping 新增
-  - `api.createModelStation`
+- mapping
+  - 新增：`api.createModelStation`
+  - 更新：`api.updateModelStation`
+  - 刪除：`api.deleteModelStation`
+  - 匯出：`api.exportModelStationsCsv`
+  - 匯入：`api.importModelStationsCsv`
+  - 範本：`api.downloadModelStationTemplateCsv`
 
-- Model-Station Mapping 匯出
-  - `api.exportModelStationsCsv`
+- fixture requirement
+  - 新增：`api.createFixtureRequirement`
+  - 更新：`api.updateFixtureRequirement`
+  - 刪除：`api.deleteFixtureRequirement`
+  - 匯出：`api.exportFixtureRequirementsCsv`
+  - 匯入：`api.importFixtureRequirementsCsv`
+  - 範本：`api.downloadFixtureRequirementTemplateCsv`
 
-- Model-Station Mapping 範本
-  - `api.downloadModelStationTemplateCsv`
-
-- Model-Station Mapping 匯入
-  - `api.importModelStationsCsv`
-
-- Fixture Requirement 儲存
-  - `api.createFixtureRequirement`
-
-- Fixture Requirement 匯出
-  - `api.exportFixtureRequirementsCsv`
-
-- Fixture Requirement 範本
-  - `api.downloadFixtureRequirementTemplateCsv`
-
-- Fixture Requirement 匯入
-  - `api.importFixtureRequirementsCsv`
-
-- Station Capacity 刷新
+- capacity
   - `api.getStationCapacity`
 
-- Model Query 刷新
+- model query
   - `api.getModelQuery`
 
-### 你要改什麼就去哪裡
+- 批次貼上匯入缺資料時建立新主檔
+  - `api.createModel`
+  - `api.createStation`
+  - `api.createFixture`
 
-- 改 mapping 卡片
+### 改產能頁時去哪裡
+
+- 改 mapping / requirement 編輯流程
   - `frontend/src/pages/ProductionPage.vue`
 
-- 改 requirement 卡片
+- 改 capacity 視覺化
+  - `frontend/src/components/production/ProductionCapacityPanel.vue`
   - `frontend/src/pages/ProductionPage.vue`
 
-- 改 station capacity 或 model query 顯示欄位
+- 改 model query 欄位
   - `frontend/src/pages/ProductionPage.vue`
-
-## 儲位 / 圖片頁
-
-- 檔案：`frontend/src/pages/WarehousePage.vue`
-
-### 主要功能
-
-- 倉庫主卡
-- 治具工作區
-- 儲位綁定
-- 治具圖片維護
-- 儲位主檔維護
-
-### API 對應
-
-- 初始化載入
-  - `api.listFixtures`
-  - `api.listLocations`
-  - `api.listLocationAssignments`
-  - `api.listFixtureImages`
-  - `api.getWarehouseProfile`
-
-- 倉庫主卡儲存
-  - `api.updateWarehouseProfile`
-
-- 儲位新增
-  - `api.createLocation`
-
-- 儲位更新
-  - `api.updateLocation`
-
-- 儲位綁定
-  - `api.createLocationAssignment`
-
-- 解除綁定
-  - `api.deleteLocationAssignment`
-
-- 圖片新增
-  - `api.createFixtureImage`
-
-- 圖片更新
-  - `api.updateFixtureImage`
-
-- 設為主要圖片
-  - `api.setMainFixtureImage`
-
-- 刪除圖片
-  - `api.deleteFixtureImage`
-
-- 重新整理圖片
-  - `api.listFixtureImages`
-
-### 你要改什麼就去哪裡
-
-- 改倉庫主卡
-  - `frontend/src/pages/WarehousePage.vue`
-
-- 改儲位綁定流程
-  - `frontend/src/pages/WarehousePage.vue`
-
-- 改圖片上傳/主圖/刪除流程
-  - `frontend/src/pages/WarehousePage.vue`
+  - `frontend/src/types.ts`
 
 ## 前端常改支援檔
 
 - `frontend/src/types.ts`
-  - 前後端欄位不一致時先看這裡
+  - 欄位不一致時先看這裡
 
 - `frontend/src/api.ts`
-  - API path、query string、payload 都在這裡
+  - API path / query string / payload / response parsing
 
 - `frontend/src/appState.ts`
-  - 客戶切換、登入 session 共享狀態
+  - customer 切換、登入 session 共享狀態
 
 - `frontend/src/toastState.ts`
-  - 成功/失敗提示邏輯
+  - 成功 / 失敗提示
+
+- `frontend/src/utils/apiError.ts`
+  - 後端 error payload 轉可讀訊息
+
+- `frontend/src/utils/date.ts`
+  - 本地日期判斷
+
+- `frontend/src/utils/display.ts`
+  - fallback 與狀態文字映射
 
 ## 不要改的前端檔案
 
@@ -408,3 +383,4 @@
 - `frontend/src/*.js.map`
 - `frontend/src/**/*.js.map`
 - `frontend/tsconfig.*.tsbuildinfo`
+- `__pycache__`

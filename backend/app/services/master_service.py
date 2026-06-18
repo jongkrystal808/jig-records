@@ -7,12 +7,11 @@ from backend.app.services.audit_service import AuditService
 from backend.app.schemas.common import CsvImportPayload
 from backend.app.schemas.master import (
     CustomerCreate,
+    CustomerUpdate,
     FixtureCreate,
     FixtureUpdate,
     MachineModelCreate,
     MachineModelUpdate,
-    OwnerCreate,
-    OwnerUpdate,
     StationCreate,
     StationUpdate,
 )
@@ -40,8 +39,15 @@ class MasterService:
         return stripped or None
 
     def create_customer(self, payload: CustomerCreate, actor: SessionContext | None = None):
+        assigned_user_ids = sorted({int(user_id) for user_id in payload.assigned_user_ids})
+        users = self.repo.list_users_by_ids(assigned_user_ids)
+        found_user_ids = {user.id for user in users}
+        missing_user_ids = [user_id for user_id in assigned_user_ids if user_id not in found_user_ids]
+        if missing_user_ids:
+            raise ValueError(f"user {missing_user_ids[0]} not found")
         try:
             customer = self.repo.create_customer(code=payload.code, name=payload.name)
+            self.repo.replace_allowed_users_for_customer(customer.id, assigned_user_ids)
             self.audit.record(
                 customer_id=customer.id,
                 entity_type="customer",
@@ -52,24 +58,58 @@ class MasterService:
             )
             self.db.commit()
             self.db.refresh(customer)
-            return customer
+            return self._serialize_customer(customer)
         except IntegrityError as exc:
             self.db.rollback()
             raise ValueError("customer code or name already exists") from exc
 
     def list_customers(self):
-        return self.repo.list_customers()
+        return [self._serialize_customer(customer) for customer in self.repo.list_customers()]
+
+    def update_customer(self, customer_id: int, payload: CustomerUpdate, actor: SessionContext | None = None):
+        customer = self.repo.get_customer(customer_id)
+        if customer is None:
+            raise ValueError(f"customer {customer_id} not found")
+        assigned_user_ids = sorted({int(user_id) for user_id in payload.assigned_user_ids})
+        users = self.repo.list_users_by_ids(assigned_user_ids)
+        found_user_ids = {user.id for user in users}
+        missing_user_ids = [user_id for user_id in assigned_user_ids if user_id not in found_user_ids]
+        if missing_user_ids:
+            raise ValueError(f"user {missing_user_ids[0]} not found")
+        before_code = customer.code
+        before_name = customer.name
+        try:
+            customer = self.repo.update_customer(customer, code=payload.code.strip(), name=payload.name.strip())
+            self.repo.replace_allowed_users_for_customer(customer.id, assigned_user_ids)
+            self.audit.record(
+                customer_id=customer.id,
+                entity_type="customer",
+                entity_key=customer.code,
+                action="update",
+                summary=f"更新客戶 {before_code} / {before_name} -> {customer.code} / {customer.name}",
+                actor=actor,
+            )
+            self.db.commit()
+            self.db.refresh(customer)
+            return self._serialize_customer(customer)
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise ValueError("customer code or name already exists") from exc
 
     def create_fixture(self, payload: FixtureCreate, actor: SessionContext | None = None):
         customer = self.repo.get_customer(payload.customer_id)
         if customer is None:
             raise ValueError(f"customer {payload.customer_id} not found")
-        if payload.owner_id is not None and self.repo.get_owner(payload.owner_id) is None:
-            raise ValueError(f"owner {payload.owner_id} not found")
+        if payload.responsible_user_id is not None:
+            user = self.repo.get_user(payload.responsible_user_id)
+            if user is None:
+                raise ValueError(f"user {payload.responsible_user_id} not found")
+            if payload.responsible_user_id not in self.repo.list_allowed_user_ids_for_customer(payload.customer_id):
+                raise ValueError(f"user {payload.responsible_user_id} is not assigned to customer {payload.customer_id}")
         try:
             fixture = self.repo.create_fixture(
                 customer_id=payload.customer_id,
-                owner_id=payload.owner_id,
+                responsible_user_id=payload.responsible_user_id,
                 code=payload.code,
                 name=payload.name,
                 storage_location=self._normalize_storage_location(payload.storage_location),
@@ -91,14 +131,15 @@ class MasterService:
             return self._serialize_fixture(fixture, level.min_stock_qty)
         except IntegrityError as exc:
             self.db.rollback()
-            raise ValueError("fixture code already exists") from exc
+            raise ValueError("fixture code already exists within customer") from exc
 
     def list_fixtures(self, customer_id: int | None = None):
         fixtures = self.repo.list_fixtures(customer_id=customer_id)
+        stock_levels = self.repo.list_stock_levels([fixture.id for fixture in fixtures])
         return [
             self._serialize_fixture(
                 fixture,
-                0 if (level := self.repo.get_stock_level(fixture.id)) is None else level.min_stock_qty,
+                0 if (level := stock_levels.get(fixture.id)) is None else level.min_stock_qty,
             )
             for fixture in fixtures
         ]
@@ -110,13 +151,17 @@ class MasterService:
         customer = self.repo.get_customer(payload.customer_id)
         if customer is None:
             raise ValueError(f"customer {payload.customer_id} not found")
-        if payload.owner_id is not None and self.repo.get_owner(payload.owner_id) is None:
-            raise ValueError(f"owner {payload.owner_id} not found")
+        if payload.responsible_user_id is not None:
+            user = self.repo.get_user(payload.responsible_user_id)
+            if user is None:
+                raise ValueError(f"user {payload.responsible_user_id} not found")
+            if payload.responsible_user_id not in self.repo.list_allowed_user_ids_for_customer(payload.customer_id):
+                raise ValueError(f"user {payload.responsible_user_id} is not assigned to customer {payload.customer_id}")
         try:
             fixture = self.repo.update_fixture(
                 fixture,
                 customer_id=payload.customer_id,
-                owner_id=payload.owner_id,
+                responsible_user_id=payload.responsible_user_id,
                 code=payload.code,
                 name=payload.name,
                 storage_location=self._normalize_storage_location(payload.storage_location),
@@ -139,7 +184,7 @@ class MasterService:
             return self._serialize_fixture(fixture, level.min_stock_qty)
         except IntegrityError as exc:
             self.db.rollback()
-            raise ValueError("fixture code already exists") from exc
+            raise ValueError("fixture code already exists within customer") from exc
 
     def create_model(self, payload: MachineModelCreate, actor: SessionContext | None = None):
         customer = self.repo.get_customer(payload.customer_id)
@@ -255,62 +300,13 @@ class MasterService:
             self.db.rollback()
             raise ValueError("station code already exists") from exc
 
-    def create_owner(self, payload: OwnerCreate, actor: SessionContext | None = None):
-        try:
-            owner = self.repo.create_owner(name=payload.name)
-            self.audit.record(
-                customer_id=None,
-                entity_type="owner",
-                entity_key=owner.name,
-                action="create",
-                summary=f"建立負責人 {owner.name}",
-                actor=actor,
-            )
-            self.db.commit()
-            self.db.refresh(owner)
-            return owner
-        except IntegrityError as exc:
-            self.db.rollback()
-            raise ValueError("owner name already exists") from exc
-
-    def list_owners(self):
-        return self.repo.list_owners()
-
-    def update_owner(self, owner_id: int, payload: OwnerUpdate, actor: SessionContext | None = None):
-        owner = self.repo.get_owner(owner_id)
-        if owner is None:
-            raise ValueError(f"owner {owner_id} not found")
-        before_name = owner.name
-        before_active = owner.is_active
-        try:
-            owner = self.repo.update_owner(owner, name=payload.name, is_active=payload.is_active)
-            self.audit.record(
-                customer_id=None,
-                entity_type="owner",
-                entity_key=owner.name,
-                action="update",
-                summary=(
-                    f"更新負責人 {before_name}：{'啟用' if before_active else '停用'}"
-                    f" -> {owner.name} / {'啟用' if owner.is_active else '停用'}"
-                ),
-                actor=actor,
-            )
-            self.db.commit()
-            self.db.refresh(owner)
-            return owner
-        except IntegrityError as exc:
-            self.db.rollback()
-            raise ValueError("owner name already exists") from exc
-
     def export_fixtures_csv(self, customer_id: int) -> str:
         fixtures = self.repo.list_fixtures(customer_id=customer_id)
-        owner_map = {owner.id: owner.name for owner in self.repo.list_owners()}
         rows = [
             {
                 "code": fixture.code,
                 "name": fixture.name,
                 "storage_location": fixture.storage_location or "",
-                "owner_name": owner_map.get(fixture.owner_id, "") if fixture.owner_id else "",
                 "min_stock_qty": 0 if (level := self.repo.get_stock_level(fixture.id)) is None else level.min_stock_qty,
                 "description": fixture.description or "",
                 "is_active": str(fixture.is_active),
@@ -318,19 +314,18 @@ class MasterService:
             for fixture in fixtures
         ]
         return render_csv_text(
-            ["code", "name", "storage_location", "owner_name", "min_stock_qty", "description", "is_active"],
+            ["code", "name", "storage_location", "min_stock_qty", "description", "is_active"],
             rows,
         )
 
     def fixture_template_csv(self) -> str:
         return render_csv_text(
-            ["code", "name", "storage_location", "owner_name", "min_stock_qty", "description", "is_active"],
+            ["code", "name", "storage_location", "min_stock_qty", "description", "is_active"],
             [
                 {
                     "code": "C-00001",
                     "name": "RJ45 Fixture",
                     "storage_location": "A-01-01",
-                    "owner_name": "",
                     "min_stock_qty": "10",
                     "description": "sample",
                     "is_active": "true",
@@ -350,8 +345,6 @@ class MasterService:
             if not code or not name:
                 continue
             storage_location = self._normalize_storage_location(row.get("storage_location", ""))
-            owner_name = row.get("owner_name", "")
-            owner = self.repo.get_owner_by_name(owner_name) if owner_name else None
             min_stock_qty = int(row.get("min_stock_qty", "0") or "0")
             description = row.get("description", "") or None
             is_active = _parse_bool(row.get("is_active", ""), default=True)
@@ -359,7 +352,7 @@ class MasterService:
             if fixture is None:
                 fixture = self.repo.create_fixture(
                     customer_id=customer_id,
-                    owner_id=owner.id if owner else None,
+                    responsible_user_id=None,
                     code=code,
                     name=name,
                     storage_location=storage_location,
@@ -369,7 +362,7 @@ class MasterService:
                 self.repo.update_fixture(
                     fixture,
                     customer_id=customer_id,
-                    owner_id=owner.id if owner else None,
+                    responsible_user_id=None,
                     code=code,
                     name=name,
                     storage_location=storage_location,
@@ -485,7 +478,7 @@ class MasterService:
         return {
             "id": fixture.id,
             "customer_id": fixture.customer_id,
-            "owner_id": fixture.owner_id,
+            "responsible_user_id": fixture.responsible_user_id,
             "code": fixture.code,
             "name": fixture.name,
             "storage_location": fixture.storage_location,
@@ -494,4 +487,14 @@ class MasterService:
             "is_active": fixture.is_active,
             "created_at": fixture.created_at,
             "updated_at": fixture.updated_at,
+        }
+
+    def _serialize_customer(self, customer) -> dict:
+        return {
+            "id": customer.id,
+            "code": customer.code,
+            "name": customer.name,
+            "assigned_user_ids": self.repo.list_allowed_user_ids_for_customer(customer.id),
+            "created_at": customer.created_at,
+            "updated_at": customer.updated_at,
         }

@@ -95,9 +95,11 @@ class ProductionRepository:
             stmt = stmt.where(MachineModel.customer_id == customer_id)
         return self.db.scalar(stmt)
 
-    def create_or_update_requirement(self, *, station_id: int, fixture_id: int, required_qty: int) -> FixtureRequirement:
+    def create_or_update_requirement(self, *, model_id: int, station_id: int, fixture_id: int, required_qty: int) -> FixtureRequirement:
         stmt = select(FixtureRequirement).where(
-            FixtureRequirement.station_id == station_id, FixtureRequirement.fixture_id == fixture_id
+            FixtureRequirement.model_id == model_id,
+            FixtureRequirement.station_id == station_id,
+            FixtureRequirement.fixture_id == fixture_id,
         )
         requirement = self.db.scalar(stmt)
         if requirement:
@@ -105,13 +107,19 @@ class ProductionRepository:
             self.db.flush()
             return requirement
 
-        requirement = FixtureRequirement(station_id=station_id, fixture_id=fixture_id, required_qty=required_qty)
+        requirement = FixtureRequirement(
+            model_id=model_id,
+            station_id=station_id,
+            fixture_id=fixture_id,
+            required_qty=required_qty,
+        )
         self.db.add(requirement)
         self.db.flush()
         return requirement
 
-    def get_requirement(self, *, station_id: int, fixture_id: int) -> FixtureRequirement | None:
+    def get_requirement(self, *, model_id: int, station_id: int, fixture_id: int) -> FixtureRequirement | None:
         stmt = select(FixtureRequirement).where(
+            FixtureRequirement.model_id == model_id,
             FixtureRequirement.station_id == station_id,
             FixtureRequirement.fixture_id == fixture_id,
         )
@@ -121,10 +129,12 @@ class ProductionRepository:
         self,
         requirement: FixtureRequirement,
         *,
+        model_id: int,
         station_id: int,
         fixture_id: int,
         required_qty: int,
     ) -> FixtureRequirement:
+        requirement.model_id = model_id
         requirement.station_id = station_id
         requirement.fixture_id = fixture_id
         requirement.required_qty = required_qty
@@ -141,19 +151,40 @@ class ProductionRepository:
         self.db.delete(requirement)
         self.db.flush()
 
-    def list_station_requirements(self, station_id: int, customer_id: int | None = None) -> list[FixtureRequirement]:
+    def list_station_requirements(
+        self,
+        station_id: int,
+        *,
+        model_id: int | None = None,
+        customer_id: int | None = None,
+    ) -> list[FixtureRequirement]:
         stmt = select(FixtureRequirement).where(FixtureRequirement.station_id == station_id)
-        if customer_id is not None:
-            stmt = stmt.join(Station, Station.id == FixtureRequirement.station_id).where(Station.customer_id == customer_id)
-        return list(self.db.scalars(stmt))
-
-    def list_all_requirements(self, customer_id: int | None = None) -> list[FixtureRequirement]:
-        stmt = select(FixtureRequirement).order_by(FixtureRequirement.station_id, FixtureRequirement.fixture_id)
+        if model_id is not None:
+            stmt = stmt.where(FixtureRequirement.model_id == model_id)
         if customer_id is not None:
             stmt = (
                 stmt.join(Station, Station.id == FixtureRequirement.station_id)
+                .join(MachineModel, MachineModel.id == FixtureRequirement.model_id)
+                .where(Station.customer_id == customer_id, MachineModel.customer_id == customer_id)
+            )
+        return list(self.db.scalars(stmt))
+
+    def list_all_requirements(self, customer_id: int | None = None) -> list[FixtureRequirement]:
+        stmt = select(FixtureRequirement).order_by(
+            FixtureRequirement.model_id,
+            FixtureRequirement.station_id,
+            FixtureRequirement.fixture_id,
+        )
+        if customer_id is not None:
+            stmt = (
+                stmt.join(MachineModel, MachineModel.id == FixtureRequirement.model_id)
+                .join(Station, Station.id == FixtureRequirement.station_id)
                 .join(Fixture, Fixture.id == FixtureRequirement.fixture_id)
-                .where(Station.customer_id == customer_id, Fixture.customer_id == customer_id)
+                .where(
+                    MachineModel.customer_id == customer_id,
+                    Station.customer_id == customer_id,
+                    Fixture.customer_id == customer_id,
+                )
             )
         return list(self.db.scalars(stmt))
 
@@ -161,6 +192,8 @@ class ProductionRepository:
         stmt = (
             select(
                 FixtureRequirement.id.label("id"),
+                FixtureRequirement.model_id.label("model_id"),
+                MachineModel.code.label("model_code"),
                 FixtureRequirement.station_id.label("station_id"),
                 Station.code.label("station_code"),
                 FixtureRequirement.fixture_id.label("fixture_id"),
@@ -168,27 +201,42 @@ class ProductionRepository:
                 Fixture.name.label("fixture_name"),
                 FixtureRequirement.required_qty.label("required_qty"),
             )
+            .join(MachineModel, MachineModel.id == FixtureRequirement.model_id)
             .join(Station, Station.id == FixtureRequirement.station_id)
             .join(Fixture, Fixture.id == FixtureRequirement.fixture_id)
-            .order_by(Station.code, Fixture.code)
+            .order_by(MachineModel.code, Station.code, Fixture.code)
         )
         if customer_id is not None:
-            stmt = stmt.where(Station.customer_id == customer_id, Fixture.customer_id == customer_id)
+            stmt = stmt.where(
+                MachineModel.customer_id == customer_id,
+                Station.customer_id == customer_id,
+                Fixture.customer_id == customer_id,
+            )
         return [dict(row._mapping) for row in self.db.execute(stmt).all()]
-
-    def list_requirements_by_station_ids(self, station_ids: list[int], customer_id: int | None = None) -> list[FixtureRequirement]:
-        if not station_ids:
-            return []
-        stmt = select(FixtureRequirement).where(FixtureRequirement.station_id.in_(station_ids))
-        if customer_id is not None:
-            stmt = stmt.join(Station, Station.id == FixtureRequirement.station_id).where(Station.customer_id == customer_id)
-        return list(self.db.scalars(stmt))
 
     def list_affected_station_ids_by_fixture(self, fixture_id: int, customer_id: int | None = None) -> list[int]:
         stmt = select(FixtureRequirement.station_id).where(FixtureRequirement.fixture_id == fixture_id).distinct()
         if customer_id is not None:
             stmt = stmt.join(Station, Station.id == FixtureRequirement.station_id).where(Station.customer_id == customer_id)
         return list(self.db.scalars(stmt))
+
+    def list_affected_station_model_pairs_by_fixture(
+        self,
+        fixture_id: int,
+        customer_id: int | None = None,
+    ) -> list[tuple[int, int]]:
+        stmt = (
+            select(FixtureRequirement.station_id, FixtureRequirement.model_id)
+            .where(FixtureRequirement.fixture_id == fixture_id)
+            .distinct()
+        )
+        if customer_id is not None:
+            stmt = (
+                stmt.join(Station, Station.id == FixtureRequirement.station_id)
+                .join(MachineModel, MachineModel.id == FixtureRequirement.model_id)
+                .where(Station.customer_id == customer_id, MachineModel.customer_id == customer_id)
+            )
+        return [(int(row.station_id), int(row.model_id)) for row in self.db.execute(stmt).all()]
 
     def get_fixture(self, fixture_id: int, customer_id: int | None = None) -> Fixture | None:
         stmt = select(Fixture).where(Fixture.id == fixture_id)

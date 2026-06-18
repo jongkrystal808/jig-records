@@ -25,6 +25,7 @@ let clockTimer: ReturnType<typeof window.setInterval> | null = null;
 const currentCustomerId = computed(() => selectedCustomerId.value ?? undefined);
 const selectedCustomer = computed(() => customers.value.find((row) => row.id === selectedCustomerId.value) ?? null);
 const userInitial = computed(() => authSession.value?.display_name?.trim().charAt(0).toUpperCase() || "U");
+const canEnterMaster = computed(() => authSession.value?.role !== "guest");
 const currentDateTimeLabel = computed(() =>
   new Intl.DateTimeFormat("zh-TW", {
     dateStyle: "medium",
@@ -33,13 +34,15 @@ const currentDateTimeLabel = computed(() =>
 );
 const today = computed(() => formatDateKey(new Date()));
 
-const sideNav = [
-  { label: "收退料作業", short: "作業", to: "/inventory", exact: true },
-  { label: "收退料總檢視", short: "總檢視", to: "/inventory/overview", exact: true },
-  { label: "治具 / 機種查詢", short: "查詢", to: "/search" },
-  { label: "資料維護", short: "維護", to: "/master" },
-  { label: "產能管理", short: "產能", to: "/production" }
-];
+const sideNav = computed(() =>
+  [
+    { label: "收退料作業", short: "作業", to: "/inventory", exact: true },
+    { label: "收退料總檢視", short: "總檢視", to: "/inventory/overview", exact: true },
+    { label: "治具 / 機種查詢", short: "查詢", to: "/search" },
+    { label: "產能管理", short: "產能", to: "/production" },
+    canEnterMaster.value ? { label: "資料維護", short: "維護", to: "/master" } : null
+  ].filter((item): item is { label: string; short: string; to: string; exact?: boolean } => item !== null)
+);
 
 function isActive(path: string, exact = false): boolean {
   if (exact) {

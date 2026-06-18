@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.models.base import Base, TimestampMixin
@@ -8,13 +8,6 @@ from backend.app.models.base import Base, TimestampMixin
 
 transaction_type_enum = Enum("receipt", "return", name="transaction_type", native_enum=False, validate_strings=True)
 stock_status_enum = Enum("normal", "low_stock", "out_of_stock", name="stock_status", native_enum=False, validate_strings=True)
-material_manage_type_enum = Enum(
-    "datecode",
-    "serial",
-    name="material_manage_type",
-    native_enum=False,
-    validate_strings=True,
-)
 ownership_type_enum = Enum(
     "customer_supplied",
     "self_purchased",
@@ -46,10 +39,8 @@ class MaterialTransactionItem(Base):
         ForeignKey("material_transactions.id", ondelete="CASCADE"), nullable=False, index=True
     )
     fixture_id: Mapped[int] = mapped_column(ForeignKey("fixtures.id"), nullable=False, index=True)
-    manage_type: Mapped[str] = mapped_column(material_manage_type_enum, nullable=False)
     ownership_type: Mapped[str] = mapped_column(ownership_type_enum, nullable=False)
-    datecode: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    serial_number: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    identifier: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     note: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
@@ -77,12 +68,3 @@ class FixtureStockSummary(Base, TimestampMixin):
     stock_status: Mapped[str] = mapped_column(stock_status_enum, nullable=False, default="normal")
 
     fixture = relationship("Fixture", back_populates="stock_summary")
-
-
-class FixtureSerial(Base, TimestampMixin):
-    __tablename__ = "fixture_serials"
-    __table_args__ = (UniqueConstraint("fixture_id", "serial_no", name="uq_fixture_serial"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    fixture_id: Mapped[int] = mapped_column(ForeignKey("fixtures.id", ondelete="CASCADE"), nullable=False)
-    serial_no: Mapped[str] = mapped_column(String(80), nullable=False, index=True)

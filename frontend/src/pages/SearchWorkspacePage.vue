@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
-import { api, fixtureImageUrlByCode } from "@/api";
+import { api, fetchFixtureImageObjectUrl } from "@/api";
 import { selectedCustomerId } from "@/appState";
 import { pushToast } from "@/toastState";
 import type {
@@ -11,7 +11,6 @@ import type {
   MaterialTransaction,
   ModelQuery,
   ModelQueryStationRequirement,
-  ModelStation,
   Station,
   StockSummary
 } from "@/types";
@@ -33,13 +32,13 @@ const stockRows = ref<StockSummary[]>([]);
 const transactions = ref<MaterialTransaction[]>([]);
 const models = ref<MachineModel[]>([]);
 const stations = ref<Station[]>([]);
-const modelStations = ref<ModelStation[]>([]);
 const fixtureRequirements = ref<FixtureRequirementListItem[]>([]);
 
 const selectedFixtureId = ref<number | null>(null);
 const selectedModelId = ref<number | null>(null);
 const modelQuery = ref<ModelQuery | null>(null);
 const imageLoadFailed = ref(false);
+const selectedFixtureImage = ref("");
 const showFixtureStationDetail = ref(false);
 const showModelStationDetail = ref(false);
 
@@ -91,9 +90,6 @@ const modelMatches = computed(() =>
 
 const selectedFixture = computed(() => fixtures.value.find((row) => row.id === selectedFixtureId.value) ?? null);
 const selectedFixtureStock = computed(() => stockRows.value.find((row) => row.fixture_id === selectedFixture.value?.id) ?? null);
-const selectedFixtureImage = computed(() =>
-  selectedFixture.value && !imageLoadFailed.value ? fixtureImageUrlByCode(selectedFixture.value.code) : ""
-);
 const selectedFixtureTransactions = computed(() =>
   transactions.value.filter((tx) => tx.items.some((item) => item.fixture_id === selectedFixture.value?.id)).slice(0, 8)
 );
@@ -101,12 +97,19 @@ const selectedFixtureRequirementRows = computed(() =>
   fixtureRequirements.value
     .filter((row) => row.fixture_id === selectedFixture.value?.id)
     .slice()
-    .sort((a, b) => a.station_code.localeCompare(b.station_code))
+    .sort((a, b) => {
+      const modelCompare = a.model_code.localeCompare(b.model_code);
+      if (modelCompare !== 0) return modelCompare;
+      return a.station_code.localeCompare(b.station_code);
+    })
 );
 const selectedFixtureStationRows = computed(() =>
   selectedFixtureRequirementRows.value.map((row) => {
     const station = stations.value.find((item) => item.id === row.station_id);
+    const model = models.value.find((item) => item.id === row.model_id);
     return {
+      model_id: row.model_id,
+      model_code: row.model_code || model?.code || `機種 ${row.model_id}`,
       station_id: row.station_id,
       station_code: row.station_code || station?.code || `站點 ${row.station_id}`,
       station_name: station?.name || "-",
@@ -115,10 +118,10 @@ const selectedFixtureStationRows = computed(() =>
   })
 );
 const selectedFixtureModelRows = computed(() => {
-  const stationIds = new Set(selectedFixtureRequirementRows.value.map((row) => row.station_id));
-  const modelIds = new Set(modelStations.value.filter((row) => stationIds.has(row.station_id)).map((row) => row.model_id));
+  const modelIds = new Set(selectedFixtureRequirementRows.value.map((row) => row.model_id));
   return models.value.filter((row) => modelIds.has(row.id)).slice().sort((a, b) => a.code.localeCompare(b.code));
 });
+const selectedFixtureStationCount = computed(() => new Set(selectedFixtureRequirementRows.value.map((row) => row.station_id)).size);
 
 const selectedModel = computed(() => models.value.find((row) => row.id === selectedModelId.value) ?? null);
 const selectedModelFixtures = computed(() => modelQuery.value?.fixtures ?? []);
@@ -146,10 +149,14 @@ const selectedModelGroups = computed(() => {
 });
 
 const statsCards = computed(() => [
-  { label: "治具種類總數", value: formatCount(fixtures.value.length), tone: "blue" },
-  { label: "治具總數", value: formatCount(stockRows.value.reduce((sum, row) => sum + row.stock_qty, 0)), tone: "green" },
-  { label: "機種總數", value: formatCount(models.value.length), tone: "orange" },
-  { label: "站點總數", value: formatCount(stations.value.length), tone: "red" }
+  {
+    label: "治具種類總數",
+    value: `共有 ${formatCount(fixtures.value.length)}`,
+    meta: `已啟用 ${formatCount(fixtures.value.filter((row) => row.is_active).length)}`,
+    tone: "blue"
+  },
+  { label: "治具總數", value: formatCount(stockRows.value.reduce((sum, row) => sum + row.stock_qty, 0)), meta: "", tone: "green" },
+  { label: "機種 / 站點總數", value: `${formatCount(models.value.length)} / ${formatCount(stations.value.length)}`, meta: "", tone: "orange" }
 ]);
 
 function syncSelection(): void {
@@ -178,13 +185,12 @@ function syncSelection(): void {
 async function loadWorkspace(): Promise<void> {
   loading.value = true;
   try {
-    const [fixtureRows, stock, txRows, modelRows, stationRows, mappingRows, requirementRows] = await Promise.all([
+    const [fixtureRows, stock, txRows, modelRows, stationRows, requirementRows] = await Promise.all([
       api.listFixtures(customerId.value),
       api.listStock(customerId.value),
       api.listTransactions(200, customerId.value),
       api.listModels(customerId.value),
       api.listStations(customerId.value),
-      api.listModelStations(customerId.value),
       api.listFixtureRequirements(customerId.value)
     ]);
 
@@ -193,7 +199,6 @@ async function loadWorkspace(): Promise<void> {
     transactions.value = txRows;
     models.value = modelRows;
     stations.value = stationRows;
-    modelStations.value = mappingRows;
     fixtureRequirements.value = requirementRows;
     syncSelection();
   } catch (err) {
@@ -210,12 +215,32 @@ async function refreshModelQuery(): Promise<void> {
   }
   modelLoading.value = true;
   try {
-    modelQuery.value = await api.getModelQuery(selectedModelId.value, customerId.value);
+    modelQuery.value = await api.getModelQuery(selectedModelId.value, undefined, customerId.value);
   } catch (err) {
     modelQuery.value = null;
     pushToast(err instanceof Error ? err.message : "載入機種查詢失敗", "error");
   } finally {
     modelLoading.value = false;
+  }
+}
+
+function clearSelectedFixtureImage(): void {
+  if (selectedFixtureImage.value) {
+    URL.revokeObjectURL(selectedFixtureImage.value);
+    selectedFixtureImage.value = "";
+  }
+}
+
+async function refreshSelectedFixtureImage(): Promise<void> {
+  clearSelectedFixtureImage();
+  imageLoadFailed.value = false;
+  if (!selectedFixture.value) {
+    return;
+  }
+  try {
+    selectedFixtureImage.value = await fetchFixtureImageObjectUrl(selectedFixture.value.code);
+  } catch {
+    imageLoadFailed.value = true;
   }
 }
 
@@ -251,7 +276,7 @@ watch(searchText, () => {
 });
 
 watch(selectedFixtureId, () => {
-  imageLoadFailed.value = false;
+  void refreshSelectedFixtureImage();
 });
 
 watch(selectedModelId, async () => {
@@ -261,34 +286,37 @@ watch(selectedModelId, async () => {
 watch(selectedCustomerId, async () => {
   await loadWorkspace();
   await refreshModelQuery();
+  await refreshSelectedFixtureImage();
 });
 
 onMounted(async () => {
   await loadWorkspace();
   await refreshModelQuery();
+  await refreshSelectedFixtureImage();
+});
+
+onBeforeUnmount(() => {
+  clearSelectedFixtureImage();
 });
 </script>
 
 <template>
   <div class="search-shell">
-    <section class="page-hero">
-      <div>
-        <span class="eyebrow">Search Workspace</span>
-        <h1>查詢頁</h1>
-        <p>只顯示跟搜尋目標直接相關的治具 / 機種資訊，避免混入無關資料。</p>
+    <section class="hero-summary">
+      <div class="page-hero">
+        <div class="hero-copy">
+          <span class="eyebrow">Search Workspace</span>
+          <h1>查詢頁</h1>
+        </div>
       </div>
-      <div class="hero-chip-row">
-        <span class="hero-chip" :class="{ active: mode === 'fixture' }">治具模式</span>
-        <span class="hero-chip" :class="{ active: mode === 'model' }">機種模式</span>
-        <span class="hero-chip muted">{{ loading ? "資料載入中…" : "即時查詢" }}</span>
-      </div>
-    </section>
 
-    <section class="stats-strip">
-      <article v-for="card in statsCards" :key="card.label" class="stat-card" :class="card.tone">
-        <span>{{ card.label }}</span>
-        <strong>{{ card.value }}</strong>
-      </article>
+      <div class="stats-strip">
+        <article v-for="card in statsCards" :key="card.label" class="stat-card" :class="card.tone">
+          <span>{{ card.label }}</span>
+          <strong>{{ card.value }}</strong>
+          <p v-if="card.meta">{{ card.meta }}</p>
+        </article>
+      </div>
     </section>
 
     <section class="search-grid">
@@ -298,7 +326,6 @@ onMounted(async () => {
             <span class="eyebrow">Search Controls</span>
             <h2>搜尋控制</h2>
           </div>
-          <p>切換模式後只保留與該目標直接相關的結果。</p>
         </div>
 
         <div class="mode-switch">
@@ -408,7 +435,7 @@ onMounted(async () => {
             </div>
             <div class="relation-grid">
               <article class="relation-card"><span>使用到該治具的機種</span><strong>{{ selectedFixtureModelRows.length }}</strong></article>
-              <article class="relation-card"><span>使用到該治具的站點總數</span><strong>{{ selectedFixtureStationRows.length }}</strong></article>
+              <article class="relation-card"><span>使用到該治具的站點總數</span><strong>{{ selectedFixtureStationCount }}</strong></article>
             </div>
             <div class="chip-list">
               <span v-for="model in selectedFixtureModelRows" :key="model.id" class="chip">{{ model.code }}</span>
@@ -486,14 +513,15 @@ onMounted(async () => {
             <button class="outline-btn" type="button" @click="showFixtureStationDetail = false">關閉</button>
           </div>
           <table class="query-table">
-            <thead><tr><th>站點</th><th>站點名稱</th><th>所需數量</th></tr></thead>
+            <thead><tr><th>機種</th><th>站點</th><th>站點名稱</th><th>所需數量</th></tr></thead>
             <tbody>
-              <tr v-for="row in selectedFixtureStationRows" :key="row.station_id">
+              <tr v-for="row in selectedFixtureStationRows" :key="`${row.model_id}-${row.station_id}`">
+                <td>{{ row.model_code }}</td>
                 <td>{{ row.station_code }}</td>
                 <td>{{ row.station_name }}</td>
                 <td>{{ formatCount(row.required_qty) }}</td>
               </tr>
-              <tr v-if="selectedFixtureStationRows.length === 0"><td colspan="3" class="empty-cell">尚無站點資料</td></tr>
+              <tr v-if="selectedFixtureStationRows.length === 0"><td colspan="4" class="empty-cell">尚無站點資料</td></tr>
             </tbody>
           </table>
         </div>
@@ -535,7 +563,7 @@ onMounted(async () => {
 <style scoped>
 .search-shell {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
   height: 100%;
   min-height: 0;
@@ -543,11 +571,9 @@ onMounted(async () => {
   padding: 10px;
 }
 
-.page-hero {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 14px;
+.hero-summary {
+  display: grid;
+  gap: 10px;
   border: 1px solid var(--line);
   border-radius: 22px;
   background:
@@ -555,6 +581,16 @@ onMounted(async () => {
     linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
   box-shadow: var(--shadow);
   padding: 12px 14px;
+}
+
+.page-hero {
+  display: grid;
+  gap: 12px;
+}
+
+.hero-copy {
+  display: grid;
+  gap: 6px;
 }
 
 .page-hero h1 {
@@ -570,46 +606,18 @@ onMounted(async () => {
   color: var(--muted);
 }
 
-.hero-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.hero-chip {
-  border: 1px solid #d6e1f2;
-  border-radius: 999px;
-  background: #fff;
-  color: #486081;
-  padding: 5px 10px;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.hero-chip.active {
-  border-color: rgba(47, 110, 229, 0.28);
-  background: #edf3ff;
-  color: var(--blue);
-}
-
-.hero-chip.muted {
-  background: #f8fafc;
-  color: var(--muted);
-}
-
 .stats-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
 .stat-card {
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 16px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(247, 250, 255, 0.98) 100%);
-  padding: 11px 14px;
+  padding: 8px 14px;
   box-shadow: var(--shadow);
 }
 
@@ -631,8 +639,8 @@ onMounted(async () => {
 .metric-card strong,
 .relation-card strong {
   display: block;
-  margin-top: 6px;
-  font-size: 20px;
+  margin-top: 4px;
+  font-size: 18px;
   font-weight: 900;
   line-height: 1;
 }
@@ -651,8 +659,11 @@ onMounted(async () => {
   color: var(--orange);
 }
 
-.stat-card.red strong {
-  color: var(--red);
+.stat-card p {
+  margin: 6px 0 0;
+  color: #6a7891;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .search-grid {
@@ -739,8 +750,12 @@ onMounted(async () => {
 
 .result-summary {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 2px;
 }
 
 .result-summary span,
@@ -750,9 +765,14 @@ onMounted(async () => {
   border-radius: 999px;
   background: #f7faff;
   color: #35527d;
-  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  padding: 3px 10px;
   font-size: 12px;
   font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .result-list {
@@ -912,6 +932,10 @@ onMounted(async () => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.model-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .metric-card,
 .relation-card,
 .info-grid div {
@@ -1023,18 +1047,13 @@ onMounted(async () => {
   background: #f4fff7;
 }
 
-@media (max-width: 1120px) {
-  .page-hero {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
+@media (max-width: 920px) {
   .search-grid {
     grid-template-columns: 1fr;
   }
 
   .stats-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -1062,6 +1081,11 @@ onMounted(async () => {
   .block-head,
   .modal-head {
     flex-direction: column;
+  }
+
+  .result-summary {
+    flex-wrap: wrap;
+    overflow-x: visible;
   }
 }
 </style>

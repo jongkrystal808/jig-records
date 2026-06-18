@@ -9,10 +9,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 from fastapi import Depends, Header, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
-from backend.app.models.master import User
+from backend.app.models.master import Customer, User, UserCustomer
 
 PermissionLevel = Literal["read", "write", "manage"]
 SessionMode = Literal["user", "guest"]
@@ -166,3 +167,56 @@ def require_permission(level: PermissionLevel):
         return session
 
     return dependency
+
+
+def get_allowed_customer_ids(session: SessionContext, db: Session) -> list[int] | None:
+    if session.role == "admin" or session.is_guest:
+        return None
+    if session.user_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="customer access is not available")
+    stmt = select(UserCustomer.customer_id).where(UserCustomer.user_id == session.user_id).order_by(UserCustomer.customer_id)
+    return list(db.scalars(stmt))
+
+
+def _serialize_customer(customer: Customer, db: Session) -> dict:
+    assigned_user_ids = list(
+        db.scalars(select(UserCustomer.user_id).where(UserCustomer.customer_id == customer.id).order_by(UserCustomer.user_id))
+    )
+    return {
+        "id": customer.id,
+        "code": customer.code,
+        "name": customer.name,
+        "assigned_user_ids": assigned_user_ids,
+        "created_at": customer.created_at,
+        "updated_at": customer.updated_at,
+    }
+
+
+def list_accessible_customers(session: SessionContext, db: Session) -> list[dict]:
+    if session.role == "admin" or session.is_guest:
+        stmt = select(Customer).order_by(Customer.code)
+        return [_serialize_customer(customer, db) for customer in db.scalars(stmt)]
+    allowed_customer_ids = get_allowed_customer_ids(session, db)
+    if not allowed_customer_ids:
+        return []
+    stmt = select(Customer).where(Customer.id.in_(allowed_customer_ids)).order_by(Customer.code)
+    return [_serialize_customer(customer, db) for customer in db.scalars(stmt)]
+
+
+def resolve_customer_scope(
+    session: SessionContext,
+    db: Session,
+    customer_id: int | None,
+    *,
+    allow_empty: bool = True,
+) -> int | None:
+    if session.role == "admin" or session.is_guest:
+        return customer_id
+    allowed_customer_ids = get_allowed_customer_ids(session, db) or []
+    if customer_id is None:
+        if allow_empty:
+            return None
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="customer_id is required")
+    if customer_id not in allowed_customer_ids:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="customer access denied")
+    return customer_id

@@ -1,8 +1,8 @@
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.app.models.inventory import FixtureStockLevel
-from backend.app.models.master import Customer, Fixture, MachineModel, Owner, Station, User
+from backend.app.models.master import Customer, Fixture, MachineModel, Station, User, UserCustomer
 
 
 class MasterRepository:
@@ -18,6 +18,12 @@ class MasterRepository:
     def list_customers(self) -> list[Customer]:
         return list(self.db.scalars(select(Customer).order_by(Customer.code)))
 
+    def list_customers_by_ids(self, customer_ids: list[int]) -> list[Customer]:
+        if not customer_ids:
+            return []
+        stmt = select(Customer).where(Customer.id.in_(customer_ids)).order_by(Customer.code)
+        return list(self.db.scalars(stmt))
+
     def get_customer(self, customer_id: int) -> Customer | None:
         return self.db.get(Customer, customer_id)
 
@@ -25,11 +31,17 @@ class MasterRepository:
         stmt = select(Customer).where(Customer.code == code)
         return self.db.scalar(stmt)
 
+    def update_customer(self, customer: Customer, *, code: str, name: str) -> Customer:
+        customer.code = code
+        customer.name = name
+        self.db.flush()
+        return customer
+
     def create_fixture(
         self,
         *,
         customer_id: int,
-        owner_id: int | None,
+        responsible_user_id: int | None,
         code: str,
         name: str,
         storage_location: str | None,
@@ -37,7 +49,7 @@ class MasterRepository:
     ) -> Fixture:
         fixture = Fixture(
             customer_id=customer_id,
-            owner_id=owner_id,
+            responsible_user_id=responsible_user_id,
             code=code,
             name=name,
             storage_location=storage_location,
@@ -65,12 +77,19 @@ class MasterRepository:
     def get_stock_level(self, fixture_id: int) -> FixtureStockLevel | None:
         return self.db.get(FixtureStockLevel, fixture_id)
 
+    def list_stock_levels(self, fixture_ids: list[int]) -> dict[int, FixtureStockLevel]:
+        if not fixture_ids:
+            return {}
+        stmt = select(FixtureStockLevel).where(FixtureStockLevel.fixture_id.in_(fixture_ids))
+        levels = list(self.db.scalars(stmt))
+        return {level.fixture_id: level for level in levels}
+
     def update_fixture(
         self,
         fixture: Fixture,
         *,
         customer_id: int,
-        owner_id: int | None,
+        responsible_user_id: int | None,
         code: str,
         name: str,
         storage_location: str | None,
@@ -78,7 +97,7 @@ class MasterRepository:
         is_active: bool,
     ) -> Fixture:
         fixture.customer_id = customer_id
-        fixture.owner_id = owner_id
+        fixture.responsible_user_id = responsible_user_id
         fixture.code = code
         fixture.name = name
         fixture.storage_location = storage_location
@@ -158,30 +177,49 @@ class MasterRepository:
         self.db.flush()
         return station
 
-    def create_owner(self, *, name: str) -> Owner:
-        owner = Owner(name=name, is_active=True)
-        self.db.add(owner)
-        self.db.flush()
-        return owner
-
-    def list_owners(self) -> list[Owner]:
-        return list(self.db.scalars(select(Owner).order_by(Owner.name)))
-
-    def get_owner(self, owner_id: int) -> Owner | None:
-        return self.db.get(Owner, owner_id)
-
-    def get_owner_by_name(self, name: str) -> Owner | None:
-        stmt = select(Owner).where(Owner.name == name)
-        return self.db.scalar(stmt)
-
-    def update_owner(self, owner: Owner, *, name: str, is_active: bool) -> Owner:
-        owner.name = name
-        owner.is_active = is_active
-        self.db.flush()
-        return owner
-
     def list_users(self) -> list[User]:
         return list(self.db.scalars(select(User).order_by(User.username)))
+
+    def list_users_by_ids(self, user_ids: list[int]) -> list[User]:
+        if not user_ids:
+            return []
+        stmt = select(User).where(User.id.in_(user_ids)).order_by(User.username)
+        return list(self.db.scalars(stmt))
+
+    def list_users_by_customer(self, customer_id: int) -> list[User]:
+        stmt = (
+            select(User)
+            .join(UserCustomer, UserCustomer.user_id == User.id)
+            .where(UserCustomer.customer_id == customer_id)
+            .order_by(User.display_name, User.username)
+        )
+        return list(self.db.scalars(stmt))
+
+    def list_allowed_customer_ids_for_user(self, user_id: int) -> list[int]:
+        stmt = select(UserCustomer.customer_id).where(UserCustomer.user_id == user_id).order_by(UserCustomer.customer_id)
+        return list(self.db.scalars(stmt))
+
+    def list_allowed_user_ids_for_customer(self, customer_id: int) -> list[int]:
+        stmt = select(UserCustomer.user_id).where(UserCustomer.customer_id == customer_id).order_by(UserCustomer.user_id)
+        return list(self.db.scalars(stmt))
+
+    def replace_allowed_customers_for_user(self, user_id: int, customer_ids: list[int]) -> None:
+        self.db.execute(delete(UserCustomer).where(UserCustomer.user_id == user_id))
+        unique_customer_ids = sorted(set(customer_ids))
+        if not unique_customer_ids:
+            self.db.flush()
+            return
+        self.db.add_all([UserCustomer(user_id=user_id, customer_id=customer_id) for customer_id in unique_customer_ids])
+        self.db.flush()
+
+    def replace_allowed_users_for_customer(self, customer_id: int, user_ids: list[int]) -> None:
+        self.db.execute(delete(UserCustomer).where(UserCustomer.customer_id == customer_id))
+        unique_user_ids = sorted(set(user_ids))
+        if not unique_user_ids:
+            self.db.flush()
+            return
+        self.db.add_all([UserCustomer(user_id=user_id, customer_id=customer_id) for user_id in unique_user_ids])
+        self.db.flush()
 
     def get_user(self, user_id: int) -> User | None:
         return self.db.get(User, user_id)

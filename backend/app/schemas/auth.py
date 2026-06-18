@@ -16,6 +16,7 @@ class UserRead(TimestampedResponse):
     display_name: str
     role: str
     is_active: bool
+    allowed_customer_ids: list[int]
 
 
 class UserCreate(BaseModel):
@@ -24,12 +25,14 @@ class UserCreate(BaseModel):
     display_name: str = Field(min_length=1, max_length=120)
     role: str = Field(default="user", min_length=1, max_length=32)
     is_active: bool = True
+    allowed_customer_ids: list[int] = Field(default_factory=list)
 
 
 class UserUpdate(BaseModel):
     display_name: str = Field(min_length=1, max_length=120)
     role: str = Field(min_length=1, max_length=32)
     is_active: bool = True
+    allowed_customer_ids: list[int] = Field(default_factory=list)
 
 
 class UserPasswordReset(BaseModel):

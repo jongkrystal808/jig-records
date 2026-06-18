@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { authSession } from "@/appState";
 import InventoryPage from "@/pages/InventoryPage.vue";
 import MasterPage from "@/pages/MasterPage.vue";
 import ProductionPage from "@/pages/ProductionPage.vue";
@@ -14,6 +15,13 @@ const router = createRouter({
     { path: "/master", name: "master", component: MasterPage },
     { path: "/production", name: "production", component: ProductionPage }
   ]
+});
+
+router.beforeEach((to) => {
+  if (to.path.startsWith("/master") && authSession.value?.role === "guest") {
+    return { path: "/search" };
+  }
+  return true;
 });
 
 export default router;
