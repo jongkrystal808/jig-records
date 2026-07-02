@@ -183,6 +183,38 @@ class InventoryRepository:
             stmt = stmt.where(Fixture.customer_id == customer_id)
         return [dict(row._mapping) for row in self.db.execute(stmt).all()]
 
+    def list_identifier_stock_summary_rows(self, customer_id: int | None = None) -> list[dict]:
+        stock_qty_expr = (
+            func.coalesce(
+                func.sum(
+                    case(
+                        (MaterialTransaction.transaction_type == "receipt", MaterialTransactionItem.quantity),
+                        else_=-MaterialTransactionItem.quantity,
+                    )
+                ),
+                0,
+            )
+        )
+        stmt = (
+            select(
+                MaterialTransactionItem.fixture_id.label("fixture_id"),
+                MaterialTransactionItem.identifier.label("identifier"),
+                stock_qty_expr.label("stock_qty"),
+            )
+            .join(MaterialTransaction, MaterialTransaction.id == MaterialTransactionItem.transaction_id)
+            .join(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
+            .where(
+                MaterialTransactionItem.identifier.is_not(None),
+                MaterialTransactionItem.identifier != "",
+            )
+            .group_by(MaterialTransactionItem.fixture_id, MaterialTransactionItem.identifier)
+            .having(stock_qty_expr > 0)
+            .order_by(MaterialTransactionItem.fixture_id.asc(), MaterialTransactionItem.identifier.asc())
+        )
+        if customer_id is not None:
+            stmt = stmt.where(MaterialTransaction.customer_id == customer_id, Fixture.customer_id == customer_id)
+        return [dict(row._mapping) for row in self.db.execute(stmt).all()]
+
     def list_transactions(
         self,
         limit: int,
@@ -276,3 +308,51 @@ class InventoryRepository:
                 }
             )
         return result
+
+    def list_transaction_item_rows(
+        self,
+        customer_id: int | None = None,
+        *,
+        transaction_type: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        fixture_code: str | None = None,
+        transaction_no: str | None = None,
+        identifier: str | None = None,
+        created_by: str | None = None,
+    ) -> list[dict]:
+        stmt = (
+            select(
+                MaterialTransaction.id.label("transaction_id"),
+                MaterialTransaction.transaction_type.label("transaction_type"),
+                MaterialTransaction.transaction_no.label("transaction_no"),
+                MaterialTransaction.occurred_at.label("occurred_at"),
+                MaterialTransaction.created_by.label("created_by"),
+                MaterialTransactionItem.id.label("transaction_item_id"),
+                MaterialTransactionItem.fixture_id.label("fixture_id"),
+                MaterialTransactionItem.identifier.label("identifier"),
+                MaterialTransactionItem.quantity.label("quantity"),
+                Fixture.code.label("fixture_code"),
+                Fixture.name.label("fixture_name"),
+            )
+            .join(MaterialTransactionItem, MaterialTransactionItem.transaction_id == MaterialTransaction.id)
+            .join(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
+        )
+        if customer_id is not None:
+            stmt = stmt.where(MaterialTransaction.customer_id == customer_id, Fixture.customer_id == customer_id)
+        if transaction_type:
+            stmt = stmt.where(MaterialTransaction.transaction_type == transaction_type)
+        if date_from is not None:
+            stmt = stmt.where(MaterialTransaction.occurred_at >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(MaterialTransaction.occurred_at <= date_to)
+        if fixture_code:
+            stmt = stmt.where(Fixture.code.ilike(f"%{fixture_code.strip()}%"))
+        if transaction_no:
+            stmt = stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
+        if identifier:
+            stmt = stmt.where(MaterialTransactionItem.identifier.ilike(f"%{identifier.strip()}%"))
+        if created_by:
+            stmt = stmt.where(MaterialTransaction.created_by.ilike(f"%{created_by.strip()}%"))
+        stmt = stmt.order_by(MaterialTransaction.occurred_at.asc(), MaterialTransaction.id.asc(), MaterialTransactionItem.id.asc())
+        return [dict(row._mapping) for row in self.db.execute(stmt).all()]

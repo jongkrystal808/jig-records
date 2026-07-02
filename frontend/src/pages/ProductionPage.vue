@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
 import { api } from "@/api";
-import { selectedCustomerId } from "@/appState";
+import { globalFixtureKeyword, selectedCustomerId } from "@/appState";
 import { pushToast } from "@/toastState";
-import type { Fixture, FixtureRequirementListItem, MachineModel, ModelQuery, ModelStation, Station, StationCapacity } from "@/types";
+import type { Fixture, FixtureRequirementListItem, MachineModel, ModelQuery, ModelQueryStationRequirement, ModelStation, Station, StationCapacity } from "@/types";
+import { formatLocalDate } from "@/utils/date";
+import { matchesFixtureKeywords, parseFixtureKeywords } from "@/utils/fixtureSearch";
 import UiFormActions from "@/components/UiFormActions.vue";
 import ProductionCapacityPanel from "@/components/production/ProductionCapacityPanel.vue";
+
+const route = useRoute();
+const router = useRouter();
 
 const models = ref<MachineModel[]>([]);
 const stations = ref<Station[]>([]);
@@ -19,20 +25,27 @@ const stationCapacity = ref<StationCapacity | null>(null);
 const modelId = ref<number | null>(null);
 const mappingStationId = ref<number | null>(null);
 const requirementStationId = ref<number | null>(null);
+const preferredRequirementStationCode = ref("");
 const fixtureId = ref<number | null>(null);
 const requiredQty = ref(1);
+const mappingModelCodeInput = ref("");
+const mappingStationCodeInput = ref("");
+const requirementStationCodeInput = ref("");
+const fixtureCodeInput = ref("");
 
 const savingMapping = ref(false);
 const savingRequirement = ref(false);
 const loading = ref(false);
 const loadedAt = ref("");
 const updatedAt = ref("");
+const bottleneckHighlightTrigger = ref(0);
 const mappingImportInput = ref<HTMLInputElement | null>(null);
 const requirementImportInput = ref<HTMLInputElement | null>(null);
 const editingMappingId = ref<number | null>(null);
 const editingRequirementId = ref<number | null>(null);
 const showMappingBatchModal = ref(false);
 const showRequirementBatchModal = ref(false);
+const openAutocompleteKey = ref<null | "mapping-model" | "mapping-station" | "requirement-station" | "fixture">(null);
 const mappingBatchText = ref("");
 const requirementBatchText = ref("");
 type BatchRowStatus = "ready" | "needs-confirm" | "needs-add" | "skipped" | "error";
@@ -76,7 +89,7 @@ const mappingBatchRows = ref<MappingBatchRow[]>([]);
 const requirementBatchRows = ref<RequirementBatchRow[]>([]);
 
 function nowString(): string {
-  return new Date().toLocaleString("zh-TW", { hour12: false });
+  return formatLocalDate(new Date());
 }
 
 function touchUpdatedAt(): void {
@@ -87,8 +100,7 @@ const selectedModel = computed(() => models.value.find((row) => row.id === model
 const selectedStation = computed(() => stations.value.find((row) => row.id === requirementStationId.value) ?? null);
 const modelMap = computed(() => new Map(models.value.map((row) => [row.id, row.code])));
 const stationMap = computed(() => new Map(stations.value.map((row) => [row.id, row.code])));
-const capacityMaxOpen = computed(() => stationCapacity.value?.max_open_station_count ?? 0);
-
+const globalFixtureKeywords = computed(() => parseFixtureKeywords(globalFixtureKeyword.value));
 const mappingRows = computed(() =>
   mappings.value.map((row) => ({
     id: row.id,
@@ -106,37 +118,302 @@ const availableRequirementStations = computed(() =>
     .slice()
     .sort((a, b) => a.code.localeCompare(b.code))
 );
+const selectedStationId = computed(() => requirementStationId.value);
+const selectedStationCode = computed(() => selectedStation.value?.code ?? "");
 const selectedStationRequirementRows = computed(() =>
   fixtureRequirements.value.filter(
-    (row) => row.model_id === modelId.value && row.station_id === requirementStationId.value
+    (row) =>
+      row.model_id === modelId.value &&
+      row.station_id === requirementStationId.value &&
+      matchesFixtureKeywords(row.fixture_code, globalFixtureKeywords.value)
   )
 );
+const selectedStationQueryRows = computed<ModelQueryStationRequirement[]>(() => {
+  if (!modelQuery.value || requirementStationId.value === null) {
+    return [];
+  }
+  return modelQuery.value.station_requirements.filter(
+    (row) =>
+      row.station_id === requirementStationId.value &&
+      matchesFixtureKeywords(row.fixture_code, globalFixtureKeywords.value)
+  );
+});
+const currentStationHasBottleneck = computed(() => selectedStationQueryRows.value.some((row) => row.stock_status !== "normal"));
+const stationConstraintTitle = computed(() => (currentStationHasBottleneck.value ? "瓶頸治具" : "目前限制治具"));
+const stationConstraintHint = computed(() => {
+  if (!stationCapacity.value?.bottleneck_fixture_code) {
+    return "目前沒有可顯示的限制治具";
+  }
+  return currentStationHasBottleneck.value ? "點一下，定位到下方證據列" : "目前無瓶頸，治具供應充足";
+});
+const displayedModelQuery = computed(() => {
+  if (!modelQuery.value || globalFixtureKeywords.value.length === 0) {
+    return modelQuery.value;
+  }
+  return {
+    ...modelQuery.value,
+    fixtures: modelQuery.value.fixtures.filter((row) => matchesFixtureKeywords(row.fixture_code, globalFixtureKeywords.value))
+  };
+});
 const mappingReadyRows = computed(() => mappingBatchRows.value.filter((row) => row.status === "ready"));
 const mappingPendingRows = computed(() => mappingBatchRows.value.filter((row) => row.status === "needs-confirm" || row.status === "needs-add"));
 const mappingErrorRows = computed(() => mappingBatchRows.value.filter((row) => row.status === "error"));
 const requirementReadyRows = computed(() => requirementBatchRows.value.filter((row) => row.status === "ready"));
 const requirementPendingRows = computed(() => requirementBatchRows.value.filter((row) => row.status === "needs-confirm" || row.status === "needs-add"));
 const requirementErrorRows = computed(() => requirementBatchRows.value.filter((row) => row.status === "error"));
+const filteredModelSuggestions = computed(() => filterCodeSuggestions(models.value, mappingModelCodeInput.value));
+const filteredStationSuggestions = computed(() => filterCodeSuggestions(stations.value, mappingStationCodeInput.value));
+const filteredRequirementStationSuggestions = computed(() => filterCodeSuggestions(availableRequirementStations.value, requirementStationCodeInput.value));
+const filteredFixtureSuggestions = computed(() => filterCodeSuggestions(fixtures.value, fixtureCodeInput.value));
+const detailMode = computed<"overview" | "mapping" | "requirements">(() => {
+  if (route.name === "production-mapping") return "mapping";
+  if (route.name === "production-requirements") return "requirements";
+  return "overview";
+});
+const isMainOverview = computed(() => detailMode.value === "overview");
+const mappingSummaryText = computed(() => {
+  const currentModelCode = selectedModel.value?.code || "-";
+  return `目前機種：${currentModelCode} / ${selectedModelStationRows.value.length} 筆站點`;
+});
+const requirementSummaryText = computed(() => {
+  const currentStationCode = selectedStation.value?.code || "-";
+  return `目前站點：${currentStationCode} / ${selectedStationRequirementRows.value.length} 筆治具`;
+});
+const requirementNeedsMapping = computed(() => selectedModelStationRows.value.length === 0);
+
+function parseRouteModelId(): number | null {
+  const raw = Array.isArray(route.query.model_id) ? route.query.model_id[0] : route.query.model_id;
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    return null;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function applyRouteModelSelection(): void {
+  const routeModelId = parseRouteModelId();
+  if (routeModelId === null) {
+    return;
+  }
+  const match = models.value.find((row) => row.id === routeModelId);
+  if (match) {
+    modelId.value = match.id;
+  }
+}
+
+function normalizeLookupText(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normalizeEditorText(value: string | null | undefined): string {
+  return (value ?? "").trim();
+}
+
+const mappingEditorBaseline = computed(() => ({
+  modelCode: normalizeEditorText(selectedModel.value?.code),
+  stationCode: normalizeEditorText(stations.value.find((row) => row.id === mappingStationId.value)?.code)
+}));
+const mappingEditorCurrent = computed(() => ({
+  modelCode: normalizeEditorText(mappingModelCodeInput.value),
+  stationCode: normalizeEditorText(mappingStationCodeInput.value)
+}));
+const hasUnsavedMappingChanges = computed(() => JSON.stringify(mappingEditorCurrent.value) !== JSON.stringify(mappingEditorBaseline.value));
+const requirementEditorBaseline = computed(() => ({
+  stationCode: normalizeEditorText(selectedStation.value?.code),
+  fixtureCode: normalizeEditorText(fixtures.value.find((row) => row.id === fixtureId.value)?.code),
+  requiredQty: requiredQty.value
+}));
+const requirementEditorCurrent = computed(() => ({
+  stationCode: normalizeEditorText(requirementStationCodeInput.value),
+  fixtureCode: normalizeEditorText(fixtureCodeInput.value),
+  requiredQty: requiredQty.value
+}));
+const hasUnsavedRequirementChanges = computed(() => JSON.stringify(requirementEditorCurrent.value) !== JSON.stringify(requirementEditorBaseline.value));
+
+function filterCodeSuggestions<T extends { code: string }>(rows: T[], keyword: string): T[] {
+  const normalized = normalizeLookupText(keyword);
+  if (!normalized) return rows.slice(0, 20);
+  return rows.filter((row) => row.code.toLowerCase().includes(normalized)).slice(0, 20);
+}
+
+function hasExactCodeMatch<T extends { code: string }>(rows: T[], value: string): boolean {
+  const normalized = normalizeLookupText(value);
+  return !!normalized && rows.some((row) => row.code.toLowerCase() === normalized);
+}
+
+function findCodeMatch<T extends { id: number; code: string }>(rows: T[], value: string): T | null {
+  const normalized = normalizeLookupText(value);
+  if (!normalized) return null;
+  const exact = rows.find((row) => row.code.toLowerCase() === normalized);
+  if (exact) return exact;
+  const startsWithMatches = rows.filter((row) => row.code.toLowerCase().startsWith(normalized));
+  if (startsWithMatches.length === 1) return startsWithMatches[0];
+  return null;
+}
+
+function syncMappingModelSelection(): void {
+  const match = findCodeMatch(models.value, mappingModelCodeInput.value);
+  if (match) modelId.value = match.id;
+}
+
+function syncMappingStationSelection(): void {
+  const match = findCodeMatch(stations.value, mappingStationCodeInput.value);
+  if (match) mappingStationId.value = match.id;
+}
+
+function syncRequirementStationInput(): void {
+  const match = findCodeMatch(availableRequirementStations.value, requirementStationCodeInput.value);
+  if (match) requirementStationId.value = match.id;
+}
+
+function syncFixtureSelection(): void {
+  const match = findCodeMatch(fixtures.value, fixtureCodeInput.value);
+  if (match) fixtureId.value = match.id;
+}
+
+function openAutocomplete(
+  key: "mapping-model" | "mapping-station" | "requirement-station" | "fixture",
+  rows: Array<{ code: string }>,
+  value: string
+): void {
+  openAutocompleteKey.value = hasExactCodeMatch(rows, value) ? key : null;
+}
+
+function showAutocompleteOnInput(key: "mapping-model" | "mapping-station" | "requirement-station" | "fixture"): void {
+  openAutocompleteKey.value = key;
+}
+
+function closeAutocompleteSoon(): void {
+  window.setTimeout(() => {
+    openAutocompleteKey.value = null;
+  }, 120);
+}
+
+function selectModelSuggestion(code: string): void {
+  mappingModelCodeInput.value = code;
+  syncMappingModelSelection();
+  openAutocompleteKey.value = null;
+}
+
+function selectMappingStationSuggestion(code: string): void {
+  mappingStationCodeInput.value = code;
+  syncMappingStationSelection();
+  openAutocompleteKey.value = null;
+}
+
+function selectRequirementStationSuggestion(code: string): void {
+  requirementStationCodeInput.value = code;
+  syncRequirementStationInput();
+  openAutocompleteKey.value = null;
+}
+
+function selectFixtureSuggestion(code: string): void {
+  fixtureCodeInput.value = code;
+  syncFixtureSelection();
+  openAutocompleteKey.value = null;
+}
+
+function openMappingPage(): void {
+  if (detailMode.value !== "mapping" && hasUnsavedRequirementChanges.value && !window.confirm("目前 Requirement 表單有未儲存的修改，切換到 Mapping 後將會捨棄。要繼續嗎？")) {
+    return;
+  }
+  router.push({ name: "production-mapping" });
+}
+
+function openRequirementPage(): void {
+  if (detailMode.value !== "requirements" && hasUnsavedMappingChanges.value && !window.confirm("目前 Mapping 表單有未儲存的修改，切換到 Requirement 後將會捨棄。要繼續嗎？")) {
+    return;
+  }
+  router.push({ name: "production-requirements" });
+}
+
+function closeDetailPage(): void {
+  router.push({ name: "production" });
+}
+
+function ensureMappingSelections(): boolean {
+  syncMappingModelSelection();
+  syncMappingStationSelection();
+  if (!modelId.value) {
+    pushToast("請輸入有效的機種代碼。", "warning");
+    return false;
+  }
+  if (!mappingStationId.value) {
+    pushToast("請輸入有效的站點代碼。", "warning");
+    return false;
+  }
+  return true;
+}
+
+function ensureRequirementSelections(): boolean {
+  syncRequirementStationInput();
+  syncFixtureSelection();
+  if (!requirementStationId.value) {
+    pushToast("請輸入有效的站點代碼。", "warning");
+    return false;
+  }
+  if (!fixtureId.value) {
+    pushToast("請輸入有效的治具代碼。", "warning");
+    return false;
+  }
+  return true;
+}
 
 function resetMappingEditor(): void {
+  if (hasUnsavedMappingChanges.value && !window.confirm("目前 Mapping 表單有未儲存的修改，重載後將會捨棄。要繼續嗎？")) {
+    return;
+  }
+  resetMappingEditorWithoutPrompt();
+}
+
+function resetMappingEditorWithoutPrompt(): void {
   editingMappingId.value = null;
+  mappingModelCodeInput.value = selectedModel.value?.code ?? "";
+  mappingStationCodeInput.value = stations.value.find((row) => row.id === mappingStationId.value)?.code ?? "";
 }
 
 function resetRequirementEditor(): void {
+  if (hasUnsavedRequirementChanges.value && !window.confirm("目前 Requirement 表單有未儲存的修改，重載後將會捨棄。要繼續嗎？")) {
+    return;
+  }
+  resetRequirementEditorWithoutPrompt();
+}
+
+function resetRequirementEditorWithoutPrompt(): void {
   editingRequirementId.value = null;
+  requirementStationCodeInput.value = selectedStation.value?.code ?? "";
+  fixtureCodeInput.value = fixtures.value.find((row) => row.id === fixtureId.value)?.code ?? "";
+  requiredQty.value = 1;
 }
 
 function startEditMapping(row: { id: number; model_id: number; station_id: number }): void {
+  if (editingMappingId.value !== row.id && hasUnsavedMappingChanges.value && !window.confirm("目前 Mapping 表單有未儲存的修改，切換編輯對象後將會捨棄。要繼續嗎？")) {
+    return;
+  }
   modelId.value = row.model_id;
   mappingStationId.value = row.station_id;
   editingMappingId.value = row.id;
 }
 
 function startEditRequirement(row: { id: number; station_id: number; fixture_id: number; required_qty: number }): void {
+  if (editingRequirementId.value !== row.id && hasUnsavedRequirementChanges.value && !window.confirm("目前 Requirement 表單有未儲存的修改，切換編輯對象後將會捨棄。要繼續嗎？")) {
+    return;
+  }
   requirementStationId.value = row.station_id;
   fixtureId.value = row.fixture_id;
   requiredQty.value = row.required_qty;
   editingRequirementId.value = row.id;
+}
+
+function updateSelectedStationId(stationId: number | null): void {
+  requirementStationId.value = stationId;
+}
+
+function focusBottleneckEvidence(): void {
+  if (!stationCapacity.value?.bottleneck_fixture_code || !currentStationHasBottleneck.value) {
+    return;
+  }
+  bottleneckHighlightTrigger.value += 1;
 }
 
 function downloadCsv(filename: string, content: string): void {
@@ -537,7 +814,8 @@ function clearRequirementBatchImport(): void {
 }
 
 function syncRequirementStationSelection(): void {
-  const availableStationIds = new Set(availableRequirementStations.value.map((row) => row.id));
+  const availableStations = availableRequirementStations.value;
+  const availableStationIds = new Set(availableStations.map((row) => row.id));
   if (!availableStationIds.size) {
     requirementStationId.value = null;
     return;
@@ -547,7 +825,16 @@ function syncRequirementStationSelection(): void {
     return;
   }
 
-  requirementStationId.value = availableRequirementStations.value[0]?.id ?? null;
+  const preferredCode = normalizeLookupText(preferredRequirementStationCode.value);
+  if (preferredCode) {
+    const matchedStation = availableStations.find((row) => normalizeLookupText(row.code) === preferredCode);
+    if (matchedStation) {
+      requirementStationId.value = matchedStation.id;
+      return;
+    }
+  }
+
+  requirementStationId.value = availableStations[0]?.id ?? null;
 }
 
 function hasValidRequirementStationSelection(): boolean {
@@ -557,8 +844,10 @@ function hasValidRequirementStationSelection(): boolean {
   return availableRequirementStations.value.some((row) => row.id === requirementStationId.value);
 }
 
-async function loadData(): Promise<void> {
-  loading.value = true;
+async function loadData(showLoading = true): Promise<void> {
+  if (showLoading) {
+    loading.value = true;
+  }
   try {
     modelQuery.value = null;
     stationCapacity.value = null;
@@ -577,14 +866,15 @@ async function loadData(): Promise<void> {
     fixtureRequirements.value = requirementRows;
 
     modelId.value = modelRows.find((row) => row.id === modelId.value)?.id ?? modelRows[0]?.id ?? null;
+    applyRouteModelSelection();
     mappingStationId.value = stationRows.find((row) => row.id === mappingStationId.value)?.id ?? stationRows[0]?.id ?? null;
     fixtureId.value = fixtureRows.find((row) => row.id === fixtureId.value)?.id ?? fixtureRows[0]?.id ?? null;
     syncRequirementStationSelection();
     if (editingMappingId.value !== null && !mappingRows.some((row) => row.id === editingMappingId.value)) {
-      resetMappingEditor();
+      resetMappingEditorWithoutPrompt();
     }
     if (editingRequirementId.value !== null && !requirementRows.some((row) => row.id === editingRequirementId.value)) {
-      resetRequirementEditor();
+      resetRequirementEditorWithoutPrompt();
     }
 
     if (!loadedAt.value) loadedAt.value = nowString();
@@ -592,28 +882,32 @@ async function loadData(): Promise<void> {
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "載入失敗", "error");
   } finally {
-    loading.value = false;
+    if (showLoading) {
+      loading.value = false;
+    }
   }
 }
 
 async function saveMapping(): Promise<void> {
-  if (!modelId.value || !mappingStationId.value) return;
+  if (!ensureMappingSelections()) return;
   savingMapping.value = true;
   try {
     if (!selectedCustomerId.value) {
       pushToast("請先選擇客戶。", "warning");
       return;
     }
-    const payload = { customer_id: selectedCustomerId.value, model_id: modelId.value, station_id: mappingStationId.value };
+    const currentModelId = modelId.value as number;
+    const currentStationId = mappingStationId.value as number;
+    const payload = { customer_id: selectedCustomerId.value, model_id: currentModelId, station_id: currentStationId };
     if (editingMappingId.value === null) {
       await api.createModelStation(payload);
       pushToast("Model-Station Mapping 已新增", "success");
     } else {
       await api.updateModelStation(editingMappingId.value, payload);
-      resetMappingEditor();
+      resetMappingEditorWithoutPrompt();
       pushToast("Model-Station Mapping 已更新", "success");
     }
-    await loadData();
+    await loadData(false);
     await Promise.all([refreshCapacity(), refreshModelQuery()]);
   } catch (err) {
     pushToast(err instanceof Error ? err.message : editingMappingId.value === null ? "新增 mapping 失敗" : "更新 mapping 失敗", "error");
@@ -630,8 +924,8 @@ async function removeMapping(rowId: number): Promise<void> {
   if (!window.confirm("確定要刪除這筆機種站點對應嗎？")) return;
   try {
     await api.deleteModelStation(rowId, selectedCustomerId.value);
-    if (editingMappingId.value === rowId) resetMappingEditor();
-    await loadData();
+    if (editingMappingId.value === rowId) resetMappingEditorWithoutPrompt();
+    await loadData(false);
     await Promise.all([refreshCapacity(), refreshModelQuery()]);
     pushToast("Mapping 已刪除", "success");
   } catch (err) {
@@ -640,7 +934,7 @@ async function removeMapping(rowId: number): Promise<void> {
 }
 
 async function saveRequirement(): Promise<void> {
-  if (!requirementStationId.value || !fixtureId.value) return;
+  if (!ensureRequirementSelections()) return;
   savingRequirement.value = true;
   try {
     if (!selectedCustomerId.value) {
@@ -656,11 +950,13 @@ async function saveRequirement(): Promise<void> {
       pushToast("請先替目前機種建立站點對應，再設定該站點的治具需求。", "warning");
       return;
     }
+    const currentStationId = requirementStationId.value as number;
+    const currentFixtureId = fixtureId.value as number;
     const payload = {
       customer_id: selectedCustomerId.value,
       model_id: currentModelId,
-      station_id: requirementStationId.value,
-      fixture_id: fixtureId.value,
+      station_id: currentStationId,
+      fixture_id: currentFixtureId,
       required_qty: requiredQty.value
     };
     if (editingRequirementId.value === null) {
@@ -668,10 +964,10 @@ async function saveRequirement(): Promise<void> {
       pushToast("Fixture Requirement 已儲存", "success");
     } else {
       await api.updateFixtureRequirement(editingRequirementId.value, payload);
-      resetRequirementEditor();
+      resetRequirementEditorWithoutPrompt();
       pushToast("Fixture Requirement 已更新", "success");
     }
-    await loadData();
+    await loadData(false);
     await Promise.all([refreshCapacity(), refreshModelQuery()]);
     touchUpdatedAt();
   } catch (err) {
@@ -689,8 +985,8 @@ async function removeRequirement(requirementId: number): Promise<void> {
   if (!window.confirm("確定要刪除這筆站點治具需求嗎？")) return;
   try {
     await api.deleteFixtureRequirement(requirementId, selectedCustomerId.value);
-    if (editingRequirementId.value === requirementId) resetRequirementEditor();
-    await loadData();
+    if (editingRequirementId.value === requirementId) resetRequirementEditorWithoutPrompt();
+    await loadData(false);
     await Promise.all([refreshCapacity(), refreshModelQuery()]);
     pushToast("Requirement 已刪除", "success");
   } catch (err) {
@@ -717,14 +1013,14 @@ async function refreshCapacity(): Promise<void> {
 }
 
 async function refreshModelQuery(): Promise<void> {
-  if (!hasValidRequirementStationSelection()) {
+  if (modelId.value === null) {
     modelQuery.value = null;
     return;
   }
   try {
     modelQuery.value = await api.getModelQuery(
       modelId.value!,
-      requirementStationId.value!,
+      undefined,
       selectedCustomerId.value ?? undefined
     );
     touchUpdatedAt();
@@ -783,7 +1079,7 @@ async function submitMappingBatchImport(): Promise<void> {
     const result = await api.importModelStationsCsv(selectedCustomerId.value, csv, "batch-model-stations.csv");
     showMappingBatchModal.value = false;
     clearMappingBatchImport();
-    await loadData();
+    await loadData(false);
     await Promise.all([refreshCapacity(), refreshModelQuery()]);
     pushToast(`批次貼上匯入 Mapping 完成，共 ${result.imported_count} 筆。`, "success");
   } catch (err) {
@@ -803,7 +1099,7 @@ async function importModelStationsCsv(event: Event): Promise<void> {
       return;
     }
     const result = await api.importModelStationsCsv(selectedCustomerId.value ?? undefined, await file.text(), file.name);
-    await loadData();
+    await loadData(false);
     pushToast(`匯入 mapping 完成，共 ${result.imported_count} 筆。`, "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "匯入 mapping 失敗", "error");
@@ -870,7 +1166,7 @@ async function submitRequirementBatchImport(): Promise<void> {
     const result = await api.importFixtureRequirementsCsv(selectedCustomerId.value, csv, "batch-fixture-requirements.csv");
     showRequirementBatchModal.value = false;
     clearRequirementBatchImport();
-    await loadData();
+    await loadData(false);
     await Promise.all([refreshCapacity(), refreshModelQuery()]);
     pushToast(`批次貼上匯入 Requirement 完成，共 ${result.imported_count} 筆。`, "success");
   } catch (err) {
@@ -890,7 +1186,7 @@ async function importFixtureRequirementsCsv(event: Event): Promise<void> {
       return;
     }
     const result = await api.importFixtureRequirementsCsv(selectedCustomerId.value ?? undefined, await file.text(), file.name);
-    await loadData();
+    await loadData(false);
     await Promise.all([refreshCapacity(), refreshModelQuery()]);
     pushToast(`匯入 requirement 完成，共 ${result.imported_count} 筆。`, "success");
   } catch (err) {
@@ -910,10 +1206,31 @@ watch(
   { flush: "post" }
 );
 
+watch(modelId, (value) => {
+  mappingModelCodeInput.value = models.value.find((row) => row.id === value)?.code ?? "";
+});
+
+watch(mappingStationId, (value) => {
+  mappingStationCodeInput.value = stations.value.find((row) => row.id === value)?.code ?? "";
+});
+
+watch(requirementStationId, (value) => {
+  const selectedCode = availableRequirementStations.value.find((row) => row.id === value)?.code ?? stations.value.find((row) => row.id === value)?.code ?? "";
+  requirementStationCodeInput.value = selectedCode;
+  if (selectedCode) {
+    preferredRequirementStationCode.value = selectedCode;
+  }
+});
+
+watch(fixtureId, (value) => {
+  fixtureCodeInput.value = fixtures.value.find((row) => row.id === value)?.code ?? "";
+});
+
 watch(
   requirementStationId,
   async () => {
     await refreshCapacity();
+    await refreshModelQuery();
   },
   { flush: "post" }
 );
@@ -931,6 +1248,14 @@ watch(selectedCustomerId, async () => {
   await Promise.all([refreshCapacity(), refreshModelQuery()]);
 });
 
+watch(
+  () => route.query.model_id,
+  async () => {
+    applyRouteModelSelection();
+    await Promise.all([refreshCapacity(), refreshModelQuery()]);
+  }
+);
+
 onMounted(async () => {
   await loadData();
   await Promise.all([refreshCapacity(), refreshModelQuery()]);
@@ -939,164 +1264,258 @@ onMounted(async () => {
 
 <template>
   <div class="production-page">
-    <section class="summary-row">
-      <article class="summary-card">
-        <span>機種</span>
-        <strong>{{ selectedModel?.code || "-" }}</strong>
-        <p>建立時間 {{ loadedAt || "-" }}</p>
-      </article>
-      <article class="summary-card">
-        <span>站點數</span>
-        <strong>{{ stations.length }}</strong>
-        <p>更新時間 {{ updatedAt || "-" }}</p>
-      </article>
-      <article class="summary-card">
-        <span>治具種類</span>
-        <strong>{{ fixtures.length }}</strong>
-        <p>Mapping {{ mappings.length }} 筆</p>
-      </article>
-      <article class="summary-card">
-        <span>瓶頸治具</span>
-        <strong>{{ stationCapacity?.bottleneck_fixture_code || "-" }}</strong>
-        <p>可開站 {{ stationCapacity?.max_open_station_count ?? 0 }}</p>
-      </article>
+    <div class="page-head-actions">
+      <button class="outline-btn" type="button" @click="router.push({ name: 'search' })">返回搜尋</button>
+    </div>
+    <nav class="page-tabs" aria-label="生產管理檢視切換">
+      <button class="page-tab" type="button" :class="{ active: isMainOverview }" @click="closeDetailPage">
+        總覽
+      </button>
+      <button class="page-tab" type="button" :class="{ active: detailMode === 'mapping' }" @click="openMappingPage">
+        機種站點對應
+      </button>
+      <button class="page-tab" type="button" :class="{ active: detailMode === 'requirements' }" @click="openRequirementPage">
+        治具需求
+      </button>
+    </nav>
+
+    <section class="filter-row">
+      <div class="filter-group">
+        <span class="filter-row-label">目前篩選條件</span>
+        <div class="filter-fields">
+          <label class="filter-field">
+            <span>機種</span>
+            <select v-model.number="modelId" :disabled="loading || savingMapping">
+              <option v-for="model in models" :key="`summary-model-${model.id}`" :value="model.id">{{ model.code }}</option>
+            </select>
+          </label>
+        </div>
+        <p class="filter-row-meta">站點請直接從下方總覽表點選。建立時間 {{ loadedAt || "-" }}　更新時間 {{ updatedAt || "-" }}</p>
+      </div>
+
+      <div class="result-group">
+        <span class="filter-row-label">目前站點結果</span>
+        <div class="result-fields">
+          <div class="result-stat" :class="{ alert: (stationCapacity?.max_open_station_count ?? 0) <= 0 }">
+            <span>最大開站數</span>
+            <strong>{{ stationCapacity?.max_open_station_count ?? 0 }}</strong>
+            <small>只開這一站時可支援的最大站數</small>
+          </div>
+          <button class="result-stat result-stat-action" type="button" :disabled="!stationCapacity?.bottleneck_fixture_code || !currentStationHasBottleneck" @click="focusBottleneckEvidence">
+            <span>{{ stationConstraintTitle }}</span>
+            <strong>{{ stationCapacity?.bottleneck_fixture_code || "-" }}</strong>
+            <small>{{ stationConstraintHint }}</small>
+          </button>
+        </div>
+      </div>
     </section>
 
-    <section class="top-grid">
+    <section v-if="isMainOverview" class="top-grid">
       <ProductionCapacityPanel
+        class="overview-capacity-panel"
         :loading="loading"
         :selected-model-code="selectedModel?.code || ''"
         :selected-station-code="selectedStation?.code || ''"
+        :selected-station-id="requirementStationId"
         :station-capacity="stationCapacity"
-        :model-query="modelQuery"
-        :capacity-max-open="capacityMaxOpen"
+        :model-query="displayedModelQuery"
+        :selected-station-query-rows="selectedStationQueryRows"
+        :highlight-fixture-code="stationCapacity?.bottleneck_fixture_code || ''"
+        :highlight-trigger="bottleneckHighlightTrigger"
         @refresh-capacity="refreshCapacity"
         @refresh-model-query="refreshModelQuery"
+        @update:selected-station-id="updateSelectedStationId"
       />
+    </section>
 
-      <div class="right-stack">
-        <article class="panel">
-          <div class="section-head">
-            <h2>Model-Station Mapping</h2>
-            <div class="toolbar-actions">
-              <span class="editor-state-pill" :class="{ editing: editingMappingId !== null }">
-                {{ editingMappingId === null ? "新增機種站點對應" : "編輯機種站點對應" }}
-              </span>
-              <button class="ghost-btn" type="button" :disabled="loading || savingMapping" @click="showMappingBatchModal = true">批次貼上匯入</button>
-              <input ref="mappingImportInput" type="file" accept=".csv,text/csv" class="hidden-input" @change="importModelStationsCsv" />
+    <section v-else class="single-panel-layout">
+      <article v-if="detailMode === 'mapping'" class="panel detail-panel">
+        <div class="section-head">
+          <h2>Model-Station Mapping</h2>
+          <div class="toolbar-actions">
+            <span class="editor-state-pill" :class="{ editing: editingMappingId !== null }">
+              {{ editingMappingId === null ? "新增機種站點對應" : "編輯機種站點對應" }}
+            </span>
+            <button class="ghost-btn" type="button" :disabled="loading || savingMapping" @click="showMappingBatchModal = true">批次貼上匯入</button>
+            <input ref="mappingImportInput" type="file" accept=".csv,text/csv" class="hidden-input" @change="importModelStationsCsv" />
+          </div>
+        </div>
+        <form class="inline-form three" @submit.prevent="saveMapping">
+          <div class="autocomplete-field">
+            <input
+              v-model="mappingModelCodeInput"
+              :disabled="loading || savingMapping"
+              placeholder="輸入機種代碼"
+              autocomplete="off"
+              spellcheck="false"
+              @focus="openAutocomplete('mapping-model', models, mappingModelCodeInput)"
+              @click="openAutocomplete('mapping-model', models, mappingModelCodeInput)"
+              @input="syncMappingModelSelection(); showAutocompleteOnInput('mapping-model')"
+              @blur="syncMappingModelSelection(); closeAutocompleteSoon()"
+            />
+            <div v-if="openAutocompleteKey === 'mapping-model'" class="autocomplete-menu">
+              <button v-for="model in filteredModelSuggestions" :key="`mapping-model-${model.id}`" class="autocomplete-option" type="button" @mousedown.prevent="selectModelSuggestion(model.code)">
+                {{ model.code }}
+              </button>
             </div>
           </div>
-          <form class="inline-form three" @submit.prevent="saveMapping">
-            <select v-model.number="modelId" :disabled="loading || savingMapping">
-              <option v-for="model in models" :key="model.id" :value="model.id">{{ model.code }}</option>
-            </select>
-            <select v-model.number="mappingStationId" :disabled="loading || savingMapping">
-              <option v-for="station in stations" :key="station.id" :value="station.id">{{ station.code }}</option>
-            </select>
-            <UiFormActions
-              class="form-actions-full"
-              :editing="editingMappingId !== null"
-              :saving="loading || savingMapping"
-              submit-label="新增 / 更新"
-              saving-label="處理中..."
-              cancel-label="取消"
-              :show-delete="false"
-              :show-state="false"
-              @cancel="resetMappingEditor"
+          <div class="autocomplete-field">
+            <input
+              v-model="mappingStationCodeInput"
+              :disabled="loading || savingMapping"
+              placeholder="輸入站點代碼"
+              autocomplete="off"
+              spellcheck="false"
+              @focus="openAutocomplete('mapping-station', stations, mappingStationCodeInput)"
+              @click="openAutocomplete('mapping-station', stations, mappingStationCodeInput)"
+              @input="syncMappingStationSelection(); showAutocompleteOnInput('mapping-station')"
+              @blur="syncMappingStationSelection(); closeAutocompleteSoon()"
             />
-          </form>
-          <div class="sub-head">
-            <h3>目前機種：{{ selectedModel?.code || "-" }}</h3>
-            <span>{{ selectedModelStationRows.length }} 筆站點</span>
-          </div>
-          <table class="mapping-table">
-            <thead>
-              <tr>
-                <th>站點</th>
-                <th>對應機種</th>
-                <th>動作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in selectedModelStationRows" :key="item.id">
-                <td>{{ item.stationCode }}</td>
-                <td>{{ item.modelCode }}</td>
-                <td class="table-actions">
-                  <button class="ghost-btn small" type="button" @click="startEditMapping(item)">編輯</button>
-                  <button class="danger-btn small" type="button" @click="removeMapping(item.id)">刪除</button>
-                </td>
-              </tr>
-              <tr v-if="!loading && selectedModelStationRows.length === 0">
-                <td colspan="3" class="empty-cell">此機種尚未綁定站點。</td>
-              </tr>
-            </tbody>
-          </table>
-        </article>
-
-        <article class="panel">
-          <div class="section-head">
-            <h2>Fixture Requirement</h2>
-            <div class="toolbar-actions">
-              <span class="editor-state-pill" :class="{ editing: editingRequirementId !== null }">
-                {{ editingRequirementId === null ? "新增治具需求" : "編輯治具需求" }}
-              </span>
-              <button class="ghost-btn" type="button" :disabled="loading || savingRequirement" @click="showRequirementBatchModal = true">批次貼上匯入</button>
-              <input ref="requirementImportInput" type="file" accept=".csv,text/csv" class="hidden-input" @change="importFixtureRequirementsCsv" />
+            <div v-if="openAutocompleteKey === 'mapping-station'" class="autocomplete-menu">
+              <button v-for="station in filteredStationSuggestions" :key="`mapping-station-${station.id}`" class="autocomplete-option" type="button" @mousedown.prevent="selectMappingStationSuggestion(station.code)">
+                {{ station.code }}
+              </button>
             </div>
           </div>
-          <form class="inline-form four" @submit.prevent="saveRequirement">
-            <select v-model.number="requirementStationId" :disabled="loading || savingRequirement || availableRequirementStations.length === 0">
-              <option v-if="availableRequirementStations.length === 0" :value="null">請先建立此機種的站點對應</option>
-              <option v-for="station in availableRequirementStations" :key="`req-${station.id}`" :value="station.id">{{ station.code }}</option>
-            </select>
-            <select v-model.number="fixtureId" :disabled="loading || savingRequirement">
-              <option v-for="fixture in fixtures" :key="fixture.id" :value="fixture.id">{{ fixture.code }}</option>
-            </select>
-            <input v-model.number="requiredQty" type="number" min="1" :disabled="loading || savingRequirement" />
-            <UiFormActions
-              class="form-actions-full"
-              :editing="editingRequirementId !== null"
-              :saving="loading || savingRequirement"
-              submit-label="儲存 / 更新"
-              saving-label="儲存中..."
-              cancel-label="取消"
-              :show-delete="false"
-              :show-state="false"
-              @cancel="resetRequirementEditor"
-            />
-          </form>
-          <div class="sub-head">
-            <h3>目前站點：{{ selectedStation?.code || "-" }}</h3>
-            <span>{{ selectedStationRequirementRows.length }} 筆治具</span>
+          <UiFormActions
+            class="form-actions-full"
+            :editing="editingMappingId !== null"
+            :saving="savingMapping"
+            submit-label="新增 / 更新"
+            saving-label="處理中..."
+            cancel-label="取消"
+            :show-delete="false"
+            :show-state="false"
+            @cancel="resetMappingEditor"
+          />
+        </form>
+        <div class="sub-head">
+          <h3>目前機種：{{ selectedModel?.code || "-" }}</h3>
+          <span>{{ selectedModelStationRows.length }} 筆站點</span>
+        </div>
+        <table class="mapping-table">
+          <thead>
+            <tr>
+              <th>站點</th>
+              <th>對應機種</th>
+              <th>動作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in selectedModelStationRows" :key="item.id">
+              <td>{{ item.stationCode }}</td>
+              <td>{{ item.modelCode }}</td>
+              <td class="table-actions">
+                <button class="ghost-btn small" type="button" @click="startEditMapping(item)">編輯</button>
+                <button class="danger-btn small" type="button" @click="removeMapping(item.id)">刪除</button>
+              </td>
+            </tr>
+            <tr v-if="!loading && selectedModelStationRows.length === 0">
+              <td colspan="3" class="empty-cell">此機種尚未綁定站點。</td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article v-else class="panel detail-panel">
+        <div class="section-head">
+          <h2>Fixture Requirement</h2>
+          <div class="toolbar-actions">
+            <span class="editor-state-pill" :class="{ editing: editingRequirementId !== null }">
+              {{ editingRequirementId === null ? "新增治具需求" : "編輯治具需求" }}
+            </span>
+            <button class="ghost-btn" type="button" :disabled="loading || savingRequirement" @click="showRequirementBatchModal = true">批次貼上匯入</button>
+            <input ref="requirementImportInput" type="file" accept=".csv,text/csv" class="hidden-input" @change="importFixtureRequirementsCsv" />
           </div>
-          <table class="mapping-table">
-            <thead>
-              <tr>
-                <th>站點</th>
-                <th>治具</th>
-                <th>治具名稱</th>
-                <th>數量</th>
-                <th>動作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in selectedStationRequirementRows" :key="item.id">
-                <td>{{ item.station_code }}</td>
-                <td>{{ item.fixture_code }}</td>
-                <td>{{ item.fixture_name }}</td>
-                <td>{{ item.required_qty }}</td>
-                <td class="table-actions">
-                  <button class="ghost-btn small" type="button" @click="startEditRequirement(item)">編輯</button>
-                  <button class="danger-btn small" type="button" @click="removeRequirement(item.id)">刪除</button>
-                </td>
-              </tr>
-              <tr v-if="!loading && selectedStationRequirementRows.length === 0">
-                <td colspan="5" class="empty-cell">此站點尚未設定治具需求。</td>
-              </tr>
-            </tbody>
-          </table>
-        </article>
-      </div>
+        </div>
+        <div v-if="requirementNeedsMapping" class="dependency-callout">
+          <div>
+            <strong>請先建立機種站點對應</strong>
+            <p>目前機種 {{ selectedModel?.code || "-" }} 尚未綁定任何站點。治具需求必須先依附在 Mapping 的站點上，請先完成站點對應再回來設定。</p>
+          </div>
+          <button class="primary-btn dependency-callout-btn" type="button" @click="openMappingPage">前往 Mapping</button>
+        </div>
+        <form class="inline-form four" @submit.prevent="saveRequirement">
+          <div class="autocomplete-field">
+            <input
+              v-model="requirementStationCodeInput"
+              :disabled="loading || savingRequirement || requirementNeedsMapping"
+              :placeholder="requirementNeedsMapping ? '請先建立此機種的站點對應' : '輸入站點代碼'"
+              autocomplete="off"
+              spellcheck="false"
+              @focus="openAutocomplete('requirement-station', availableRequirementStations, requirementStationCodeInput)"
+              @click="openAutocomplete('requirement-station', availableRequirementStations, requirementStationCodeInput)"
+              @input="syncRequirementStationInput(); showAutocompleteOnInput('requirement-station')"
+              @blur="syncRequirementStationInput(); closeAutocompleteSoon()"
+            />
+            <div v-if="openAutocompleteKey === 'requirement-station'" class="autocomplete-menu">
+              <button v-for="station in filteredRequirementStationSuggestions" :key="`req-station-${station.id}`" class="autocomplete-option" type="button" @mousedown.prevent="selectRequirementStationSuggestion(station.code)">
+                {{ station.code }}
+              </button>
+            </div>
+          </div>
+          <div class="autocomplete-field">
+            <input
+              v-model="fixtureCodeInput"
+              :disabled="loading || savingRequirement"
+              placeholder="輸入治具代碼"
+              autocomplete="off"
+              spellcheck="false"
+              @focus="openAutocomplete('fixture', fixtures, fixtureCodeInput)"
+              @click="openAutocomplete('fixture', fixtures, fixtureCodeInput)"
+              @input="syncFixtureSelection(); showAutocompleteOnInput('fixture')"
+              @blur="syncFixtureSelection(); closeAutocompleteSoon()"
+            />
+            <div v-if="openAutocompleteKey === 'fixture'" class="autocomplete-menu">
+              <button v-for="fixture in filteredFixtureSuggestions" :key="`req-fixture-${fixture.id}`" class="autocomplete-option" type="button" @mousedown.prevent="selectFixtureSuggestion(fixture.code)">
+                {{ fixture.code }}
+              </button>
+            </div>
+          </div>
+          <input v-model.number="requiredQty" type="number" min="1" :disabled="loading || savingRequirement" />
+          <UiFormActions
+            class="form-actions-full"
+            :editing="editingRequirementId !== null"
+            :saving="savingRequirement"
+            submit-label="儲存 / 更新"
+            saving-label="儲存中..."
+            cancel-label="取消"
+            :show-delete="false"
+            :show-state="false"
+            @cancel="resetRequirementEditor"
+          />
+        </form>
+        <div class="sub-head">
+          <h3>目前站點：{{ selectedStation?.code || "-" }}</h3>
+          <span>{{ selectedStationRequirementRows.length }} 筆治具</span>
+        </div>
+        <table class="mapping-table">
+          <thead>
+            <tr>
+              <th>站點</th>
+              <th>治具</th>
+              <th>治具名稱</th>
+              <th>數量</th>
+              <th>動作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in selectedStationRequirementRows" :key="item.id">
+              <td>{{ item.station_code }}</td>
+              <td>{{ item.fixture_code }}</td>
+              <td>{{ item.fixture_name }}</td>
+              <td>{{ item.required_qty }}</td>
+              <td class="table-actions">
+                <button class="ghost-btn small" type="button" @click="startEditRequirement(item)">編輯</button>
+                <button class="danger-btn small" type="button" @click="removeRequirement(item.id)">刪除</button>
+              </td>
+            </tr>
+            <tr v-if="!loading && selectedStationRequirementRows.length === 0">
+              <td colspan="5" class="empty-cell">此站點尚未設定治具需求。</td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
     </section>
 
     <teleport to="body">
@@ -1285,10 +1704,15 @@ onMounted(async () => {
   height: 100%;
   overflow: hidden;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 8px;
   padding: 8px;
   background: #fff;
+}
+
+.page-head-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .row,
@@ -1298,13 +1722,144 @@ onMounted(async () => {
   min-height: 0;
 }
 
-.summary-row {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+.page-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0;
 }
 
-.summary-card,
+.page-tab {
+  border: none;
+  background: transparent;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.page-tab:hover {
+  color: #344563;
+}
+
+.page-tab.active {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+}
+
+.filter-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.filter-group,
+.result-group {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.result-group {
+  background: linear-gradient(180deg, #f8fbff 0%, #f2f7ff 100%);
+}
+
+.filter-row-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.filter-fields,
+.result-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.filter-fields {
+  grid-template-columns: minmax(0, 280px);
+}
+
+.filter-field {
+  display: grid;
+  gap: 4px;
+}
+
+.filter-field span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.filter-field select {
+  min-height: 34px;
+  padding-block: 5px;
+}
+
+.filter-row-meta {
+  margin: 0;
+  color: #5d6d89;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.result-stat {
+  display: grid;
+  gap: 2px;
+}
+
+.result-stat-action {
+  border: 1px solid #d7e2f5;
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.result-stat-action:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: #bfd0ef;
+  box-shadow: 0 8px 18px rgba(47, 110, 229, 0.1);
+}
+
+.result-stat-action:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.result-stat span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.result-stat strong {
+  color: #22314a;
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.result-stat.alert strong {
+  color: #c24b4b;
+}
+
+.result-stat small {
+  color: #5d6d89;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
 .panel {
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -1320,32 +1875,23 @@ onMounted(async () => {
   text-align: center;
 }
 
-.summary-card {
-  padding: 9px 10px;
-  display: grid;
-  gap: 4px;
-}
-
-.summary-card span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.summary-card strong {
-  color: #22314a;
-  font-size: 20px;
-}
-
-.summary-card p {
-  margin: 0;
-  color: #5d6d89;
-  font-size: 12px;
-}
-
 .top-grid {
   display: grid;
-  grid-template-columns: 1.02fr 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+  min-height: 0;
+}
+
+.overview-capacity-panel {
+  min-width: 0;
+}
+
+.single-panel-layout {
+  display: grid;
+  min-height: 0;
+}
+
+.detail-panel {
   min-height: 0;
 }
 
@@ -1362,6 +1908,36 @@ onMounted(async () => {
   color: #222e45;
 }
 
+.dependency-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(224, 138, 30, 0.24);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 248, 237, 0.95) 0%, rgba(255, 252, 246, 0.92) 100%);
+}
+
+.dependency-callout strong {
+  display: block;
+  color: #8f4b00;
+  font-size: 14px;
+}
+
+.dependency-callout p {
+  margin: 4px 0 0;
+  color: #6f5a33;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.dependency-callout-btn {
+  width: auto;
+  flex-shrink: 0;
+}
+
 .section-head p {
   margin: 3px 0 0;
   color: var(--muted);
@@ -1375,9 +1951,10 @@ onMounted(async () => {
   border-collapse: separate;
   border-spacing: 0;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
   min-width: 100%;
+  background: #fff;
 }
 
 .overview-table th,
@@ -1387,16 +1964,17 @@ onMounted(async () => {
 .mapping-table th,
 .mapping-table td {
   border-bottom: 1px solid var(--line);
-  border-right: 1px solid var(--line);
-  padding: 4px 8px;
+  border-right: 1px solid rgba(220, 227, 238, 0.9);
+  padding: 8px 10px;
   text-align: left;
   font-size: 12px;
+  vertical-align: middle;
 }
 
 .compact-query-table th,
 .compact-query-table td {
-  padding: 3px 6px;
-  font-size: 11px;
+  padding: 7px 10px;
+  font-size: 12px;
 }
 
 .overview-table th:last-child,
@@ -1417,9 +1995,24 @@ onMounted(async () => {
 .overview-table thead th,
 .query-table thead th,
 .mapping-table thead th {
-  background: #f8fafe;
-  color: #52607a;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f7f9fd;
+  color: #52607b;
   font-weight: 700;
+}
+
+.overview-table tbody tr:nth-child(even),
+.query-table tbody tr:nth-child(even),
+.mapping-table tbody tr:nth-child(even) {
+  background: #fcfdff;
+}
+
+.overview-table tbody tr:hover,
+.query-table tbody tr:hover,
+.mapping-table tbody tr:hover {
+  background: #f3f7ff;
 }
 
 .model-cell {
@@ -1453,6 +2046,44 @@ onMounted(async () => {
 
 .inline-form.four {
   grid-template-columns: 1fr 1.2fr 120px 120px;
+}
+
+.autocomplete-field {
+  position: relative;
+}
+
+.autocomplete-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 14px 28px rgba(28, 47, 84, 0.14);
+}
+
+.autocomplete-option {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+  color: #22314a;
+  padding: 8px 10px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.autocomplete-option:last-child {
+  border-bottom: 0;
+}
+
+.autocomplete-option:hover {
+  background: #f6f9ff;
 }
 
 .form-actions-full {
@@ -1909,11 +2540,15 @@ input {
 }
 
 @media (max-width: 1200px) {
-  .summary-row,
   .top-grid,
+  .single-panel-layout,
   .capacity-box,
   .inline-form.three,
   .inline-form.four {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-row {
     grid-template-columns: 1fr;
   }
 
@@ -1935,8 +2570,9 @@ input {
     padding: 8px;
   }
 
-  .summary-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .filter-fields,
+  .result-fields {
+    grid-template-columns: 1fr;
   }
 
   .panel {
@@ -1956,6 +2592,15 @@ input {
     grid-template-columns: 1fr;
   }
 
+  .dependency-callout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dependency-callout-btn {
+    width: 100%;
+  }
+
   .toolbar-actions {
     width: 100%;
   }
@@ -1970,8 +2615,8 @@ input {
 }
 
 @media (max-width: 640px) {
-  .summary-row {
-    grid-template-columns: 1fr;
+  .page-tabs {
+    overflow-x: auto;
   }
 
   .top-grid {

@@ -13,7 +13,9 @@ const router = createRouter({
     { path: "/inventory", name: "inventory", component: InventoryPage },
     { path: "/inventory/overview", name: "inventory-overview", component: InventoryPage },
     { path: "/master", name: "master", component: MasterPage },
-    { path: "/production", name: "production", component: ProductionPage }
+    { path: "/production", name: "production", component: ProductionPage },
+    { path: "/production/mapping", name: "production-mapping", component: ProductionPage },
+    { path: "/production/requirements", name: "production-requirements", component: ProductionPage }
   ]
 });
 

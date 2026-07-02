@@ -28,23 +28,23 @@ withDefaults(
 
 .ui-status-pill.active,
 .ui-status-pill.normal {
-  color: var(--green);
-  background: var(--green-soft);
+  color: var(--tone-success);
+  background: var(--tone-success-soft);
 }
 
 .ui-status-pill.warn {
-  color: var(--orange);
-  background: var(--orange-soft);
+  color: var(--tone-warn);
+  background: var(--tone-warn-soft);
 }
 
 .ui-status-pill.danger,
 .ui-status-pill.inactive {
-  color: var(--red);
-  background: var(--red-soft);
+  color: var(--tone-danger);
+  background: var(--tone-danger-soft);
 }
 
 .ui-status-pill.muted {
-  color: #66748d;
-  background: #edf1f7;
+  color: var(--tone-muted);
+  background: var(--tone-muted-soft);
 }
 </style>

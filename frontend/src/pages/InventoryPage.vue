@@ -3,24 +3,32 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import { api } from "@/api";
-import { authSession, selectedCustomerId } from "@/appState";
+import { authSession, globalFixtureKeyword, selectedCustomerId } from "@/appState";
+import BatchImportPanel from "@/components/inventory/BatchImportPanel.vue";
 import { pushToast } from "@/toastState";
 import type { Fixture, MaterialTransaction, StockSummary, TransactionQueryFilters } from "@/types";
 import { fallbackText, ownershipLabel, stockStatusLabel } from "@/utils/display";
 import UiStatusPill from "@/components/UiStatusPill.vue";
-import { formatLocalDateKey as formatDateKey } from "@/utils/date";
+import { formatLocalDate, formatLocalDateKey as formatDateKey } from "@/utils/date";
+import { matchesFixtureKeywords, parseFixtureKeywords } from "@/utils/fixtureSearch";
 
 const route = useRoute();
 
 const mode = ref<"receipt" | "return">("receipt");
+const batchImportInput = ref<HTMLInputElement | null>(null);
 const fixtures = ref<Fixture[]>([]);
 const stockRows = ref<StockSummary[]>([]);
 const alerts = ref<Array<{ fixture_id: number; fixture_code: string; fixture_name: string; stock_qty: number; min_stock_qty: number; stock_status: "low_stock" | "out_of_stock" }>>([]);
 const transactions = ref<MaterialTransaction[]>([]);
 const overviewTransactions = ref<MaterialTransaction[]>([]);
 const saving = ref(false);
+const bulkCreatingFixtures = ref(false);
 const overviewLoading = ref(false);
-const showBatchPanel = ref(false);
+const showBatchPanel = ref(true);
+const showStockPanel = ref(false);
+const showAlertPanel = ref(false);
+const batchHelpExpanded = ref(false);
+const batchSubmitAttempted = ref(false);
 const batchPasteText = ref("");
 const batchTransactionNo = ref("");
 const batchNote = ref("");
@@ -55,9 +63,11 @@ const overviewFilters = ref({
 
 const pageMode = computed(() => (route.path.endsWith("/overview") ? "overview" : "operation"));
 const today = computed(() => formatDateKey(new Date()));
+const globalFixtureKeywords = computed(() => parseFixtureKeywords(globalFixtureKeyword.value));
 const batchReadyRows = computed(() => batchImportRows.value.filter((row) => row.status === "ready"));
 const batchPendingRows = computed(() => batchImportRows.value.filter((row) => row.status === "needs-confirm" || row.status === "needs-add"));
 const batchErrorRows = computed(() => batchImportRows.value.filter((row) => row.status === "error"));
+const batchNeedsAddRows = computed(() => batchImportRows.value.filter((row) => row.status === "needs-add"));
 const batchImportCount = computed(() => batchReadyRows.value.length);
 const batchPendingCount = computed(() => batchPendingRows.value.length);
 const batchImportErrorCount = computed(() => batchErrorRows.value.length);
@@ -69,10 +79,11 @@ const batchCanSubmit = computed(
     batchImportErrorCount.value === 0 &&
     batchTransactionNo.value.trim().length > 0
 );
+const batchTransactionNoMissing = computed(() => batchSubmitAttempted.value && batchTransactionNo.value.trim().length === 0);
 
-const recentRows = computed(() =>
+const recentReceiptRows = computed(() =>
   transactions.value
-    .filter((tx) => tx.transaction_type === mode.value)
+    .filter((tx) => tx.transaction_type === "receipt")
     .flatMap((tx) =>
       tx.items.map((item, index) => ({
         id: `${tx.id}-${index}`,
@@ -82,8 +93,41 @@ const recentRows = computed(() =>
         quantity: item.quantity
       }))
     )
+    .filter((row) => matchesFixtureKeywords(row.fixture_code, globalFixtureKeywords.value))
     .slice(0, 6)
 );
+const recentReturnRows = computed(() =>
+  transactions.value
+    .filter((tx) => tx.transaction_type === "return")
+    .flatMap((tx) =>
+      tx.items.map((item, index) => ({
+        id: `${tx.id}-${index}`,
+        transaction_no: tx.transaction_no,
+        fixture_code: item.fixture_code,
+        identifier: item.identifier,
+        quantity: item.quantity
+      }))
+    )
+    .filter((row) => matchesFixtureKeywords(row.fixture_code, globalFixtureKeywords.value))
+    .slice(0, 6)
+);
+const currentRecentRows = computed(() => (mode.value === "receipt" ? recentReceiptRows.value : recentReturnRows.value));
+const currentRecentTitle = computed(() => (mode.value === "receipt" ? "最近收料" : "最近退料"));
+const currentRecentEmptyText = computed(() => (mode.value === "receipt" ? "尚無收料資料" : "尚無退料資料"));
+const secondaryRecentSummary = computed(() =>
+  mode.value === "receipt"
+    ? `最近退料 ${recentReturnRows.value.length} 筆`
+    : `最近收料 ${recentReceiptRows.value.length} 筆`
+);
+const hasUnsavedBatchImport = computed(
+  () => batchPasteText.value.trim().length > 0 || batchTransactionNo.value.trim().length > 0 || batchNote.value.trim().length > 0
+);
+const operationBoardClass = computed(() => ({
+  "layout-all-expanded": showStockPanel.value && showAlertPanel.value,
+  "layout-stock-only": showStockPanel.value && !showAlertPanel.value,
+  "layout-alert-only": !showStockPanel.value && showAlertPanel.value,
+  "layout-all-collapsed": !showStockPanel.value && !showAlertPanel.value
+}));
 
 const overviewRows = computed(() =>
   overviewTransactions.value.flatMap((tx) =>
@@ -100,24 +144,30 @@ const overviewRows = computed(() =>
       quantity: item.quantity,
       note: item.note || tx.note || ""
     }))
-  )
+  ).filter((row) => matchesFixtureKeywords(row.fixture_code, globalFixtureKeywords.value))
 );
 
-const totalStockQty = computed(() => stockRows.value.reduce((sum, row) => sum + row.stock_qty, 0));
-const outOfStockCount = computed(() => stockRows.value.filter((row) => row.stock_status === "out_of_stock").length);
-const activeFixtureCount = computed(() => stockRows.value.filter((row) => row.stock_qty > 0).length);
+const filteredStockRows = computed(() =>
+  stockRows.value.filter((row) => matchesFixtureKeywords(row.fixture_code, globalFixtureKeywords.value))
+);
+const filteredAlerts = computed(() =>
+  alerts.value.filter((row) => matchesFixtureKeywords(row.fixture_code, globalFixtureKeywords.value))
+);
+const totalStockQty = computed(() => filteredStockRows.value.reduce((sum, row) => sum + row.stock_qty, 0));
+const outOfStockCount = computed(() => filteredStockRows.value.filter((row) => row.stock_status === "out_of_stock").length);
+const activeFixtureCount = computed(() => filteredStockRows.value.filter((row) => row.stock_qty > 0).length);
 const activeStockRows = computed(() => {
   const activeFixtureIds = new Set(fixtures.value.filter((row) => row.is_active).map((row) => row.id));
-  return stockRows.value.filter((row) => activeFixtureIds.has(row.fixture_id));
+  return filteredStockRows.value.filter((row) => activeFixtureIds.has(row.fixture_id));
 });
 
 const inventorySummaryCards = computed(() => [
-  { label: "治具總數", value: totalStockQty.value, tone: "normal" },
-  { label: "有庫存治具", value: activeFixtureCount.value, tone: "normal" },
-  { label: "今日收料", value: todayReceiptQty.value, tone: "success" },
-  { label: "今日退料", value: todayReturnQty.value, tone: "danger" },
-  { label: "低水位", value: alerts.value.length, tone: "warn" },
-  { label: "缺料治具", value: outOfStockCount.value, tone: "danger" }
+  { label: "缺料治具", value: outOfStockCount.value, tone: "danger", emphasis: true },
+  { label: "低水位", value: filteredAlerts.value.length, tone: "warn", emphasis: true },
+  { label: "治具總數", value: totalStockQty.value, tone: "normal", emphasis: false },
+  { label: "有庫存治具", value: activeFixtureCount.value, tone: "normal", emphasis: false },
+  { label: "今日收料", value: todayReceiptQty.value, tone: "success", emphasis: false },
+  { label: "今日退料", value: todayReturnQty.value, tone: "danger", emphasis: false }
 ]);
 
 function stockWaterLevelPercent(row: StockSummary): number {
@@ -141,7 +191,11 @@ const todayReturnQty = computed(() =>
 );
 
 function normalizeBatchText(value: string): string {
-  return value.replace(/\u00a0/g, " ").trim();
+  const normalized = value.replace(/\u00a0/g, " ").trim();
+  if (normalized.startsWith('"') && normalized.endsWith('"') && normalized.length >= 2) {
+    return normalized.slice(1, -1).replace(/""/g, '"').trim();
+  }
+  return normalized;
 }
 
 function splitBatchCells(line: string): string[] {
@@ -202,8 +256,26 @@ function splitCombinedFixtureText(value: string): { fixtureCode: string; token: 
   };
 }
 
+function normalizeIdentifierToken(value: string): string {
+  const normalized = normalizeBatchText(value);
+  if (!normalized) return "";
+  if (!/^\d+$/.test(normalized)) return normalized;
+  if (normalized.length > 4) return normalized;
+  return normalized.padStart(4, "0");
+}
+
 function normalizeFixtureCode(value: string): string {
   return normalizeBatchText(value).toUpperCase();
+}
+
+function getBatchResolvedFixtureCode(row: BatchImportRow): string {
+  return row.resolvedFixtureCode || row.suggestedFixtureCode || "";
+}
+
+function hasBatchFixtureCodeDifference(row: BatchImportRow): boolean {
+  const inputCode = normalizeFixtureCode(row.inputFixtureCode);
+  const resolvedCode = normalizeFixtureCode(getBatchResolvedFixtureCode(row));
+  return Boolean(inputCode && resolvedCode && inputCode !== resolvedCode);
 }
 
 function commonPrefixLength(left: string, right: string): number {
@@ -312,15 +384,16 @@ function buildBatchRow(lineNo: number, rawCodeLine: string, quantityLine: string
   }
 
   const splitCode = splitCombinedFixtureText(codeText);
+  const normalizedToken = normalizeIdentifierToken(splitCode.token);
   const exactFixture = findFixtureByCode(splitCode.fixtureCode);
   if (exactFixture) {
-    if (!splitCode.token) {
+    if (!normalizedToken) {
       return {
         lineNo,
         raw,
         rawCode: codeText,
         inputFixtureCode: splitCode.fixtureCode,
-        inputToken: splitCode.token,
+        inputToken: normalizedToken,
         resolvedFixtureId: exactFixture.id,
         resolvedFixtureCode: exactFixture.code,
         suggestedFixtureId: null,
@@ -337,15 +410,15 @@ function buildBatchRow(lineNo: number, rawCodeLine: string, quantityLine: string
       raw,
       rawCode: codeText,
       inputFixtureCode: splitCode.fixtureCode,
-      inputToken: splitCode.token,
+      inputToken: normalizedToken,
       resolvedFixtureId: exactFixture.id,
       resolvedFixtureCode: exactFixture.code,
       suggestedFixtureId: null,
       suggestedFixtureCode: "",
       quantity,
-      status: "ready",
-      message: null,
-      note: "已對應現有治具"
+      status: normalizedToken.length > 4 || !/^\d+$/.test(normalizedToken) ? "error" : "ready",
+      message: normalizedToken.length > 4 ? "識別碼必須為 4 位數字" : !/^\d+$/.test(normalizedToken) ? "識別碼必須為數字" : null,
+      note: normalizedToken.length <= 4 && /^\d+$/.test(normalizedToken) ? "已對應現有治具" : null
     };
   }
 
@@ -356,14 +429,19 @@ function buildBatchRow(lineNo: number, rawCodeLine: string, quantityLine: string
       raw,
       rawCode: codeText,
       inputFixtureCode: splitCode.fixtureCode,
-      inputToken: splitCode.token,
+      inputToken: normalizedToken,
       resolvedFixtureId: null,
       resolvedFixtureCode: "",
       suggestedFixtureId: similarFixture.id,
       suggestedFixtureCode: similarFixture.code,
       quantity,
-      status: "needs-confirm",
-      message: `可能是 ${similarFixture.code}，請先確認是否為同一個治具`,
+      status: normalizedToken.length > 4 || !/^\d+$/.test(normalizedToken) ? "error" : "needs-confirm",
+      message:
+        normalizedToken.length > 4
+          ? "識別碼必須為 4 位數字"
+          : !/^\d+$/.test(normalizedToken)
+            ? "識別碼必須為數字"
+            : `可能是 ${similarFixture.code}，請先確認是否為同一個治具`,
       note: null
     };
   }
@@ -373,14 +451,19 @@ function buildBatchRow(lineNo: number, rawCodeLine: string, quantityLine: string
     raw,
     rawCode: codeText,
     inputFixtureCode: splitCode.fixtureCode,
-    inputToken: splitCode.token,
+    inputToken: normalizedToken,
     resolvedFixtureId: null,
     resolvedFixtureCode: "",
     suggestedFixtureId: null,
     suggestedFixtureCode: "",
     quantity,
-    status: "needs-add",
-    message: `找不到治具 ${splitCode.fixtureCode}，可新增或跳過`,
+    status: normalizedToken.length > 4 || !/^\d+$/.test(normalizedToken) ? "error" : "needs-add",
+    message:
+      normalizedToken.length > 4
+        ? "識別碼必須為 4 位數字"
+        : !/^\d+$/.test(normalizedToken)
+          ? "識別碼必須為數字"
+          : `找不到治具 ${splitCode.fixtureCode}，可新增或跳過`,
     note: null
   };
 }
@@ -428,6 +511,34 @@ function clearBatchImport(): void {
   batchTransactionNo.value = "";
   batchNote.value = "";
   batchImportRows.value = [];
+  batchSubmitAttempted.value = false;
+  if (batchImportInput.value) {
+    batchImportInput.value.value = "";
+  }
+}
+
+function confirmDiscardBatchImport(message: string): boolean {
+  if (!hasUnsavedBatchImport.value) {
+    return true;
+  }
+  return window.confirm(message);
+}
+
+function clearBatchImportWithConfirm(): void {
+  if (!confirmDiscardBatchImport("目前批次匯入有未送出的內容，清空後將會捨棄。要繼續嗎？")) {
+    return;
+  }
+  clearBatchImport();
+}
+
+function switchMode(nextMode: "receipt" | "return"): void {
+  if (mode.value === nextMode) {
+    return;
+  }
+  if (!confirmDiscardBatchImport("目前批次匯入有未送出的內容，切換收退料模式後將會沿用另一種交易類型。要繼續嗎？")) {
+    return;
+  }
+  mode.value = nextMode;
 }
 
 function handleBatchPaste(event: ClipboardEvent): void {
@@ -436,6 +547,44 @@ function handleBatchPaste(event: ClipboardEvent): void {
   event.preventDefault();
   batchPasteText.value = pastedText;
   refreshBatchImportPreview();
+}
+
+function triggerBatchCsvImport(): void {
+  batchImportInput.value?.click();
+}
+
+async function importBatchCsv(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  try {
+    const content = await file.text();
+    if (!content.trim()) {
+      pushToast("匯入檔案是空的，請重新選擇。", "warning");
+      return;
+    }
+    batchPasteText.value = content;
+    refreshBatchImportPreview();
+    pushToast(
+      `已載入 ${file.name}。可送出 ${batchReadyRows.value.length} 筆 / 待確認 ${batchPendingRows.value.length} 筆 / 錯誤 ${batchErrorRows.value.length} 筆。`,
+      "success"
+    );
+  } catch (err) {
+    pushToast(err instanceof Error ? err.message : "讀取 CSV 失敗", "error");
+  } finally {
+    input.value = "";
+  }
+}
+
+function downloadBatchCsvTemplate(): void {
+  const content = renderCsv(
+    [
+      { fixture_identifier: "C-00090-2605", quantity: 3 },
+      { fixture_identifier: "C-00135-2606", quantity: 25 }
+    ],
+    ["fixture_identifier", "quantity"]
+  );
+  downloadCsv("inventory-batch-template.csv", content);
 }
 
 function setBatchRowReady(row: BatchImportRow, fixture: Fixture, message: string): void {
@@ -456,12 +605,12 @@ function skipBatchRow(row: BatchImportRow): void {
   row.resolvedFixtureCode = "";
 }
 
-async function createFixtureForBatchRow(row: BatchImportRow): Promise<void> {
+async function createFixtureForBatchRow(row: BatchImportRow, options?: { suppressSuccessToast?: boolean; suppressErrorToast?: boolean }): Promise<boolean> {
   if (!selectedCustomerId.value) {
     pushToast("請先在側邊欄選擇客戶。", "warning");
-    return;
+    return false;
   }
-  if (!row.inputFixtureCode) return;
+  if (!row.inputFixtureCode) return false;
 
   const code = row.inputFixtureCode;
   try {
@@ -475,9 +624,15 @@ async function createFixtureForBatchRow(row: BatchImportRow): Promise<void> {
     });
     fixtures.value = [...fixtures.value.filter((fixture) => fixture.id !== created.id), created];
     setBatchRowReady(row, created, "已新增治具並加入匯入清單");
-    pushToast(`已新增治具：${created.code}`, "success");
+    if (!options?.suppressSuccessToast) {
+      pushToast(`已新增治具：${created.code}`, "success");
+    }
+    return true;
   } catch (err) {
-    pushToast(err instanceof Error ? err.message : "新增治具失敗", "error");
+    if (!options?.suppressErrorToast) {
+      pushToast(err instanceof Error ? err.message : "新增治具失敗", "error");
+    }
+    return false;
   }
 }
 
@@ -504,6 +659,45 @@ async function addBatchRowFixture(row: BatchImportRow): Promise<void> {
     return;
   }
   row.status = "needs-add";
+}
+
+async function addAllPendingFixtures(): Promise<void> {
+  if (!selectedCustomerId.value) {
+    pushToast("請先在側邊欄選擇客戶。", "warning");
+    return;
+  }
+  const rows = [...batchNeedsAddRows.value];
+  if (rows.length === 0) {
+    pushToast("目前沒有待新增的治具。", "info");
+    return;
+  }
+
+  bulkCreatingFixtures.value = true;
+  let createdCount = 0;
+  let failedCount = 0;
+  try {
+    for (const row of rows) {
+      const ok = await createFixtureForBatchRow(row, { suppressSuccessToast: true, suppressErrorToast: true });
+      if (ok && row.status === "ready") {
+        createdCount += 1;
+      } else {
+        row.status = "needs-add";
+        failedCount += 1;
+      }
+    }
+
+    if (createdCount > 0 && failedCount === 0) {
+      pushToast(`已批次新增 ${createdCount} 筆治具，全部加入匯入清單。`, "success");
+      return;
+    }
+    if (createdCount > 0) {
+      pushToast(`已批次新增 ${createdCount} 筆治具，另有 ${failedCount} 筆未完成，請逐筆處理。`, "warning");
+      return;
+    }
+    pushToast("待新增治具未成功建立，請逐筆檢查。", "error");
+  } finally {
+    bulkCreatingFixtures.value = false;
+  }
 }
 
 function downloadCsv(filename: string, content: string): void {
@@ -579,6 +773,10 @@ async function loadOverview(): Promise<void> {
   }
 }
 
+async function handleBatchImportSuccess(): Promise<void> {
+  await loadData();
+}
+
 async function searchOverview(): Promise<void> {
   if (!selectedCustomerId.value) {
     pushToast("請先在側邊欄選擇客戶。", "warning");
@@ -614,6 +812,7 @@ async function exportOverviewCsv(): Promise<void> {
 }
 
 async function submitBatchImport(): Promise<void> {
+  batchSubmitAttempted.value = true;
   if (!selectedCustomerId.value) {
     pushToast("請先在側邊欄選擇客戶。", "warning");
     return;
@@ -691,67 +890,98 @@ watch(batchPasteText, () => {
 
 <template>
   <div class="inventory-shell">
-    <section v-if="pageMode === 'operation'" class="inventory-board">
+    <section v-if="pageMode === 'operation'" class="inventory-board" :class="operationBoardClass">
       <div class="inventory-summary-row">
-        <article v-for="card in inventorySummaryCards" :key="card.label" class="summary-chip" :class="card.tone">
+        <article v-for="card in inventorySummaryCards" :key="card.label" class="summary-chip" :class="[card.tone, { emphasis: card.emphasis }]">
           <span>{{ card.label }}</span>
           <strong>{{ card.value }}</strong>
         </article>
       </div>
 
-      <article class="panel op-panel">
+      <article class="panel op-panel" :class="mode">
         <div class="panel-head">
-          <button class="toggle-btn batch-entry-btn" type="button" @click="showBatchPanel = true">
-            批次貼上匯入
-          </button>
           <div class="panel-actions">
             <div class="segmented-control" role="tablist" aria-label="收退料切換">
-              <button class="segmented-btn" :class="{ active: mode === 'receipt' }" type="button" @click="mode = 'receipt'">
+              <button class="segmented-btn" :class="{ active: mode === 'receipt' }" type="button" @click="switchMode('receipt')">
                 收料
               </button>
-              <button class="segmented-btn" :class="{ active: mode === 'return' }" type="button" @click="mode = 'return'">
+              <button class="segmented-btn" :class="{ active: mode === 'return' }" type="button" @click="switchMode('return')">
                 退料
+              </button>
+            </div>
+            <div class="collapsed-panel-actions">
+              <button class="toggle-btn collapsed-panel-chip" :class="{ active: showStockPanel }" type="button" @click="showStockPanel = !showStockPanel">
+                現有治具庫存
+                <span>{{ activeStockRows.length }} 筆</span>
+              </button>
+              <button class="toggle-btn collapsed-panel-chip" :class="{ active: showAlertPanel }" type="button" @click="showAlertPanel = !showAlertPanel">
+                低水位提醒
+                <span>{{ filteredAlerts.length }} 項</span>
               </button>
             </div>
           </div>
         </div>
 
-        <div class="recent-block">
-          <div class="sub-head">
-            <h3>{{ mode === "receipt" ? "最近收料" : "最近退料" }}</h3>
-            <span>{{ recentRows.length }} 筆</span>
-          </div>
-          <table class="grid-table compact-table">
-            <thead>
-              <tr>
-                <th>治具</th>
-                <th>識別碼</th>
-                <th>數量</th>
-                <th>單號</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in recentRows" :key="`tx-${row.id}`">
-                <td>{{ row.fixture_code || "-" }}</td>
-                <td>{{ row.identifier || "-" }}</td>
-                <td>{{ row.quantity }}</td>
-                <td>{{ row.transaction_no }}</td>
-              </tr>
-              <tr v-if="recentRows.length === 0">
-                <td colspan="4" class="empty-cell">尚無資料</td>
-              </tr>
-            </tbody>
-          </table>
+        <section v-if="showBatchPanel" class="batch-inline-panel">
+          <BatchImportPanel
+            :customer-id="selectedCustomerId ?? undefined"
+            title="批次貼上匯入"
+            description="共用批次匯入元件，同時提供 /inventory 與全域 Modal 使用。"
+            @success="handleBatchImportSuccess"
+          />
+        </section>
+
+        <div class="recent-block" :class="mode">
+          <section class="recent-section">
+            <div class="sub-head">
+              <h3>{{ currentRecentTitle }}</h3>
+              <div class="sub-head-inline recent-summary-inline">
+                <span>{{ currentRecentRows.length }} 筆</span>
+                <span class="recent-secondary-summary">{{ secondaryRecentSummary }}</span>
+              </div>
+            </div>
+            <table class="grid-table compact-table">
+              <thead>
+                <tr>
+                  <th>治具</th>
+                  <th>識別碼</th>
+                  <th>數量</th>
+                  <th>單號</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in currentRecentRows" :key="`recent-${mode}-${row.id}`">
+                  <td>{{ row.fixture_code || "-" }}</td>
+                  <td>{{ row.identifier || "-" }}</td>
+                  <td>{{ row.quantity }}</td>
+                  <td>{{ row.transaction_no }}</td>
+                </tr>
+                <tr v-if="currentRecentRows.length === 0">
+                  <td colspan="4" class="empty-cell">{{ currentRecentEmptyText }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
         </div>
 
       </article>
 
-      <article class="panel stock-panel">
+      <article v-if="showStockPanel" class="panel stock-panel">
         <div class="sub-head">
           <h2>現有治具庫存</h2>
-          <span>{{ activeStockRows.length }} 筆</span>
+          <div class="sub-head-inline">
+            <span>{{ activeStockRows.length }} 筆</span>
+            <button
+              class="toggle-btn small-toggle"
+              type="button"
+              :class="{ active: showStockPanel }"
+              @click="showStockPanel = !showStockPanel"
+            >
+              {{ showStockPanel ? "收起" : "展開" }}
+            </button>
+          </div>
         </div>
-        <div class="panel-table-scroll">
+        <div v-show="showStockPanel" class="panel-table-scroll">
           <table class="grid-table">
             <thead>
               <tr>
@@ -785,13 +1015,23 @@ watch(batchPasteText, () => {
         </div>
       </article>
 
-      <div class="side-stack">
+      <div v-if="showAlertPanel" class="side-stack">
         <article class="panel alert-panel">
           <div class="sub-head">
             <h2>低水位提醒</h2>
-            <span>{{ alerts.length }} 項</span>
+            <div class="sub-head-inline">
+            <span>{{ filteredAlerts.length }} 項</span>
+              <button
+                class="toggle-btn small-toggle"
+                type="button"
+                :class="{ active: showAlertPanel }"
+                @click="showAlertPanel = !showAlertPanel"
+              >
+                {{ showAlertPanel ? "收起" : "展開" }}
+              </button>
+            </div>
           </div>
-          <div class="panel-table-scroll">
+          <div v-show="showAlertPanel" class="panel-table-scroll">
             <table class="grid-table compact-table">
               <thead>
                 <tr>
@@ -802,13 +1042,13 @@ watch(batchPasteText, () => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in alerts" :key="`a-${row.fixture_id}`">
+                <tr v-for="row in filteredAlerts" :key="`a-${row.fixture_id}`">
                   <td>{{ row.fixture_code }}</td>
                   <td>{{ row.stock_qty }}</td>
                   <td>{{ row.min_stock_qty }}</td>
                   <td><UiStatusPill :label="stockStatusLabel(row.stock_status)" tone="danger" /></td>
                 </tr>
-                <tr v-if="alerts.length === 0">
+                <tr v-if="filteredAlerts.length === 0">
                   <td colspan="4" class="empty-cell">目前沒有低水位提醒</td>
                 </tr>
               </tbody>
@@ -849,7 +1089,7 @@ watch(batchPasteText, () => {
         </label>
         <label>
           <span>治具編號</span>
-          <input v-model="overviewFilters.fixture_code" placeholder="例如 C-00003" />
+          <input v-model="overviewFilters.fixture_code" placeholder="請輸入治具編號 / 名稱" />
         </label>
         <label>
           <span>單號</span>
@@ -888,14 +1128,18 @@ watch(batchPasteText, () => {
           </thead>
           <tbody>
             <tr v-for="row in overviewRows" :key="row.id">
-              <td>{{ row.transaction_type === "receipt" ? "收料" : "退料" }}</td>
+              <td>
+                <span class="status-pill" :class="row.transaction_type">
+                  {{ row.transaction_type === "receipt" ? "收料" : "退料" }}
+                </span>
+              </td>
               <td>{{ row.transaction_no }}</td>
               <td>{{ row.fixture_code }}</td>
               <td>{{ ownershipLabel(row.ownership_type) }}</td>
               <td>{{ row.identifier || "-" }}</td>
               <td>{{ row.quantity }}</td>
               <td>{{ row.created_by }}</td>
-              <td>{{ new Date(row.occurred_at).toLocaleString("zh-TW") }}</td>
+              <td>{{ formatLocalDate(row.occurred_at) }}</td>
               <td>{{ row.note || "-" }}</td>
             </tr>
             <tr v-if="overviewRows.length === 0">
@@ -906,111 +1150,6 @@ watch(batchPasteText, () => {
       </div>
     </section>
 
-    <teleport to="body">
-      <div v-if="showBatchPanel" class="batch-modal-backdrop" @click.self="showBatchPanel = false">
-        <div class="batch-modal">
-          <div class="batch-modal-head">
-            <div>
-              <h2>批次貼上匯入</h2>
-              <p>一次處理大量治具資料，解析與確認都在這裡完成，不會影響主畫面布局。</p>
-            </div>
-            <button class="outline-btn" type="button" @click="showBatchPanel = false">關閉</button>
-          </div>
-
-          <div class="batch-modal-body">
-            <label class="batch-input">
-              <span>單號</span>
-              <input
-                v-model="batchTransactionNo"
-                placeholder="可自由輸入，例如內部批號、工單號"
-                autocomplete="off"
-                spellcheck="false"
-              />
-              <small class="batch-help-text">這個欄位只會作為整批收料 / 退料的單號，不限制格式。</small>
-            </label>
-            <label class="batch-input">
-              <span>直接貼上每筆兩行資料</span>
-              <textarea
-                v-model="batchPasteText"
-                placeholder="例如：\nC-00090-2605\n3\nC-00135-2606\n25"
-                @paste="handleBatchPaste"
-              ></textarea>
-            </label>
-            <label class="batch-input">
-              <span>備註（非必填）</span>
-              <input
-                v-model="batchNote"
-                type="text"
-                placeholder="例如：急單補料、內部盤點補登"
-              />
-            </label>
-            <div class="batch-actions">
-              <button class="outline-btn" type="button" @click="clearBatchImport">清空</button>
-              <button class="primary-btn" type="button" :disabled="saving || !batchCanSubmit" @click="submitBatchImport">
-                {{ saving ? "送出中..." : batchImportLabel }}
-              </button>
-            </div>
-            <div class="batch-tips">
-              <span>格式支援兩行一筆，也支援單行 Tab / `|` 分欄。</span>
-              <span>每筆資料請帶治具編號與 4 位識別碼；讀到新治具會先讓你新增。</span>
-            </div>
-            <div class="batch-table-wrap">
-              <table class="grid-table batch-table">
-                <thead>
-                  <tr>
-                    <th>行</th>
-                    <th>原始治具</th>
-                    <th>使用治具</th>
-                    <th>識別碼</th>
-                    <th>數量</th>
-                    <th>狀態 / 操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in batchImportRows" :key="`batch-${row.lineNo}-${row.raw}`">
-                    <td>{{ row.lineNo }}</td>
-                    <td>{{ fallbackText(row.inputFixtureCode) }}</td>
-                    <td>{{ fallbackText(row.resolvedFixtureCode || row.suggestedFixtureCode) }}</td>
-                    <td>{{ fallbackText(row.inputToken) }}</td>
-                    <td>{{ fallbackText(String(row.quantity || "")) }}</td>
-                    <td>
-                      <div class="batch-cell-stack">
-                        <span v-if="row.status === 'ready'" class="batch-status ready">已確認</span>
-                        <span v-else-if="row.status === 'needs-confirm'" class="batch-status warn">待確認</span>
-                        <span v-else-if="row.status === 'needs-add'" class="batch-status warn">待新增</span>
-                        <span v-else-if="row.status === 'skipped'" class="batch-status muted">已跳過</span>
-                        <span v-else class="batch-status error">錯誤</span>
-                        <span v-if="row.message || row.note" class="batch-row-note">{{ row.message || row.note }}</span>
-                        <div class="batch-row-actions">
-                          <template v-if="row.status === 'needs-confirm'">
-                            <button class="ghost-btn batch-action-btn" type="button" @click="acceptSimilarFixture(row)">同一</button>
-                            <button class="primary-btn batch-action-btn" type="button" @click="rejectSimilarFixture(row)">新增</button>
-                            <button class="ghost-btn batch-action-btn" type="button" @click="skipBatchRow(row)">略過</button>
-                          </template>
-                          <template v-else-if="row.status === 'needs-add'">
-                            <button class="primary-btn batch-action-btn" type="button" @click="addBatchRowFixture(row)">新增</button>
-                            <button class="ghost-btn batch-action-btn" type="button" @click="skipBatchRow(row)">略過</button>
-                          </template>
-                          <template v-else-if="row.status === 'skipped'">
-                            <span class="batch-inline-hint">已排除，不會送出</span>
-                          </template>
-                          <template v-else-if="row.status === 'error'">
-                            <span class="batch-inline-hint">請修正後再匯入</span>
-                          </template>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr v-if="batchImportRows.length === 0">
-                    <td colspan="6" class="empty-cell">貼上表格後會自動解析並顯示預覽</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    </teleport>
   </div>
 </template>
 
@@ -1031,6 +1170,15 @@ watch(batchPasteText, () => {
   min-height: 0;
   overflow: hidden;
   align-items: stretch;
+}
+
+.inventory-board.layout-stock-only,
+.inventory-board.layout-alert-only {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+
+.inventory-board.layout-all-collapsed {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .inventory-summary-row {
@@ -1061,6 +1209,11 @@ watch(batchPasteText, () => {
   color: #22314a;
   font-size: 18px;
   line-height: 1.1;
+}
+
+.summary-chip.emphasis {
+  border-color: rgba(224, 142, 31, 0.2);
+  background: linear-gradient(180deg, rgba(224, 142, 31, 0.08) 0%, rgba(224, 142, 31, 0.04) 100%);
 }
 
 .summary-chip.success strong {
@@ -1133,6 +1286,12 @@ watch(batchPasteText, () => {
   margin-bottom: 8px;
 }
 
+.sub-head-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .sub-head-actions {
   display: grid;
   gap: 8px;
@@ -1160,9 +1319,9 @@ watch(batchPasteText, () => {
   display: inline-flex;
   gap: 4px;
   padding: 4px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--op-input-border, var(--line-strong));
   border-radius: 999px;
-  background: #f4f7fc;
+  background: color-mix(in srgb, var(--op-accent-soft, rgba(47, 125, 224, 0.1)) 64%, white);
 }
 
 .segmented-btn {
@@ -1178,15 +1337,56 @@ watch(batchPasteText, () => {
 }
 
 .segmented-btn.active {
-  background: linear-gradient(180deg, #eff5ff 0%, #e3eeff 100%);
-  color: var(--blue);
-  box-shadow: 0 6px 14px rgba(47, 110, 229, 0.12);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--op-accent-soft, rgba(47, 125, 224, 0.1)) 70%, white) 0%, color-mix(in srgb, var(--op-accent-soft, rgba(47, 125, 224, 0.1)) 92%, white) 100%);
+  color: var(--op-accent-strong, var(--blue));
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--op-accent, var(--blue)) 18%, transparent);
 }
 
 .panel-actions {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
   gap: 8px;
-  justify-items: end;
+}
+
+.batch-inline-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fbfdff;
+  padding: 12px;
+}
+
+.batch-inline-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.batch-inline-head h2 {
+  margin: 0;
+  color: #162033;
+  font-size: 18px;
+}
+
+.batch-inline-head p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.batch-inline-body {
+  display: grid;
+  gap: 10px;
+}
+
+.batch-inline-meta-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 1fr);
+  gap: 12px;
 }
 
 .batch-entry-btn {
@@ -1223,9 +1423,82 @@ watch(batchPasteText, () => {
 }
 
 .op-panel {
+  --op-accent: var(--action-in);
+  --op-accent-strong: var(--action-in-strong);
+  --op-accent-soft: var(--action-in-soft);
+  --op-panel-wash: linear-gradient(180deg, rgba(47, 125, 224, 0.08) 0%, rgba(47, 125, 224, 0.02) 100%);
+  --op-input-border: rgba(47, 125, 224, 0.34);
   display: grid;
-  grid-template-rows: auto minmax(260px, 1fr);
+  grid-template-rows: auto auto minmax(260px, 1fr);
   gap: 12px;
+  position: relative;
+  background: var(--op-panel-wash), #fff;
+}
+
+.op-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--op-accent) 0%, var(--op-accent-strong) 100%);
+}
+
+.op-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.op-panel.receipt {
+  --op-accent: var(--action-in);
+  --op-accent-strong: var(--action-in-strong);
+  --op-accent-soft: var(--action-in-soft);
+  --op-panel-wash: linear-gradient(180deg, rgba(47, 125, 224, 0.08) 0%, rgba(47, 125, 224, 0.02) 100%);
+  --op-input-border: rgba(47, 125, 224, 0.34);
+}
+
+.op-panel.return {
+  --op-accent: var(--action-out);
+  --op-accent-strong: var(--action-out-strong);
+  --op-accent-soft: var(--action-out-soft);
+  --op-panel-wash: linear-gradient(180deg, rgba(106, 95, 196, 0.08) 0%, rgba(106, 95, 196, 0.02) 100%);
+  --op-input-border: rgba(106, 95, 196, 0.34);
+}
+
+.inventory-board.layout-stock-only .op-panel,
+.inventory-board.layout-alert-only .op-panel {
+  grid-column: 1;
+}
+
+.inventory-board.layout-all-collapsed .op-panel {
+  grid-column: 1;
+}
+
+.inventory-board.layout-stock-only .stock-panel,
+.inventory-board.layout-alert-only .side-stack {
+  grid-column: 2;
+}
+
+.collapsed-panel-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.collapsed-panel-chip {
+  width: auto;
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.collapsed-panel-chip span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .overview-form label {
@@ -1256,6 +1529,10 @@ input {
   background: #fff;
 }
 
+.op-panel .batch-input-inline:first-child input {
+  border-color: var(--op-input-border);
+}
+
 input:disabled {
   background: #f3f5f9;
   color: #6c7891;
@@ -1263,12 +1540,12 @@ input:disabled {
 
 .primary-btn {
   border: 1px solid var(--green);
-  background: linear-gradient(180deg, #4cc36b 0%, #2ea54e 100%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--green) 80%, white) 0%, var(--green) 100%);
   color: #fff;
   font-weight: 700;
   padding: 8px 14px;
   min-height: 36px;
-  box-shadow: 0 8px 18px rgba(46, 165, 78, 0.18);
+  box-shadow: 0 8px 18px rgba(34, 169, 110, 0.18);
   cursor: pointer;
 }
 
@@ -1289,7 +1566,7 @@ input:disabled {
 }
 
 .primary-btn:hover {
-  box-shadow: 0 10px 22px rgba(46, 165, 78, 0.24);
+  box-shadow: 0 10px 22px rgba(34, 169, 110, 0.24);
   filter: brightness(1.02);
 }
 
@@ -1314,7 +1591,44 @@ input:disabled {
 }
 
 .recent-block {
+  --recent-accent: var(--action-in);
+  --recent-accent-strong: var(--action-in-strong);
+  --recent-accent-soft: var(--action-in-soft);
   min-height: 300px;
+  border-top: 1px solid color-mix(in srgb, var(--recent-accent) 16%, white);
+  padding-top: 4px;
+}
+
+.recent-block.receipt {
+  --recent-accent: var(--action-in);
+  --recent-accent-strong: var(--action-in-strong);
+  --recent-accent-soft: var(--action-in-soft);
+}
+
+.recent-block.return {
+  --recent-accent: var(--action-out);
+  --recent-accent-strong: var(--action-out-strong);
+  --recent-accent-soft: var(--action-out-soft);
+}
+
+.recent-section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.recent-summary-inline {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.recent-secondary-summary {
+  color: var(--recent-accent-strong);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--recent-accent-soft);
 }
 
 .stock-panel,
@@ -1339,6 +1653,16 @@ input:disabled {
   gap: 6px;
 }
 
+.batch-input-inline {
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: center;
+}
+
+.batch-input-inline .batch-help-text {
+  grid-column: 2;
+  margin-top: -2px;
+}
+
 .batch-input span,
 .batch-tips {
   color: #56657f;
@@ -1353,6 +1677,72 @@ input:disabled {
   font-weight: 600;
 }
 
+.batch-help-text-error {
+  color: var(--tone-danger);
+}
+
+.batch-input-invalid {
+  padding: 10px 12px;
+  border: 1px solid rgba(216, 71, 63, 0.26);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(216, 71, 63, 0.08) 0%, rgba(255, 255, 255, 0.94) 100%);
+}
+
+.batch-input-invalid input {
+  border-color: rgba(216, 71, 63, 0.34);
+}
+
+.batch-help-card {
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fbfcfe 0%, #f7f9fc 100%);
+  overflow: hidden;
+}
+
+.batch-help-toggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  color: #485870;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.batch-help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #e8eef8;
+  color: #476186;
+  font-size: 11px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.batch-help-caret {
+  margin-left: auto;
+  color: #7b879c;
+  font-size: 12px;
+}
+
+.batch-help-body {
+  display: grid;
+  gap: 4px;
+  padding: 0 12px 12px;
+  color: #607089;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .batch-input textarea {
   min-height: 132px;
   border: 1px solid var(--line-strong);
@@ -1365,14 +1755,49 @@ input:disabled {
 
 .batch-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.batch-action-group {
+  display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.batch-action-group-primary {
+  position: relative;
+  padding-left: 16px;
+}
+
+.batch-action-group-primary::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: #d7e0ec;
 }
 
 .batch-actions .outline-btn,
 .batch-actions .primary-btn {
   width: auto;
+}
+
+.batch-submit-btn {
+  min-width: 124px;
+}
+
+.batch-submit-btn.flow-receipt {
+  box-shadow: 0 12px 24px rgba(47, 125, 224, 0.24);
+}
+
+.batch-submit-btn.flow-return {
+  box-shadow: 0 12px 24px rgba(106, 95, 196, 0.24);
 }
 
 .batch-tips {
@@ -1385,56 +1810,6 @@ input:disabled {
 .batch-table {
   table-layout: fixed;
   min-width: 100%;
-}
-
-.batch-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 140;
-  background: rgba(15, 23, 42, 0.42);
-  display: grid;
-  place-items: center;
-  padding: 18px;
-}
-
-.batch-modal {
-  width: min(1300px, 100%);
-  max-height: 92vh;
-  overflow: hidden;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: #fff;
-  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.24);
-  display: grid;
-  grid-template-rows: auto 1fr;
-}
-
-.batch-modal-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 16px 18px 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.batch-modal-head h2 {
-  margin: 0;
-  color: #162033;
-  font-size: 18px;
-}
-
-.batch-modal-head p {
-  margin: 3px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.batch-modal-body {
-  display: grid;
-  gap: 10px;
-  padding: 12px 18px 18px;
-  overflow: auto;
 }
 
 .batch-table-wrap {
@@ -1476,6 +1851,22 @@ input:disabled {
 .batch-cell-stack {
   display: grid;
   gap: 6px;
+}
+
+.batch-fixture-cell {
+  display: grid;
+  gap: 4px;
+}
+
+.batch-fixture-cell strong {
+  color: #162033;
+  font-size: 12px;
+}
+
+.batch-fixture-diff {
+  color: #607089;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .batch-row-note {
@@ -1521,15 +1912,15 @@ input:disabled {
 .stock-meter-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #4cc36b 0%, #2ea54e 100%);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--green) 76%, white) 0%, var(--green) 100%);
 }
 
 .stock-meter.low_stock .stock-meter-fill {
-  background: linear-gradient(90deg, #ffbf47 0%, #e08a1e 100%);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--orange) 72%, white) 0%, var(--orange) 100%);
 }
 
 .stock-meter.out_of_stock .stock-meter-fill {
-  background: linear-gradient(90deg, #f46a6a 0%, #dd5757 100%);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--red) 72%, white) 0%, var(--red) 100%);
 }
 
 .stock-meter span {
@@ -1565,6 +1956,18 @@ input:disabled {
   background: #f7f9fd;
   color: #52607b;
   font-weight: 700;
+}
+
+.recent-block .sub-head h3 {
+  color: var(--recent-accent-strong);
+}
+
+.recent-block .grid-table thead th {
+  background: color-mix(in srgb, var(--recent-accent-soft) 70%, white);
+}
+
+.recent-block .empty-cell {
+  background: color-mix(in srgb, var(--recent-accent-soft) 38%, white);
 }
 
 .grid-table tbody tr:last-child td {
@@ -1722,6 +2125,12 @@ input:disabled {
     grid-template-columns: 1fr;
   }
 
+  .inventory-board.layout-stock-only,
+  .inventory-board.layout-alert-only,
+  .inventory-board.layout-all-collapsed {
+    grid-template-columns: 1fr;
+  }
+
   .inventory-summary-row {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -1761,6 +2170,14 @@ input:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .summary-chip {
+    min-height: 86px;
+  }
+
+  .summary-chip.emphasis {
+    border-color: rgba(224, 142, 31, 0.26);
+  }
+
   .overview-form {
     grid-template-columns: 1fr;
   }
@@ -1778,6 +2195,16 @@ input:disabled {
     justify-items: stretch;
   }
 
+  .collapsed-panel-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .collapsed-panel-chip {
+    width: 100%;
+  }
+
   .sub-head-actions span,
   .sub-head-actions .toggle-btn {
     width: 100%;
@@ -1787,9 +2214,6 @@ input:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .batch-modal {
-    width: min(100%, 1000px);
-  }
 }
 
 @media (max-width: 640px) {
@@ -1809,15 +2233,21 @@ input:disabled {
 
   .segmented-control {
     width: 100%;
+    padding: 3px;
   }
 
   .segmented-btn {
     flex: 1 1 0;
+    min-height: 32px;
+    padding: 7px 8px;
+    font-size: 12px;
   }
 
   .panel-actions {
     width: 100%;
-    justify-items: stretch;
+    display: grid;
+    gap: 8px;
+    justify-content: stretch;
   }
 
   .toggle-btn {
@@ -1833,26 +2263,92 @@ input:disabled {
     flex: 1 1 120px;
   }
 
+  .collapsed-panel-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .collapsed-panel-chip {
+    min-height: 42px;
+    padding: 8px 10px;
+    justify-content: space-between;
+    font-size: 12px;
+  }
+
+  .collapsed-panel-chip span {
+    font-size: 11px;
+  }
+
   .batch-panel-body {
     gap: 10px;
   }
 
   .inventory-summary-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .summary-chip {
+    min-height: 78px;
+    padding: 9px 10px;
+  }
+
+  .summary-chip span {
+    font-size: 11px;
+  }
+
+  .summary-chip strong {
+    font-size: 17px;
   }
 
   .batch-input textarea {
     min-height: 108px;
   }
 
-  .batch-modal-backdrop {
-    padding: 10px;
+  .batch-inline-head {
+    flex-direction: column;
   }
 
-  .batch-modal-head,
-  .batch-modal-body {
-    padding-left: 12px;
-    padding-right: 12px;
+  .batch-inline-meta-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .batch-input-inline {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .batch-input-inline .batch-help-text {
+    grid-column: auto;
+    margin-top: 0;
+  }
+
+  .batch-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .batch-action-group {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .batch-action-group-primary {
+    padding-left: 0;
+    padding-top: 8px;
+    border-top: 1px solid #d7e0ec;
+  }
+
+  .batch-action-group-primary::before {
+    display: none;
+  }
+
+  .batch-actions .outline-btn,
+  .batch-actions .primary-btn {
+    width: 100%;
+    min-height: 42px;
   }
 
   .grid-table th,

@@ -229,10 +229,18 @@ class MasterRepository:
         return self.db.scalar(stmt)
 
     def create_user(
-        self, *, username: str, password_hash: str, display_name: str, role: str = "user", is_active: bool = True
+        self,
+        *,
+        username: str,
+        email: str | None,
+        password_hash: str,
+        display_name: str,
+        role: str = "user",
+        is_active: bool = True,
     ) -> User:
         user = User(
             username=username,
+            email=email,
             password_hash=password_hash,
             display_name=display_name,
             role=role,
@@ -242,7 +250,8 @@ class MasterRepository:
         self.db.flush()
         return user
 
-    def update_user(self, user: User, *, display_name: str, role: str, is_active: bool) -> User:
+    def update_user(self, user: User, *, email: str | None, display_name: str, role: str, is_active: bool) -> User:
+        user.email = email
         user.display_name = display_name
         user.role = role
         user.is_active = is_active

@@ -15,6 +15,8 @@ export interface Fixture {
   responsible_user_id: number | null;
   code: string;
   name: string;
+  line_storage_location: string | null;
+  department_storage_location: string | null;
   storage_location: string | null;
   min_stock_qty: number;
   description: string | null;
@@ -42,6 +44,7 @@ export interface Station {
 export interface AppUser {
   id: number;
   username: string;
+  email: string | null;
   display_name: string;
   role: string;
   is_active: boolean;
@@ -81,6 +84,12 @@ export interface StockSummary {
   min_stock_qty: number;
   stock_status: StockStatus;
   last_transaction_at: string | null;
+}
+
+export interface IdentifierStockSummary {
+  fixture_id: number;
+  identifier: string;
+  stock_qty: number;
 }
 
 export interface SearchResult {

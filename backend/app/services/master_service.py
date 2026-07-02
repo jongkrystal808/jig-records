@@ -38,6 +38,29 @@ class MasterService:
         stripped = value.strip()
         return stripped or None
 
+    @classmethod
+    def _compose_storage_location(
+        cls,
+        line_storage_location: str | None,
+        department_storage_location: str | None,
+        legacy_storage_location: str | None,
+    ) -> str | None:
+        line = cls._normalize_storage_location(line_storage_location)
+        department = cls._normalize_storage_location(department_storage_location)
+        if line or department:
+            return " / ".join(part for part in [line, department] if part)
+        return cls._normalize_storage_location(legacy_storage_location)
+
+    @classmethod
+    def _split_storage_location(cls, storage_location: str | None) -> tuple[str | None, str | None]:
+        normalized = cls._normalize_storage_location(storage_location)
+        if not normalized:
+            return None, None
+        if " / " in normalized:
+            left, right = normalized.split(" / ", 1)
+            return cls._normalize_storage_location(left), cls._normalize_storage_location(right)
+        return normalized, None
+
     def create_customer(self, payload: CustomerCreate, actor: SessionContext | None = None):
         assigned_user_ids = sorted({int(user_id) for user_id in payload.assigned_user_ids})
         users = self.repo.list_users_by_ids(assigned_user_ids)
@@ -112,7 +135,11 @@ class MasterService:
                 responsible_user_id=payload.responsible_user_id,
                 code=payload.code,
                 name=payload.name,
-                storage_location=self._normalize_storage_location(payload.storage_location),
+                storage_location=self._compose_storage_location(
+                    payload.line_storage_location,
+                    payload.department_storage_location,
+                    payload.storage_location,
+                ),
                 description=payload.description,
             )
             level = self.repo.get_or_create_stock_level(fixture.id)
@@ -164,7 +191,11 @@ class MasterService:
                 responsible_user_id=payload.responsible_user_id,
                 code=payload.code,
                 name=payload.name,
-                storage_location=self._normalize_storage_location(payload.storage_location),
+                storage_location=self._compose_storage_location(
+                    payload.line_storage_location,
+                    payload.department_storage_location,
+                    payload.storage_location,
+                ),
                 description=payload.description,
                 is_active=payload.is_active,
             )
@@ -306,6 +337,8 @@ class MasterService:
             {
                 "code": fixture.code,
                 "name": fixture.name,
+                "line_storage_location": self._split_storage_location(fixture.storage_location)[0] or "",
+                "department_storage_location": self._split_storage_location(fixture.storage_location)[1] or "",
                 "storage_location": fixture.storage_location or "",
                 "min_stock_qty": 0 if (level := self.repo.get_stock_level(fixture.id)) is None else level.min_stock_qty,
                 "description": fixture.description or "",
@@ -314,18 +347,19 @@ class MasterService:
             for fixture in fixtures
         ]
         return render_csv_text(
-            ["code", "name", "storage_location", "min_stock_qty", "description", "is_active"],
+            ["code", "name", "line_storage_location", "department_storage_location", "min_stock_qty", "description", "is_active"],
             rows,
         )
 
     def fixture_template_csv(self) -> str:
         return render_csv_text(
-            ["code", "name", "storage_location", "min_stock_qty", "description", "is_active"],
+            ["code", "name", "line_storage_location", "department_storage_location", "min_stock_qty", "description", "is_active"],
             [
                 {
                     "code": "C-00001",
                     "name": "RJ45 Fixture",
-                    "storage_location": "A-01-01",
+                    "line_storage_location": "A-01-01",
+                    "department_storage_location": "RD-SHELF-3",
                     "min_stock_qty": "10",
                     "description": "sample",
                     "is_active": "true",
@@ -344,7 +378,13 @@ class MasterService:
             name = row.get("name", "")
             if not code or not name:
                 continue
-            storage_location = self._normalize_storage_location(row.get("storage_location", ""))
+            line_storage_location = self._normalize_storage_location(row.get("line_storage_location", ""))
+            department_storage_location = self._normalize_storage_location(row.get("department_storage_location", ""))
+            storage_location = self._compose_storage_location(
+                line_storage_location,
+                department_storage_location,
+                row.get("storage_location", ""),
+            )
             min_stock_qty = int(row.get("min_stock_qty", "0") or "0")
             description = row.get("description", "") or None
             is_active = _parse_bool(row.get("is_active", ""), default=True)
@@ -475,12 +515,15 @@ class MasterService:
         return imported_count
 
     def _serialize_fixture(self, fixture, min_stock_qty: int) -> dict:
+        line_storage_location, department_storage_location = self._split_storage_location(fixture.storage_location)
         return {
             "id": fixture.id,
             "customer_id": fixture.customer_id,
             "responsible_user_id": fixture.responsible_user_id,
             "code": fixture.code,
             "name": fixture.name,
+            "line_storage_location": line_storage_location,
+            "department_storage_location": department_storage_location,
             "storage_location": fixture.storage_location,
             "min_stock_qty": min_stock_qty,
             "description": fixture.description,

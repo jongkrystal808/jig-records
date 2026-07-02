@@ -1,15 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 
 import { api } from "@/api";
 import { authSession, selectedCustomerId } from "@/appState";
 import { pushToast } from "@/toastState";
 import type { AppUser, Customer, Fixture, MachineModel, Station } from "@/types";
 import { fallbackText } from "@/utils/display";
+import { formatLocalDate } from "@/utils/date";
 import UiStatusPill from "@/components/UiStatusPill.vue";
 import UiFormActions from "@/components/UiFormActions.vue";
 
 type MasterTab = "fixture" | "model" | "station" | "customer" | "user";
+
+const router = useRouter();
 
 const fixtures = ref<Fixture[]>([]);
 const models = ref<MachineModel[]>([]);
@@ -22,6 +26,7 @@ const activeTab = ref<MasterTab>("fixture");
 const keyword = ref("");
 const statusFilter = ref<"all" | "active" | "inactive">("all");
 const loading = ref(false);
+const saving = ref(false);
 const listPage = ref(1);
 const listPageSize = 10;
 
@@ -31,31 +36,59 @@ const selectedStationId = ref<number | null>(null);
 const selectedUserId = ref<number | null>(null);
 const selectedCustomerRowId = ref<number | null>(null);
 
-const fixtureForm = ref({
-  code: "",
-  name: "",
-  responsible_user_id: null as number | null,
-  storage_location: "",
-  min_stock_qty: 0,
-  description: "",
-  is_active: true
-});
-const modelForm = ref({ code: "", name: "", is_active: true });
-const stationForm = ref({ code: "", name: "", is_active: true });
-const customerForm = ref({ code: "", name: "" });
-const userForm = ref({
-  username: "",
-  display_name: "",
-  role: "user",
-  is_active: true,
-  password: "",
-  reset_password: ""
-});
+const fixtureForm = ref(makeEmptyFixtureForm());
+const modelForm = ref(makeEmptyModelForm());
+const stationForm = ref(makeEmptyStationForm());
+const customerForm = ref(makeEmptyCustomerForm());
+const userForm = ref(makeEmptyUserForm());
 const importInput = ref<HTMLInputElement | null>(null);
+const moreMenuOpen = ref(false);
+const moreMenuRef = ref<HTMLElement | null>(null);
 const canManageUsers = computed(() => authSession.value?.role === "admin");
 const canManageCustomers = computed(() => authSession.value?.role === "admin");
 const selectedCustomerScopeCount = computed(() => customerFormAssignedUserIds.value.length);
 const customerFormAssignedUserIds = ref<number[]>([]);
+
+function normalizeText(value: string | null | undefined): string {
+  return (value ?? "").trim();
+}
+
+function makeEmptyFixtureForm() {
+  return {
+    code: "",
+    name: "",
+    responsible_user_id: null as number | null,
+    line_storage_location: "",
+    department_storage_location: "",
+    min_stock_qty: 0,
+    description: "",
+    is_active: true
+  };
+}
+
+function makeEmptyModelForm() {
+  return { code: "", name: "", is_active: true };
+}
+
+function makeEmptyStationForm() {
+  return { code: "", name: "", is_active: true };
+}
+
+function makeEmptyCustomerForm() {
+  return { code: "", name: "" };
+}
+
+function makeEmptyUserForm() {
+  return {
+    username: "",
+    email: "",
+    display_name: "",
+    role: "user",
+    is_active: true,
+    password: "",
+    reset_password: ""
+  };
+}
 
 const tabTitleMap: Record<MasterTab, string> = {
   fixture: "治具",
@@ -82,21 +115,31 @@ const filteredFixtures = computed(() =>
 );
 
 const filteredModels = computed(() =>
-  models.value.filter(
-    (row) =>
+  models.value.filter((row) => {
+    const byKeyword =
       !keyword.value ||
       row.code.toLowerCase().includes(keyword.value.toLowerCase()) ||
-      row.name.toLowerCase().includes(keyword.value.toLowerCase())
-  )
+      row.name.toLowerCase().includes(keyword.value.toLowerCase());
+    const byStatus =
+      statusFilter.value === "all" ||
+      (statusFilter.value === "active" && row.is_active) ||
+      (statusFilter.value === "inactive" && !row.is_active);
+    return byKeyword && byStatus;
+  })
 );
 
 const filteredStations = computed(() =>
-  stations.value.filter(
-    (row) =>
+  stations.value.filter((row) => {
+    const byKeyword =
       !keyword.value ||
       row.code.toLowerCase().includes(keyword.value.toLowerCase()) ||
-      row.name.toLowerCase().includes(keyword.value.toLowerCase())
-  )
+      row.name.toLowerCase().includes(keyword.value.toLowerCase());
+    const byStatus =
+      statusFilter.value === "all" ||
+      (statusFilter.value === "active" && row.is_active) ||
+      (statusFilter.value === "inactive" && !row.is_active);
+    return byKeyword && byStatus;
+  })
 );
 
 const filteredCustomers = computed(() =>
@@ -113,6 +156,7 @@ const filteredUsers = computed(() =>
     const byKeyword =
       !keyword.value ||
       row.username.toLowerCase().includes(keyword.value.toLowerCase()) ||
+      (row.email ?? "").toLowerCase().includes(keyword.value.toLowerCase()) ||
       row.display_name.toLowerCase().includes(keyword.value.toLowerCase());
     const byStatus =
       statusFilter.value === "all" ||
@@ -158,6 +202,123 @@ const selectedDetailLabel = computed(() =>
       selectedUser.value?.username
   )
 );
+const isCreateMode = computed(
+  () =>
+    selectedFixtureId.value === null &&
+    selectedModelId.value === null &&
+    selectedStationId.value === null &&
+    selectedCustomerRowId.value === null &&
+    selectedUserId.value === null
+);
+const editorBaseline = computed(() => {
+  if (activeTab.value === "fixture") {
+    const row = selectedFixture.value;
+    return row
+      ? {
+          code: normalizeText(row.code),
+          name: normalizeText(row.name),
+          responsible_user_id: row.responsible_user_id,
+          line_storage_location: normalizeText(row.line_storage_location),
+          department_storage_location: normalizeText(row.department_storage_location),
+          min_stock_qty: row.min_stock_qty,
+          description: normalizeText(row.description),
+          is_active: row.is_active
+        }
+      : {
+          code: "",
+          name: "",
+          responsible_user_id: null,
+          line_storage_location: "",
+          department_storage_location: "",
+          min_stock_qty: 0,
+          description: "",
+          is_active: true
+        };
+  }
+  if (activeTab.value === "model") {
+    const row = selectedModel.value;
+    return row
+      ? { code: normalizeText(row.code), name: normalizeText(row.name), is_active: row.is_active }
+      : { code: "", name: "", is_active: true };
+  }
+  if (activeTab.value === "station") {
+    const row = selectedStation.value;
+    return row
+      ? { code: normalizeText(row.code), name: normalizeText(row.name), is_active: row.is_active }
+      : { code: "", name: "", is_active: true };
+  }
+  if (activeTab.value === "customer") {
+    const row = selectedCustomerRow.value;
+    return row
+      ? { code: normalizeText(row.code), name: normalizeText(row.name), assigned_user_ids: [...row.assigned_user_ids].sort((a, b) => a - b) }
+      : { code: "", name: "", assigned_user_ids: [] as number[] };
+  }
+  const row = selectedUser.value;
+  return row
+    ? {
+        username: normalizeText(row.username),
+        email: normalizeText(row.email),
+        display_name: normalizeText(row.display_name),
+        role: row.role,
+        is_active: row.is_active,
+        password: "",
+        reset_password: ""
+      }
+    : {
+        username: "",
+        email: "",
+        display_name: "",
+        role: "user",
+        is_active: true,
+        password: "",
+        reset_password: ""
+      };
+});
+const editorCurrentState = computed(() => {
+  if (activeTab.value === "fixture") {
+    return {
+      code: normalizeText(fixtureForm.value.code),
+      name: normalizeText(fixtureForm.value.name),
+      responsible_user_id: fixtureForm.value.responsible_user_id,
+      line_storage_location: normalizeText(fixtureForm.value.line_storage_location),
+      department_storage_location: normalizeText(fixtureForm.value.department_storage_location),
+      min_stock_qty: fixtureForm.value.min_stock_qty,
+      description: normalizeText(fixtureForm.value.description),
+      is_active: fixtureForm.value.is_active
+    };
+  }
+  if (activeTab.value === "model") {
+    return {
+      code: normalizeText(modelForm.value.code),
+      name: normalizeText(modelForm.value.name),
+      is_active: modelForm.value.is_active
+    };
+  }
+  if (activeTab.value === "station") {
+    return {
+      code: normalizeText(stationForm.value.code),
+      name: normalizeText(stationForm.value.name),
+      is_active: stationForm.value.is_active
+    };
+  }
+  if (activeTab.value === "customer") {
+    return {
+      code: normalizeText(customerForm.value.code),
+      name: normalizeText(customerForm.value.name),
+      assigned_user_ids: [...customerFormAssignedUserIds.value].sort((a, b) => a - b)
+    };
+  }
+  return {
+    username: normalizeText(userForm.value.username),
+    email: normalizeText(userForm.value.email),
+    display_name: normalizeText(userForm.value.display_name),
+    role: userForm.value.role,
+    is_active: userForm.value.is_active,
+    password: normalizeText(userForm.value.password),
+    reset_password: normalizeText(userForm.value.reset_password)
+  };
+});
+const hasUnsavedChanges = computed(() => JSON.stringify(editorCurrentState.value) !== JSON.stringify(editorBaseline.value));
 const selectedStatusBadge = computed(() => {
   const row =
     activeTab.value === "fixture"
@@ -176,6 +337,16 @@ const selectedStatusBadge = computed(() => {
   };
 });
 
+const selectedActivatableRow = computed(() => {
+  if (activeTab.value === "fixture") return selectedFixture.value;
+  if (activeTab.value === "model") return selectedModel.value;
+  if (activeTab.value === "station") return selectedStation.value;
+  if (activeTab.value === "user") return selectedUser.value;
+  return null;
+});
+
+const toggleActionLabel = computed(() => (selectedActivatableRow.value?.is_active ?? true ? "停用" : "恢復使用"));
+
 const summaryCards = computed(() => [
   { label: "治具總數", value: fixtures.value.length, meta: `啟用 ${fixtures.value.filter((row) => row.is_active).length}` },
   { label: "機種總數", value: models.value.length, meta: `啟用 ${models.value.filter((row) => row.is_active).length}` },
@@ -184,8 +355,10 @@ const summaryCards = computed(() => [
   { label: "使用者", value: users.value.length, meta: `啟用 ${users.value.filter((row) => row.is_active).length}` }
 ]);
 
-async function loadData(): Promise<void> {
-  loading.value = true;
+async function loadData(showLoading = true): Promise<void> {
+  if (showLoading) {
+    loading.value = true;
+  }
   try {
     const customerId = selectedCustomerId.value ?? undefined;
     const [f, m, s, u, c, customerUsers] = await Promise.all([
@@ -215,7 +388,9 @@ async function loadData(): Promise<void> {
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "載入資料維護資料失敗", "error");
   } finally {
-    loading.value = false;
+    if (showLoading) {
+      loading.value = false;
+    }
   }
 }
 
@@ -227,7 +402,8 @@ function syncEditorFromSelection(): void {
       code: row.code,
       name: row.name,
       responsible_user_id: row.responsible_user_id,
-      storage_location: row.storage_location ?? "",
+      line_storage_location: row.line_storage_location ?? "",
+      department_storage_location: row.department_storage_location ?? "",
       min_stock_qty: row.min_stock_qty,
       description: row.description ?? "",
       is_active: row.is_active
@@ -258,6 +434,7 @@ function syncEditorFromSelection(): void {
     if (!row) return;
     userForm.value = {
       username: row.username,
+      email: row.email ?? "",
       display_name: row.display_name,
       role: row.role,
       is_active: row.is_active,
@@ -268,7 +445,20 @@ function syncEditorFromSelection(): void {
   }
 }
 
+function confirmDiscardChanges(message: string): boolean {
+  if (!hasUnsavedChanges.value) {
+    return true;
+  }
+  return window.confirm(message);
+}
+
 function switchTab(tab: MasterTab): void {
+  if (tab === activeTab.value) {
+    return;
+  }
+  if (!confirmDiscardChanges("目前表單有未儲存的修改，切換分頁後將會捨棄。要繼續嗎？")) {
+    return;
+  }
   activeTab.value = tab;
   keyword.value = "";
   statusFilter.value = "all";
@@ -277,55 +467,70 @@ function switchTab(tab: MasterTab): void {
 }
 
 function startCreate(): void {
+  if (!confirmDiscardChanges("目前表單有未儲存的修改，切換到新增模式後將會捨棄。要繼續嗎？")) {
+    return;
+  }
+  startCreateWithoutPrompt();
+}
+
+function startCreateWithoutPrompt(): void {
   if (activeTab.value === "fixture") {
     selectedFixtureId.value = null;
-    fixtureForm.value = {
-      code: "",
-      name: "",
-      responsible_user_id: null,
-      storage_location: "",
-      min_stock_qty: 0,
-      description: "",
-      is_active: true
-    };
+    fixtureForm.value = makeEmptyFixtureForm();
     return;
   }
   if (activeTab.value === "model") {
     selectedModelId.value = null;
-    modelForm.value = { code: "", name: "", is_active: true };
+    modelForm.value = makeEmptyModelForm();
     return;
   }
   if (activeTab.value === "station") {
     selectedStationId.value = null;
-    stationForm.value = { code: "", name: "", is_active: true };
+    stationForm.value = makeEmptyStationForm();
     return;
   }
   if (activeTab.value === "user") {
     selectedUserId.value = null;
-    userForm.value = {
-      username: "",
-      display_name: "",
-      role: "user",
-      is_active: true,
-      password: "",
-      reset_password: ""
-    };
+    userForm.value = makeEmptyUserForm();
     return;
   }
   if (activeTab.value === "customer") {
     selectedCustomerRowId.value = null;
-    customerForm.value = { code: "", name: "" };
+    customerForm.value = makeEmptyCustomerForm();
     customerFormAssignedUserIds.value = [];
     return;
   }
 }
 
 function selectRow(id: number): void {
+  const currentId =
+    activeTab.value === "fixture"
+      ? selectedFixtureId.value
+      : activeTab.value === "model"
+        ? selectedModelId.value
+        : activeTab.value === "station"
+          ? selectedStationId.value
+          : activeTab.value === "customer"
+            ? selectedCustomerRowId.value
+            : selectedUserId.value;
+  if (currentId === id) {
+    return;
+  }
+  if (!confirmDiscardChanges("目前表單有未儲存的修改，切換資料後將會捨棄。要繼續嗎？")) {
+    return;
+  }
   if (activeTab.value === "fixture") selectedFixtureId.value = id;
   if (activeTab.value === "model") selectedModelId.value = id;
   if (activeTab.value === "station") selectedStationId.value = id;
   if (activeTab.value === "customer") selectedCustomerRowId.value = id;
   if (activeTab.value === "user") selectedUserId.value = id;
+  syncEditorFromSelection();
+}
+
+function reloadSelection(): void {
+  if (!confirmDiscardChanges("重載會放棄目前尚未儲存的修改，重新載入已選資料。要繼續嗎？")) {
+    return;
+  }
   syncEditorFromSelection();
 }
 
@@ -350,6 +555,7 @@ async function saveCurrent(): Promise<void> {
     (activeTab.value === "station" && selectedStationId.value !== null) ||
     (activeTab.value === "customer" && selectedCustomerRowId.value !== null) ||
     (activeTab.value === "user" && selectedUserId.value !== null);
+  saving.value = true;
   try {
     let savedUserId: number | null = null;
     if (activeTab.value === "fixture") {
@@ -363,7 +569,8 @@ async function saveCurrent(): Promise<void> {
           responsible_user_id: fixtureForm.value.responsible_user_id,
           code: fixtureForm.value.code.trim(),
           name: fixtureForm.value.name.trim(),
-          storage_location: fixtureForm.value.storage_location.trim() || undefined,
+          line_storage_location: fixtureForm.value.line_storage_location.trim() || undefined,
+          department_storage_location: fixtureForm.value.department_storage_location.trim() || undefined,
           min_stock_qty: fixtureForm.value.min_stock_qty,
           description: fixtureForm.value.description.trim() || undefined,
           is_active: fixtureForm.value.is_active
@@ -374,7 +581,8 @@ async function saveCurrent(): Promise<void> {
           responsible_user_id: fixtureForm.value.responsible_user_id,
           code: fixtureForm.value.code.trim(),
           name: fixtureForm.value.name.trim(),
-          storage_location: fixtureForm.value.storage_location.trim() || undefined,
+          line_storage_location: fixtureForm.value.line_storage_location.trim() || undefined,
+          department_storage_location: fixtureForm.value.department_storage_location.trim() || undefined,
           min_stock_qty: fixtureForm.value.min_stock_qty,
           description: fixtureForm.value.description.trim() || undefined
         });
@@ -437,6 +645,7 @@ async function saveCurrent(): Promise<void> {
     } else if (activeTab.value === "user") {
       if (selectedUserId.value) {
         const user = await api.updateUser(selectedUserId.value, {
+          email: userForm.value.email.trim() || null,
           display_name: userForm.value.display_name.trim(),
           role: userForm.value.role,
           is_active: userForm.value.is_active,
@@ -450,6 +659,7 @@ async function saveCurrent(): Promise<void> {
         }
         const user = await api.createUser({
           username: userForm.value.username.trim(),
+          email: userForm.value.email.trim() || null,
           password: userForm.value.password.trim(),
           display_name: userForm.value.display_name.trim(),
           role: userForm.value.role,
@@ -459,7 +669,7 @@ async function saveCurrent(): Promise<void> {
         savedUserId = user.id;
       }
     }
-    await loadData();
+    await loadData(false);
     if (savedUserId !== null) {
       selectedUserId.value = savedUserId;
       syncEditorFromSelection();
@@ -467,10 +677,14 @@ async function saveCurrent(): Promise<void> {
     pushToast(isUpdate ? "更新完成。" : "新增完成。", "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "儲存失敗", "error");
+  } finally {
+    saving.value = false;
   }
 }
 
-async function deactivateCurrent(): Promise<void> {
+async function toggleCurrentActive(): Promise<void> {
+  const nextActive = !(selectedActivatableRow.value?.is_active ?? true);
+  saving.value = true;
   try {
     if (activeTab.value === "fixture" && selectedFixtureId.value) {
       if (!selectedCustomerId.value) {
@@ -482,10 +696,11 @@ async function deactivateCurrent(): Promise<void> {
         responsible_user_id: fixtureForm.value.responsible_user_id,
         code: fixtureForm.value.code.trim(),
         name: fixtureForm.value.name.trim(),
-        storage_location: fixtureForm.value.storage_location.trim() || undefined,
+        line_storage_location: fixtureForm.value.line_storage_location.trim() || undefined,
+        department_storage_location: fixtureForm.value.department_storage_location.trim() || undefined,
         min_stock_qty: fixtureForm.value.min_stock_qty,
         description: fixtureForm.value.description.trim() || undefined,
-        is_active: false
+        is_active: nextActive
       });
     } else if (activeTab.value === "model" && selectedModelId.value) {
       if (!selectedCustomerId.value) {
@@ -496,7 +711,7 @@ async function deactivateCurrent(): Promise<void> {
         customer_id: selectedCustomerId.value,
         code: modelForm.value.code.trim(),
         name: modelForm.value.name.trim(),
-        is_active: false
+        is_active: nextActive
       });
     } else if (activeTab.value === "station" && selectedStationId.value) {
       if (!selectedCustomerId.value) {
@@ -507,24 +722,27 @@ async function deactivateCurrent(): Promise<void> {
         customer_id: selectedCustomerId.value,
         code: stationForm.value.code.trim(),
         name: stationForm.value.name.trim(),
-        is_active: false
+        is_active: nextActive
       });
     } else if (activeTab.value === "user" && selectedUserId.value) {
       await api.updateUser(selectedUserId.value, {
+        email: userForm.value.email.trim() || null,
         display_name: userForm.value.display_name.trim(),
         role: userForm.value.role,
-        is_active: false,
+        is_active: nextActive,
         allowed_customer_ids: []
       });
     } else {
-      pushToast(activeTab.value === "customer" ? "客戶分頁不提供停用。":"請先選擇要停用的資料。", "warning");
+      pushToast(activeTab.value === "customer" ? "客戶分頁不提供停用。" : "請先選擇要調整狀態的資料。", "warning");
       return;
     }
-    await loadData();
+    await loadData(false);
     syncEditorFromSelection();
-    pushToast("停用完成。", "success");
+    pushToast(nextActive ? "已恢復使用。" : "停用完成。", "success");
   } catch (err) {
-    pushToast(err instanceof Error ? err.message : "停用失敗", "error");
+    pushToast(err instanceof Error ? err.message : "狀態更新失敗", "error");
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -537,16 +755,20 @@ async function resetUserPassword(): Promise<void> {
     pushToast("請輸入新密碼。", "warning");
     return;
   }
+  saving.value = true;
   try {
     await api.resetUserPassword(selectedUserId.value, userForm.value.reset_password.trim());
     userForm.value.reset_password = "";
     pushToast("密碼已重設。", "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "重設密碼失敗", "error");
+  } finally {
+    saving.value = false;
   }
 }
 
 function downloadCurrent(): void {
+  closeMoreMenu();
   const payload = JSON.stringify(currentRows.value, null, 2);
   const blob = new Blob([payload], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -587,6 +809,7 @@ function downloadCsv(filename: string, content: string): void {
 
 async function exportActiveCsv(): Promise<void> {
   try {
+    closeMoreMenu();
     if (activeTab.value !== "fixture" && activeTab.value !== "model" && activeTab.value !== "station") {
       pushToast("此分頁目前未提供匯出 CSV。", "info");
       return;
@@ -622,6 +845,7 @@ async function exportActiveCsv(): Promise<void> {
 
 async function downloadTemplate(): Promise<void> {
   try {
+    closeMoreMenu();
     if (activeTab.value !== "fixture" && activeTab.value !== "model" && activeTab.value !== "station") {
       pushToast("此分頁目前未提供範本下載。", "info");
       return;
@@ -652,11 +876,28 @@ async function downloadTemplate(): Promise<void> {
 }
 
 function triggerImport(): void {
+  moreMenuOpen.value = false;
   if (activeTab.value !== "fixture" && activeTab.value !== "model" && activeTab.value !== "station") {
     pushToast("此分頁目前未提供匯入 CSV。", "info");
     return;
   }
   importInput.value?.click();
+}
+
+function toggleMoreMenu(): void {
+  moreMenuOpen.value = !moreMenuOpen.value;
+}
+
+function closeMoreMenu(): void {
+  moreMenuOpen.value = false;
+}
+
+function handleDocumentClick(event: MouseEvent): void {
+  if (!moreMenuRef.value) return;
+  const target = event.target;
+  if (target instanceof Node && !moreMenuRef.value.contains(target)) {
+    moreMenuOpen.value = false;
+  }
 }
 
 async function importCsv(event: Event): Promise<void> {
@@ -685,7 +926,7 @@ async function importCsv(event: Event): Promise<void> {
       }
       result = await api.importStationsCsv(selectedCustomerId.value, content, file.name);
     }
-    await loadData();
+    await loadData(false);
     syncEditorFromSelection();
     pushToast(`匯入完成，共 ${result?.imported_count ?? 0} 筆。`, "success");
   } catch (err) {
@@ -702,8 +943,13 @@ watch(selectedCustomerId, async () => {
 });
 
 onMounted(async () => {
+  document.addEventListener("click", handleDocumentClick);
   await loadData();
   syncEditorFromSelection();
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("click", handleDocumentClick);
 });
 </script>
 
@@ -719,40 +965,135 @@ onMounted(async () => {
 
     <section class="toolbar panel">
       <div class="tab-bar">
-        <button class="tab-btn" :class="{ active: activeTab === 'fixture' }" @click="switchTab('fixture')">治具資訊</button>
-        <button class="tab-btn" :class="{ active: activeTab === 'model' }" @click="switchTab('model')">機種資訊</button>
-        <button class="tab-btn" :class="{ active: activeTab === 'station' }" @click="switchTab('station')">站點資訊</button>
-        <button v-if="canManageCustomers" class="tab-btn" :class="{ active: activeTab === 'customer' }" @click="switchTab('customer')">客戶</button>
-        <button v-if="canManageUsers" class="tab-btn" :class="{ active: activeTab === 'user' }" @click="switchTab('user')">使用者</button>
+        <div class="tab-group">
+          <span class="tab-group-label">資料維護</span>
+          <button class="tab-btn" :class="{ active: activeTab === 'fixture' }" @click="switchTab('fixture')">治具資訊</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'model' }" @click="switchTab('model')">機種資訊</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'station' }" @click="switchTab('station')">站點資訊</button>
+        </div>
+        <div v-if="canManageCustomers || canManageUsers" class="tab-group tab-group-admin">
+          <span class="tab-group-label">系統管理</span>
+          <button v-if="canManageCustomers" class="tab-btn tab-btn-admin" :class="{ active: activeTab === 'customer' }" @click="switchTab('customer')">客戶</button>
+          <button v-if="canManageUsers" class="tab-btn tab-btn-admin" :class="{ active: activeTab === 'user' }" @click="switchTab('user')">使用者</button>
+        </div>
       </div>
 
       <div class="toolbar-side">
         <div class="toolbar-actions">
-          <button class="outline-btn" type="button" :disabled="loading" @click="downloadTemplate">下載範本</button>
-          <button class="outline-btn" type="button" :disabled="loading" @click="triggerImport">匯入 CSV</button>
-          <button class="outline-btn" type="button" :disabled="loading" @click="exportActiveCsv">匯出 CSV</button>
-          <button class="outline-btn" type="button" :disabled="loading" @click="downloadCurrent">匯出 JSON</button>
+          <button class="outline-btn toolbar-primary-action" type="button" @click="router.push({ name: 'search' })">返回搜尋</button>
+          <button class="outline-btn toolbar-primary-action" type="button" :disabled="loading" @click="exportActiveCsv">匯出 CSV</button>
+          <div ref="moreMenuRef" class="more-menu">
+            <button class="outline-btn more-menu-trigger" type="button" :disabled="loading" :aria-expanded="moreMenuOpen" @click.stop="toggleMoreMenu">更多</button>
+            <div v-if="moreMenuOpen" class="more-menu-panel">
+              <button class="more-menu-item" type="button" :disabled="loading" @click="downloadTemplate">下載範本</button>
+              <button class="more-menu-item" type="button" :disabled="loading" @click="triggerImport">匯入 CSV</button>
+              <button class="more-menu-item" type="button" :disabled="loading" @click="downloadCurrent">匯出 JSON</button>
+            </div>
+          </div>
           <input ref="importInput" type="file" accept=".csv,text/csv" class="hidden-input" @change="importCsv" />
         </div>
       </div>
     </section>
 
     <section class="content-grid">
-      <article class="panel detail-panel">
+      <article class="panel list-panel">
         <div class="panel-head">
           <div>
-            <h2>{{ tabTitleMap[activeTab] }}詳細資料</h2>
-            <p>{{ selectedDetailLabel === "-" ? "新增資料" : selectedDetailLabel }}</p>
+            <h2>{{ tabTitleMap[activeTab] }}清單</h2>
+            <p>{{ currentRows.length }} 筆資料</p>
           </div>
+        </div>
+
+        <div class="list-toolbar">
+          <input v-model="keyword" :placeholder="searchPlaceholder" :disabled="loading" />
+          <select v-if="activeTab !== 'customer'" v-model="statusFilter">
+            <option value="all">狀態：全部</option>
+            <option value="active">狀態：啟用中</option>
+            <option value="inactive">狀態：停用</option>
+          </select>
+          <button class="primary-btn" type="button" :disabled="loading || (activeTab === 'customer' && !canManageCustomers)" @click="startCreate">+ 新增{{ tabTitleMap[activeTab] }}</button>
+        </div>
+
+        <div v-if="loading" class="loading-banner">資料載入中，請稍候...</div>
+
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr v-if="activeTab === 'fixture'"><th>治具編號</th><th>治具名稱</th><th>水位</th><th>產線儲位</th><th>部門儲位</th><th>狀態</th></tr>
+              <tr v-else-if="activeTab === 'model'"><th>機種編號</th><th>機種名稱</th><th>狀態</th></tr>
+              <tr v-else-if="activeTab === 'station'"><th>站點編號</th><th>站點名稱</th><th>狀態</th></tr>
+              <tr v-else-if="activeTab === 'customer'"><th>客戶代碼</th><th>客戶名稱</th></tr>
+              <tr v-else><th>帳號</th><th>Email</th><th>顯示名稱</th><th>角色</th><th>狀態</th></tr>
+            </thead>
+
+            <tbody v-if="activeTab === 'fixture'">
+              <tr v-for="row in pagedFixtureRows" :key="row.id" :class="{ selected: selectedFixtureId === row.id }" @click="selectRow(row.id)">
+                <td>{{ row.code }}</td><td>{{ row.name }}</td><td>{{ row.min_stock_qty }}</td><td>{{ row.line_storage_location || "-" }}</td><td>{{ row.department_storage_location || "-" }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
+              </tr>
+              <tr v-if="!loading && currentRows.length === 0">
+                <td colspan="6" class="empty-cell">{{ emptyStateMessage }}</td>
+              </tr>
+            </tbody>
+            <tbody v-else-if="activeTab === 'model'">
+              <tr v-for="row in pagedModelRows" :key="row.id" :class="{ selected: selectedModelId === row.id }" @click="selectRow(row.id)">
+                <td>{{ row.code }}</td><td>{{ row.name }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
+              </tr>
+              <tr v-if="!loading && currentRows.length === 0">
+                <td colspan="3" class="empty-cell">{{ emptyStateMessage }}</td>
+              </tr>
+            </tbody>
+            <tbody v-else-if="activeTab === 'station'">
+              <tr v-for="row in pagedStationRows" :key="row.id" :class="{ selected: selectedStationId === row.id }" @click="selectRow(row.id)">
+                <td>{{ row.code }}</td><td>{{ row.name }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
+              </tr>
+              <tr v-if="!loading && currentRows.length === 0">
+                <td colspan="3" class="empty-cell">{{ emptyStateMessage }}</td>
+              </tr>
+            </tbody>
+            <tbody v-else-if="activeTab === 'customer'">
+              <tr v-for="row in pagedCustomerRows" :key="row.id" :class="{ selected: selectedCustomerRowId === row.id }" @click="selectRow(row.id)">
+                <td>{{ row.code }}</td><td>{{ row.name }}</td>
+              </tr>
+              <tr v-if="!loading && currentRows.length === 0">
+                <td colspan="2" class="empty-cell">{{ emptyStateMessage }}</td>
+              </tr>
+            </tbody>
+            <tbody v-else>
+                <tr v-for="row in pagedUserRows" :key="row.id" :class="{ selected: selectedUserId === row.id }" @click="selectRow(row.id)">
+                 <td>{{ row.username }}</td><td>{{ fallbackText(row.email) }}</td><td>{{ row.display_name }}</td><td>{{ row.role }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
+               </tr>
+              <tr v-if="!loading && currentRows.length === 0">
+                <td colspan="5" class="empty-cell">{{ emptyStateMessage }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-if="currentRows.length > 0" class="list-footer">
+          <span>第 {{ listPage }} / {{ listTotalPages }} 頁，共 {{ currentRows.length }} 筆</span>
+          <div class="pager-actions">
+            <button class="outline-btn small" type="button" :disabled="loading || listPage <= 1" @click="previousListPage">上一頁</button>
+            <button class="outline-btn small" type="button" :disabled="loading || listPage >= listTotalPages" @click="nextListPage">下一頁</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel detail-panel" :class="{ 'detail-panel-create': isCreateMode }">
+        <div class="panel-head" :class="{ 'panel-head-create': isCreateMode }">
+          <div>
+            <h2>{{ tabTitleMap[activeTab] }}詳細資料</h2>
+            <p>{{ isCreateMode ? "新增資料" : selectedDetailLabel }}</p>
+          </div>
+          <span v-if="isCreateMode" class="mode-chip mode-chip-create">新增模式</span>
           <UiStatusPill
             v-if="selectedStatusBadge"
             class="status-legend"
             :label="selectedStatusBadge.label"
             :tone="selectedStatusBadge.tone"
           />
-          <div class="action-group">
-            <button class="outline-btn small" type="button" :disabled="loading" @click="startCreate">新增</button>
-            <button class="outline-btn small" type="button" :disabled="loading" @click="syncEditorFromSelection">重載</button>
+          <div class="action-group detail-head-actions">
+            <button class="outline-btn small" type="button" :disabled="saving" @click="startCreate">新增</button>
+            <button class="ghost-btn small action-divider-btn" type="button" :disabled="saving || isCreateMode" @click="reloadSelection">重載</button>
           </div>
         </div>
 
@@ -763,8 +1104,9 @@ onMounted(async () => {
               <input v-model="fixtureForm.code" required />
             </label>
             <label><span>治具名稱 *</span><input v-model="fixtureForm.name" required /></label>
-            <label><span>儲位</span><input v-model="fixtureForm.storage_location" placeholder="A-01-03" /></label>
-            <label><span>最低庫存</span><input v-model.number="fixtureForm.min_stock_qty" type="number" min="0" /></label>
+            <label><span>產線儲位</span><input v-model="fixtureForm.line_storage_location" placeholder="A-01-03" /></label>
+            <label><span>部門儲位</span><input v-model="fixtureForm.department_storage_location" placeholder="RD-SHELF-3" /></label>
+            <label><span>最低水位</span><input v-model.number="fixtureForm.min_stock_qty" type="number" min="0" /></label>
             <label>
               <span>負責人</span>
               <select v-model="fixtureForm.responsible_user_id">
@@ -774,7 +1116,7 @@ onMounted(async () => {
             </label>
             <label>
               <span>狀態</span>
-              <select v-model="fixtureForm.is_active" :disabled="selectedFixtureId !== null">
+              <select v-model="fixtureForm.is_active">
                 <option :value="true">啟用中</option>
                 <option :value="false">停用</option>
               </select>
@@ -830,18 +1172,19 @@ onMounted(async () => {
                 </div>
               </div>
             </div>
-            <label class="full"><span>建立時間</span><input :value="selectedCustomerRow?.created_at ? new Date(selectedCustomerRow.created_at).toLocaleString('zh-TW') : '-'" disabled /></label>
-            <label class="full"><span>更新時間</span><input :value="selectedCustomerRow?.updated_at ? new Date(selectedCustomerRow.updated_at).toLocaleString('zh-TW') : '-'" disabled /></label>
+            <label class="full"><span>建立時間</span><input :value="formatLocalDate(selectedCustomerRow?.created_at)" disabled /></label>
+            <label class="full"><span>更新時間</span><input :value="formatLocalDate(selectedCustomerRow?.updated_at)" disabled /></label>
           </template>
 
           <template v-else-if="canManageUsers">
             <label><span>帳號 *</span><input v-model="userForm.username" :disabled="selectedUserId !== null" required /></label>
+            <label><span>Email</span><input v-model="userForm.email" type="email" placeholder="name@example.com" /></label>
             <label><span>顯示名稱 *</span><input v-model="userForm.display_name" required /></label>
             <label><span>角色</span><select v-model="userForm.role"><option value="admin">Admin</option><option value="user">User</option></select></label>
             <label><span>狀態</span><select v-model="userForm.is_active"><option :value="true">啟用中</option><option :value="false">停用</option></select></label>
             <label v-if="selectedUserId === null" class="full"><span>登入密碼 *</span><input v-model="userForm.password" type="password" minlength="6" required /></label>
-            <label class="full"><span>建立時間</span><input :value="selectedUser?.created_at ? new Date(selectedUser.created_at).toLocaleString('zh-TW') : '-'" disabled /></label>
-            <label class="full"><span>更新時間</span><input :value="selectedUser?.updated_at ? new Date(selectedUser.updated_at).toLocaleString('zh-TW') : '-'" disabled /></label>
+            <label class="full"><span>建立時間</span><input :value="formatLocalDate(selectedUser?.created_at)" disabled /></label>
+            <label class="full"><span>更新時間</span><input :value="formatLocalDate(selectedUser?.updated_at)" disabled /></label>
             <label v-if="selectedUserId !== null" class="full">
               <span>重設密碼</span>
               <div class="inline-action">
@@ -853,100 +1196,18 @@ onMounted(async () => {
 
           <UiFormActions
             class="form-actions-full"
-            :editing="selectedFixtureId !== null || selectedModelId !== null || selectedStationId !== null || selectedCustomerRowId !== null || selectedUserId !== null"
-            :saving="loading"
+            :editing="!isCreateMode"
+            :saving="saving"
             submit-label="儲存"
             saving-label="儲存中..."
             cancel-label="取消"
-            delete-label="停用"
+            :delete-label="toggleActionLabel"
             :show-delete="activeTab !== 'customer'"
-            :state-text="selectedDetailLabel === '-' ? '新增模式' : '編輯模式'"
+            :state-text="isCreateMode ? '新增模式' : '編輯模式'"
             @cancel="startCreate"
-            @delete="deactivateCurrent"
+            @delete="toggleCurrentActive"
           />
         </form>
-      </article>
-
-      <article class="panel list-panel">
-        <div class="panel-head">
-          <div>
-            <h2>{{ tabTitleMap[activeTab] }}清單</h2>
-            <p>{{ currentRows.length }} 筆資料</p>
-          </div>
-        </div>
-
-        <div class="list-toolbar">
-          <input v-model="keyword" :placeholder="searchPlaceholder" :disabled="loading" />
-          <select v-if="activeTab === 'fixture' || activeTab === 'user'" v-model="statusFilter">
-            <option value="all">狀態：全部</option>
-            <option value="active">狀態：啟用中</option>
-            <option value="inactive">狀態：停用</option>
-          </select>
-          <button class="primary-btn" type="button" :disabled="loading || (activeTab === 'customer' && !canManageCustomers)" @click="startCreate">+ 新增{{ tabTitleMap[activeTab] }}</button>
-        </div>
-
-        <div v-if="loading" class="loading-banner">資料載入中，請稍候...</div>
-
-        <div class="table-scroll">
-          <table class="data-table">
-            <thead>
-              <tr v-if="activeTab === 'fixture'"><th>治具編號</th><th>治具名稱</th><th>儲位</th><th>狀態</th></tr>
-              <tr v-else-if="activeTab === 'model'"><th>機種編號</th><th>機種名稱</th><th>狀態</th></tr>
-              <tr v-else-if="activeTab === 'station'"><th>站點編號</th><th>站點名稱</th><th>狀態</th></tr>
-              <tr v-else-if="activeTab === 'customer'"><th>客戶代碼</th><th>客戶名稱</th></tr>
-              <tr v-else><th>帳號</th><th>顯示名稱</th><th>角色</th><th>狀態</th></tr>
-            </thead>
-
-            <tbody v-if="activeTab === 'fixture'">
-              <tr v-for="row in pagedFixtureRows" :key="row.id" :class="{ selected: selectedFixtureId === row.id }" @click="selectRow(row.id)">
-                <td>{{ row.code }}</td><td>{{ row.name }}</td><td>{{ row.storage_location || "-" }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
-              </tr>
-              <tr v-if="!loading && currentRows.length === 0">
-                <td colspan="4" class="empty-cell">{{ emptyStateMessage }}</td>
-              </tr>
-            </tbody>
-            <tbody v-else-if="activeTab === 'model'">
-              <tr v-for="row in pagedModelRows" :key="row.id" :class="{ selected: selectedModelId === row.id }" @click="selectRow(row.id)">
-                <td>{{ row.code }}</td><td>{{ row.name }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
-              </tr>
-              <tr v-if="!loading && currentRows.length === 0">
-                <td colspan="3" class="empty-cell">{{ emptyStateMessage }}</td>
-              </tr>
-            </tbody>
-            <tbody v-else-if="activeTab === 'station'">
-              <tr v-for="row in pagedStationRows" :key="row.id" :class="{ selected: selectedStationId === row.id }" @click="selectRow(row.id)">
-                <td>{{ row.code }}</td><td>{{ row.name }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
-              </tr>
-              <tr v-if="!loading && currentRows.length === 0">
-                <td colspan="3" class="empty-cell">{{ emptyStateMessage }}</td>
-              </tr>
-            </tbody>
-            <tbody v-else-if="activeTab === 'customer'">
-              <tr v-for="row in pagedCustomerRows" :key="row.id" :class="{ selected: selectedCustomerRowId === row.id }" @click="selectRow(row.id)">
-                <td>{{ row.code }}</td><td>{{ row.name }}</td>
-              </tr>
-              <tr v-if="!loading && currentRows.length === 0">
-                <td colspan="2" class="empty-cell">{{ emptyStateMessage }}</td>
-              </tr>
-            </tbody>
-            <tbody v-else>
-              <tr v-for="row in pagedUserRows" :key="row.id" :class="{ selected: selectedUserId === row.id }" @click="selectRow(row.id)">
-                <td>{{ row.username }}</td><td>{{ row.display_name }}</td><td>{{ row.role }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
-              </tr>
-              <tr v-if="!loading && currentRows.length === 0">
-                <td colspan="4" class="empty-cell">{{ emptyStateMessage }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div v-if="currentRows.length > 0" class="list-footer">
-          <span>第 {{ listPage }} / {{ listTotalPages }} 頁，共 {{ currentRows.length }} 筆</span>
-          <div class="pager-actions">
-            <button class="outline-btn small" type="button" :disabled="loading || listPage <= 1" @click="previousListPage">上一頁</button>
-            <button class="outline-btn small" type="button" :disabled="loading || listPage >= listTotalPages" @click="nextListPage">下一頁</button>
-          </div>
-        </div>
       </article>
     </section>
   </div>
@@ -1027,6 +1288,37 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 
+.tab-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tab-group-admin {
+  position: relative;
+  margin-left: 10px;
+  padding-left: 14px;
+}
+
+.tab-group-admin::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(182, 192, 208, 0) 0%, rgba(182, 192, 208, 0.95) 20%, rgba(182, 192, 208, 0.95) 80%, rgba(182, 192, 208, 0) 100%);
+}
+
+.tab-group-label {
+  color: #7a869b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .toolbar-side {
   display: grid;
   gap: 10px;
@@ -1053,6 +1345,19 @@ onMounted(async () => {
   box-shadow: 0 6px 16px rgba(47, 110, 229, 0.12);
 }
 
+.tab-btn-admin {
+  border-color: #d5dbe6;
+  background: linear-gradient(180deg, #fffef9 0%, #f7f3e8 100%);
+  color: #68563a;
+}
+
+.tab-btn-admin.active {
+  border-color: #d7bf92;
+  background: linear-gradient(180deg, #fff7e5 0%, #f8ecd2 100%);
+  color: #8a5a08;
+  box-shadow: 0 6px 16px rgba(180, 126, 28, 0.14);
+}
+
 .toolbar-actions,
 .action-group {
   display: flex;
@@ -1062,6 +1367,50 @@ onMounted(async () => {
 
 .toolbar-actions {
   justify-content: flex-end;
+}
+
+.toolbar-primary-action {
+  flex: 0 0 auto;
+}
+
+.more-menu {
+  position: relative;
+}
+
+.more-menu-trigger {
+  min-width: 72px;
+}
+
+.more-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 148px;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 14px 28px rgba(28, 47, 84, 0.14);
+}
+
+.more-menu-item {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 10px;
+  color: #324462;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.more-menu-item:hover {
+  background: #f6f9ff;
+  border-color: #d8e3f5;
 }
 
 .customer-admin {
@@ -1090,7 +1439,7 @@ onMounted(async () => {
 
 .content-grid {
   display: grid;
-  grid-template-columns: 0.92fr 1.08fr;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
   gap: 8px;
   min-height: 0;
   overflow: hidden;
@@ -1106,6 +1455,12 @@ onMounted(async () => {
 
 .detail-panel {
   grid-template-rows: auto minmax(0, 1fr);
+}
+
+.detail-panel-create {
+  border-color: rgba(224, 138, 30, 0.28);
+  background: linear-gradient(180deg, rgba(255, 252, 246, 0.98) 0%, rgba(255, 248, 237, 0.96) 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 244, 220, 0.7);
 }
 
 .list-panel {
@@ -1129,6 +1484,41 @@ onMounted(async () => {
   margin: 3px 0 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+.detail-head-actions {
+  align-items: center;
+}
+
+.action-divider-btn {
+  margin-left: 8px;
+}
+
+.panel-head-create {
+  padding: 10px 12px;
+  margin: -2px -2px 0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 243, 220, 0.95) 0%, rgba(255, 249, 237, 0.92) 100%);
+  border: 1px solid rgba(224, 138, 30, 0.18);
+}
+
+.mode-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.mode-chip-create {
+  color: #8f4b00;
+  background: rgba(255, 239, 207, 0.95);
+  border: 1px solid rgba(224, 138, 30, 0.24);
 }
 
 .list-toolbar {
@@ -1513,6 +1903,29 @@ textarea {
 
   .toolbar-actions {
     justify-content: flex-start;
+  }
+
+  .tab-group-admin {
+    margin-left: 0;
+    padding-left: 0;
+  }
+
+  .tab-group-admin::before {
+    display: none;
+  }
+
+  .more-menu {
+    flex: 1 1 120px;
+  }
+
+  .more-menu-trigger {
+    width: 100%;
+  }
+
+  .more-menu-panel {
+    left: 0;
+    right: auto;
+    min-width: min(220px, 100%);
   }
 
   .detail-form,

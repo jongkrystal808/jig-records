@@ -6,6 +6,17 @@ from pydantic import BaseModel, Field, model_validator
 from backend.app.schemas.common import ORMModel
 
 
+def normalize_transaction_identifier(value: str | None) -> str:
+    normalized = (value or "").strip()
+    if not normalized:
+        raise ValueError("identifier is required")
+    if not normalized.isdigit():
+        raise ValueError("identifier must be numeric")
+    if len(normalized) > 4:
+        raise ValueError("identifier must be 4 digits or fewer")
+    return normalized.zfill(4)
+
+
 class StockTransactionItemInput(BaseModel):
     fixture_id: int
     ownership_type: Literal["customer_supplied", "self_purchased"]
@@ -15,9 +26,7 @@ class StockTransactionItemInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_identifier(self):
-        if not self.identifier or not self.identifier.strip():
-            raise ValueError("identifier is required")
-        self.identifier = self.identifier.strip()
+        self.identifier = normalize_transaction_identifier(self.identifier)
         return self
 
 
@@ -47,6 +56,12 @@ class StockAlertRead(ORMModel):
     stock_qty: int
     min_stock_qty: int
     stock_status: Literal["low_stock", "out_of_stock"]
+
+
+class IdentifierStockSummaryRead(ORMModel):
+    fixture_id: int
+    identifier: str
+    stock_qty: int
 
 
 class StockTransactionItemRead(ORMModel):

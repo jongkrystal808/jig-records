@@ -13,6 +13,7 @@ import type {
   SearchResult,
   Station,
   StationCapacity,
+  IdentifierStockSummary,
   StockSummary,
   StockTransactionCreate,
   TransactionQueryFilters,
@@ -83,6 +84,24 @@ async function requestText(path: string, init?: RequestInit, withAuth = true): P
   return body;
 }
 
+async function requestBlob(path: string, init?: RequestInit, withAuth = true): Promise<{ blob: Blob; filename: string | null }> {
+  const headers = buildHeaders(init, withAuth);
+  const response = await fetch(`${API_ROOT}${path}`, {
+    headers,
+    ...init
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(extractErrorMessage(body, `Request failed: ${response.status}`));
+  }
+  const contentDisposition = response.headers.get("Content-Disposition");
+  const filenameMatch = contentDisposition?.match(/filename="?([^"]+)"?/i);
+  return {
+    blob: await response.blob(),
+    filename: filenameMatch?.[1] ?? null
+  };
+}
+
 export const api = {
   listCustomers: () => request<Customer[]>("/master/customers"),
   listAuditLogs: (customerId?: number, limit = 3) =>
@@ -94,9 +113,9 @@ export const api = {
   guestEntry: () => request<AuthSession>("/auth/guest", { method: "POST" }, false),
   listUsers: () => request<AppUser[]>("/auth/users"),
   listCustomerUsers: (customerId: number) => request<AppUser[]>(`/master/customers/${customerId}/users`),
-  createUser: (payload: { username: string; password: string; display_name: string; role: string; is_active: boolean; allowed_customer_ids: number[] }) =>
+  createUser: (payload: { username: string; email?: string | null; password: string; display_name: string; role: string; is_active: boolean; allowed_customer_ids: number[] }) =>
     request<AppUser>("/auth/users", { method: "POST", body: JSON.stringify(payload) }),
-  updateUser: (userId: number, payload: { display_name: string; role: string; is_active: boolean; allowed_customer_ids: number[] }) =>
+  updateUser: (userId: number, payload: { email?: string | null; display_name: string; role: string; is_active: boolean; allowed_customer_ids: number[] }) =>
     request<AppUser>(`/auth/users/${userId}`, { method: "PUT", body: JSON.stringify(payload) }),
   resetUserPassword: (userId: number, password: string) =>
     request<void>(`/auth/users/${userId}/reset-password`, { method: "POST", body: JSON.stringify({ password }) }),
@@ -118,6 +137,8 @@ export const api = {
     responsible_user_id?: number | null;
     code: string;
     name: string;
+    line_storage_location?: string | null;
+    department_storage_location?: string | null;
     storage_location?: string | null;
     min_stock_qty?: number | null;
     description?: string;
@@ -128,6 +149,8 @@ export const api = {
     responsible_user_id?: number | null;
     code: string;
     name: string;
+    line_storage_location?: string | null;
+    department_storage_location?: string | null;
     storage_location?: string | null;
     min_stock_qty?: number | null;
     description?: string;
@@ -173,6 +196,10 @@ export const api = {
     request<Array<{ fixture_id: number; fixture_code: string; fixture_name: string; stock_qty: number; min_stock_qty: number; stock_status: "low_stock" | "out_of_stock" }>>(
       customerId ? `/inventory/alerts?customer_id=${customerId}` : "/inventory/alerts"
     ),
+  listIdentifierStockSummary: (customerId?: number) =>
+    request<IdentifierStockSummary[]>(
+      customerId ? `/inventory/identifier-stock-summary?customer_id=${customerId}` : "/inventory/identifier-stock-summary"
+    ),
   listTransactions: (limit = 20, customerId?: number, filters?: TransactionQueryFilters) => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (customerId) params.set("customer_id", String(customerId));
@@ -196,6 +223,54 @@ export const api = {
     if (filters?.identifier) params.set("identifier", filters.identifier);
     if (filters?.created_by) params.set("created_by", filters.created_by);
     return requestText(`/inventory/transactions/export?${params.toString()}`);
+  },
+  exportTransactionReport: (params: {
+    customer_id: number;
+    report_type: "summary" | "detail";
+    file_format: "xlsx" | "txt";
+    transaction_type?: "receipt" | "return";
+    date_from?: string;
+    date_to?: string;
+    fixture_code?: string;
+    transaction_no?: string;
+    identifier?: string;
+  }) => {
+    const search = new URLSearchParams({
+      customer_id: String(params.customer_id),
+      report_type: params.report_type,
+      file_format: params.file_format
+    });
+    if (params.transaction_type) search.set("transaction_type", params.transaction_type);
+    if (params.date_from) search.set("date_from", params.date_from);
+    if (params.date_to) search.set("date_to", params.date_to);
+    if (params.fixture_code) search.set("fixture_code", params.fixture_code);
+    if (params.transaction_no) search.set("transaction_no", params.transaction_no);
+    if (params.identifier) search.set("identifier", params.identifier);
+    return requestBlob(`/inventory/transactions/export-report?${search.toString()}`);
+  },
+  previewTransactionReportExport: (params: {
+    customer_id: number;
+    report_type: "summary" | "detail";
+    transaction_type?: "receipt" | "return";
+    date_from?: string;
+    date_to?: string;
+    fixture_code?: string;
+    transaction_no?: string;
+    identifier?: string;
+  }) => {
+    const search = new URLSearchParams({
+      customer_id: String(params.customer_id),
+      report_type: params.report_type
+    });
+    if (params.transaction_type) search.set("transaction_type", params.transaction_type);
+    if (params.date_from) search.set("date_from", params.date_from);
+    if (params.date_to) search.set("date_to", params.date_to);
+    if (params.fixture_code) search.set("fixture_code", params.fixture_code);
+    if (params.transaction_no) search.set("transaction_no", params.transaction_no);
+    if (params.identifier) search.set("identifier", params.identifier);
+    return request<{ report_type: "summary" | "detail"; column_count: number; raw_item_count: number; export_row_count: number }>(
+      `/inventory/transactions/export-report/preview?${search.toString()}`
+    );
   },
   downloadTransactionTemplateCsv: () => requestText("/inventory/transactions/template"),
   importTransactionsCsv: (customerId: number, operatorName: string, content: string, filename?: string) =>

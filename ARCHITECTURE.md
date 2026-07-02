@@ -102,12 +102,34 @@ pages/
 └─ ProductionPage.vue
 ```
 
+Current shared-component direction:
+
+```text
+components/
+├─ search/
+│  ├─ FixtureInfoPanel.vue
+│  ├─ ModelInfoPanel.vue
+│  ├─ FixtureEditForm.vue
+│  └─ ModelEditForm.vue
+├─ inventory/
+│  └─ BatchImportPanel.vue
+└─ common/
+   └─ InlineSpinner.vue
+```
+
 Application shell notes:
 
 - Login / guest entry is rendered in the root app shell before route content
-- `/inventory` is the operation-focused receipt/return page
-- `/inventory/overview` reuses the inventory page with overview-first behavior
+- `/inventory` remains the operation-focused receipt/return page
+- `/inventory/overview` remains a full-page route, but its primary entry is moving under the top-bar `更多功能` menu
 - guest users do not see `資料維護`, and router guard blocks direct `/master` access
+- the current shell is being migrated from a left sidebar to a top bar
+- the top bar will surface login state, customer switch, today receipt/return totals, and low-stock count
+- the top bar adds a primary `收/退料` action that opens a global batch-import modal
+- the top bar adds a `更多功能` menu with `收退料總檢視` / `資料維護` / `產能管理`
+- clicking the logo returns to `/search`
+- `MasterPage` and `ProductionPage` each provide a local `返回搜尋` action
+- mobile layout keeps a persistent hamburger trigger plus current customer name, with non-essential controls collapsed into the menu
 
 ---
 
@@ -149,6 +171,7 @@ Includes:
 - Stations
 - Customer-to-user assignment
 - Fixture responsible-user assignment
+- Reversible active/inactive state management for fixtures, models, stations, and users
 
 API prefix:
 
@@ -173,6 +196,7 @@ Includes:
 - Similar-fixture confirmation before import
 - Unified single identifier flow for all fixture transactions
 - Free-form transaction number for each batch import
+- Shared batch-import UI used by both `/inventory` and the global shell modal
 
 API prefix:
 
@@ -186,6 +210,13 @@ The inventory page now supports one operational entry path and one overview path
 
 - Batch paste import from clipboard rows
 - Transaction overview with direct CSV export using current filters
+
+Current layout direction for inventory entry points:
+
+- `/inventory` keeps the full operation workspace route
+- the global top-bar `收/退料` button opens a modal that exposes only the shared batch-import flow
+- the global modal intentionally excludes stock overview, low-stock panel, and recent-transaction panels
+- after a successful modal submission, the input is cleared but the modal stays open for consecutive batches
 
 Batch paste import accepts rows in either of these practical formats:
 
@@ -237,6 +268,12 @@ Transaction query/export filters are unified as:
 - identifier
 - operator
 
+Date handling rule:
+
+- All user-facing inventory dates are day-granularity only
+- API responses and CSV exports expose dates as `YYYY-MM-DD`
+- Transaction creation and CSV import normalize incoming datetime-like values to the transaction date before persistence
+
 ---
 
 ### 7.3 Production Configuration Module
@@ -287,6 +324,8 @@ Includes:
 - Fixture search
 - Model search
 - Search workspace for fixture/model drill-down
+- Embedded fixture/model maintenance panels inside search results
+- Search-to-production handoff for model-focused capacity work
 
 API prefix:
 
@@ -450,7 +489,9 @@ Frontend rule:
 
 - guest mode does not show the `資料維護` navigation entry
 - direct navigation to `/master` is redirected away for guest mode
-- current customer, login state, time, and today summary are all surfaced in the left sidebar
+- current customer, login state, date, and today summary are all surfaced in the left sidebar
+- `資料維護` can surface inactive fixtures/models/stations/users through status filters
+- inactive fixtures/models/stations/users can be restored from the same maintenance workflow
 
 ## 10. Inventory Flow
 
@@ -608,18 +649,29 @@ Search behavior updates:
 Current layout direction:
 
 ```text
-Left sidebar:
-- Navigation
-- Current customer
+Top bar:
+- Logo -> /search
 - Login / logout status
-- Current time
+- Current customer / customer switch
 - Today receipt / return / low-stock summary
-- Recent audit summary
+- Global receipt/return modal trigger
+- More functions dropdown
+
+More functions dropdown:
+- 收退料總檢視
+- 資料維護
+- 產能管理
 
 Content area:
 - Search workspace / inventory / master / production
 - Summary cards pinned near page top
 - Detail panels scroll inside their own containers
+
+Responsive shell notes:
+
+- desktop uses a fixed top bar
+- mobile/tablet uses a compact top bar with hamburger trigger and current customer label
+- current shell does not render an audit summary block in the primary shell
 ```
 
 Style direction:
@@ -743,3 +795,9 @@ Core value:
 - Know which models use them
 - Know production capacity instantly
 - Know shortage risks immediately
+
+Current refactor direction:
+
+- search becomes the clear home page and daily entry point
+- receipt/return batch import becomes a shell-level action, not only a dedicated page action
+- fixture/model maintenance becomes partly in-context from search, while full maintenance and production configuration stay as dedicated pages

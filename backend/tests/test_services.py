@@ -20,7 +20,7 @@ from backend.app.models.inventory import FixtureStockLevel, FixtureStockSummary,
 from backend.app.routers import api_router
 from backend.app.repositories.master_repository import MasterRepository
 from backend.app.schemas.common import CsvImportPayload
-from backend.app.schemas.auth import UserCreate
+from backend.app.schemas.auth import UserCreate, UserUpdate
 from backend.app.schemas.inventory import StockTransactionCreate
 from backend.app.schemas.master import FixtureCreate
 from backend.app.schemas.production import FixtureRequirementCreate, ModelStationCreate
@@ -96,6 +96,7 @@ class AuthServiceTests(ServiceTestCase):
         created = self.auth_service.create_user(
             UserCreate(
                 username="alice",
+                email="alice@example.com",
                 password="secret123",
                 display_name="Alice",
                 role="manager",
@@ -107,6 +108,7 @@ class AuthServiceTests(ServiceTestCase):
         logged_in = self.auth_service.login("alice", "secret123")
         self.assertEqual(logged_in.id, created["id"])
         self.assertEqual(logged_in.display_name, "Alice")
+        self.assertEqual(created["email"], "alice@example.com")
         self.assertEqual(created["allowed_customer_ids"], [customer.id])
 
         audit_log = self.db.scalar(select(AuditLog).where(AuditLog.entity_type == "user"))
@@ -120,6 +122,7 @@ class AuthServiceTests(ServiceTestCase):
         created = self.auth_service.create_user(
             UserCreate(
                 username="bob",
+                email=None,
                 password="secret123",
                 display_name="Bob",
                 role="user",
@@ -128,6 +131,33 @@ class AuthServiceTests(ServiceTestCase):
             )
         )
         self.assertEqual(created["allowed_customer_ids"], [])
+
+    def test_update_user_email(self) -> None:
+        created = self.auth_service.create_user(
+            UserCreate(
+                username="carol",
+                email=None,
+                password="secret123",
+                display_name="Carol",
+                role="user",
+                is_active=True,
+                allowed_customer_ids=[],
+            )
+        )
+
+        updated = self.auth_service.update_user(
+            created["id"],
+            UserUpdate(
+                email="carol@example.com",
+                display_name="Carol Chen",
+                role="user",
+                is_active=True,
+                allowed_customer_ids=[],
+            ),
+        )
+
+        self.assertEqual(updated["email"], "carol@example.com")
+        self.assertEqual(updated["display_name"], "Carol Chen")
 
     def test_guest_cannot_write_and_admin_can_manage(self) -> None:
         write_guard = require_permission("write")
@@ -417,6 +447,28 @@ class ProductionServiceTests(ServiceTestCase):
 
 
 class InventoryServiceTests(ServiceTestCase):
+    def test_receipt_identifier_is_left_padded_to_four_digits(self) -> None:
+        bundle = self.seed_customer_bundle()
+        payload = StockTransactionCreate(
+            customer_id=bundle["customer"].id,
+            created_by="Tester",
+            occurred_at=datetime(2026, 6, 9, 8, 30, tzinfo=timezone.utc),
+            transaction_no="12005436",
+            items=[
+                {
+                    "fixture_id": bundle["fixture_a"].id,
+                    "ownership_type": "self_purchased",
+                    "identifier": "7",
+                    "quantity": 5,
+                }
+            ],
+        )
+
+        self.inventory_service.receipt(payload)
+        transaction = self.db.scalar(select(MaterialTransaction).where(MaterialTransaction.customer_id == bundle["customer"].id))
+        self.assertIsNotNone(transaction)
+        self.assertEqual(transaction.items[0].identifier, "0007")
+
     def test_receipt_updates_stock_summary(self) -> None:
         bundle = self.seed_customer_bundle()
         payload = StockTransactionCreate(
@@ -444,6 +496,23 @@ class InventoryServiceTests(ServiceTestCase):
         transaction = self.db.scalar(select(MaterialTransaction).where(MaterialTransaction.customer_id == bundle["customer"].id))
         self.assertIsNotNone(transaction)
         self.assertEqual(transaction.transaction_no, "12005436")
+
+    def test_identifier_longer_than_four_digits_is_rejected(self) -> None:
+        bundle = self.seed_customer_bundle()
+
+        with self.assertRaises(ValueError):
+            StockTransactionCreate(
+                customer_id=bundle["customer"].id,
+                created_by="Tester",
+                items=[
+                    {
+                        "fixture_id": bundle["fixture_a"].id,
+                        "ownership_type": "self_purchased",
+                        "identifier": "202606",
+                        "quantity": 1,
+                    }
+                ],
+            )
 
     def test_import_transactions_csv_rolls_back_on_invalid_row(self) -> None:
         bundle = self.seed_customer_bundle()

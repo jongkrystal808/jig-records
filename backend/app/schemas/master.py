@@ -34,6 +34,8 @@ class FixtureCreate(BaseModel):
     code: str = Field(min_length=1, max_length=60)
     name: str = Field(min_length=1, max_length=160)
     responsible_user_id: int | None = None
+    line_storage_location: str | None = Field(default=None, max_length=120)
+    department_storage_location: str | None = Field(default=None, max_length=120)
     storage_location: str | None = Field(default=None, max_length=120)
     min_stock_qty: int | None = Field(default=None, ge=0)
     description: str | None = None
@@ -46,6 +48,8 @@ class FixtureUpdate(BaseModel):
     code: str = Field(min_length=1, max_length=60)
     name: str = Field(min_length=1, max_length=160)
     responsible_user_id: int | None = None
+    line_storage_location: str | None = Field(default=None, max_length=120)
+    department_storage_location: str | None = Field(default=None, max_length=120)
     storage_location: str | None = Field(default=None, max_length=120)
     min_stock_qty: int | None = Field(default=None, ge=0)
     description: str | None = None
@@ -60,6 +64,8 @@ class FixtureRead(TimestampedResponse):
     responsible_user_id: int | None
     code: str
     name: str
+    line_storage_location: str | None
+    department_storage_location: str | None
     storage_location: str | None
     min_stock_qty: int
     description: str | None

@@ -26,10 +26,11 @@
   - 登入畫面 / 訪客入口
   - 左側導覽
   - customer picker
+  - 全域治具搜尋
   - today summary
-  - 最近異動
   - 全域 toast 顯示
-  - sidebar compact state / sessionStorage 持久化
+  - session / customer / 全域治具搜尋的 sessionStorage 持久化
+  - 手機版側欄 overlay 開關
 
 - `frontend/src/api.ts`
   - 前端所有 API 呼叫集中處
@@ -84,12 +85,9 @@
   - `api.listAlerts`
   - `api.listTransactions`
 
-- 最近異動
-  - `api.listAuditLogs`
-
 ### 改全域畫面時去哪裡
 
-- 改登入卡片 / 左側導覽 / customer picker / today summary / 最近異動
+- 改登入卡片 / 左側導覽 / customer picker / 全域治具搜尋 / today summary
   - `frontend/src/App.vue`
 
 - 改全域 toast 樣式
@@ -107,17 +105,25 @@
 - fixture detail
 - model detail
 - fixture 圖片預覽
+- 識別碼庫存摘要
 - transaction context
+- 內容區內滾動
+
+### 目前未落地
+
+- 查詢結果分頁
 - 可收合篩選區
-- 分頁顯示
 
 ### API 對應
 
 - 初始化載入
+  - `api.listFixtures`
   - `api.listStock`
   - `api.listTransactions`
+  - `api.listIdentifierStockSummary`
   - `api.listModels`
   - `api.listStations`
+  - `api.listFixtureRequirements`
 
 - fixture / 一般查詢
   - `api.globalSearch`
@@ -154,13 +160,14 @@
 - `receipt` / `return` segmented control
 - 操作頁與 overview 頁共用同一支 page
 - 批次貼上匯入 modal
+- 批次匯入 CSV 範本下載 / CSV 匯入
 - 新治具即時建立
 - 相似治具確認 / 替換
 - 庫存總覽
 - 低水位提醒
 - 最近收退料紀錄
 - 收退料總檢視
-- 交易 CSV 匯入匯出 / 範本下載
+- overview 交易 CSV 匯出
 
 ### 路由模式
 
@@ -189,10 +196,10 @@
 - overview 匯出 CSV
   - `api.exportTransactionsCsv`
 
-- 交易範本下載
+- 批次匯入 CSV 範本下載
   - `api.downloadTransactionTemplateCsv`
 
-- 交易 CSV 匯入
+- 批次匯入 CSV 匯入
   - `api.importTransactionsCsv`
 
 - 批次貼上匯入內的新治具建立
@@ -375,6 +382,11 @@
 
 - `frontend/src/utils/display.ts`
   - fallback 與狀態文字映射
+
+## 現況提醒
+
+- `api.listAuditLogs` 仍存在於 `frontend/src/api.ts`，但目前 `App.vue` 沒有渲染最近異動區塊。
+- 側欄目前沒有 desktop compact / mini mode，只有 mobile overlay 開關。
 
 ## 不要改的前端檔案
 

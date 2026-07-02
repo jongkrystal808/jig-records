@@ -168,6 +168,7 @@
 - `POST /inventory/returns`
 - `GET /inventory/stock`
 - `GET /inventory/alerts`
+- `GET /inventory/identifier-stock-summary`
 - `GET /inventory/transactions`
 - `GET /inventory/transactions/export`
 - `GET /inventory/transactions/template`
@@ -189,13 +190,14 @@
   - 庫存總覽
   - 低水位提醒
   - 收退料總檢視
-  - 交易 CSV 匯入匯出 / 範本下載
+  - overview 交易 CSV 匯出
+  - 批次匯入 CSV 匯入 / 範本下載
 
 - `frontend/src/App.vue`
   - 側邊欄今日收料 / 今日退料 / 低水位統計
 
 - `frontend/src/pages/SearchWorkspacePage.vue`
-  - 收退料記錄與 fixture context
+  - 收退料記錄、fixture context、identifier stock context
 
 ### Production
 
@@ -291,8 +293,10 @@
 
 #### 前端入口
 
-- `frontend/src/App.vue`
-  - 側邊欄最近異動摘要
+- `frontend/src/api.ts`
+  - 目前保留 `listAuditLogs`
+- 備註：
+  - 目前 `App.vue` 沒有渲染 audit 摘要區塊
 
 ## 主要資料表欄位使用面
 
@@ -501,6 +505,20 @@
   - `frontend/src/pages/ProductionPage.vue`
     - model query / capacity context
 
+### `identifier_stock_summary` API response
+
+- 資料來源：
+  - `backend/app/services/inventory_service.py`
+  - `GET /inventory/identifier-stock-summary`
+- 主要欄位：
+  - `fixture_id`
+  - `identifier`
+  - `stock_qty`
+- 前端使用：
+  - `frontend/src/pages/SearchWorkspacePage.vue`
+    - fixture 識別碼庫存標籤
+    - model query 內的識別碼庫存摘要
+
 ### `machine_capacity_summary`
 
 - 檔案：`backend/app/models/production.py`
@@ -516,7 +534,7 @@
 
 ### `audit_logs`
 
-- 檔案：`backend/app/models/inventory.py`
+- 檔案：`backend/app/models/audit.py`
 - 主要欄位：
   - `id`
   - `customer_id`
@@ -526,10 +544,12 @@
   - `summary`
   - `actor_username`
   - `actor_display_name`
+  - `actor_role`
   - `created_at`
 - 前端使用：
-  - `frontend/src/App.vue`
-    - 側邊欄最近異動
+  - 目前前端未渲染
+  - `frontend/src/api.ts`
+    - `listAuditLogs`
 
 ## 改欄位時的最小連動清單
 

@@ -13,6 +13,7 @@ class LoginPayload(BaseModel):
 class UserRead(TimestampedResponse):
     id: int
     username: str
+    email: str | None
     display_name: str
     role: str
     is_active: bool
@@ -21,6 +22,7 @@ class UserRead(TimestampedResponse):
 
 class UserCreate(BaseModel):
     username: str = Field(min_length=1, max_length=80)
+    email: str | None = Field(default=None, max_length=255)
     password: str = Field(min_length=6, max_length=128)
     display_name: str = Field(min_length=1, max_length=120)
     role: str = Field(default="user", min_length=1, max_length=32)
@@ -29,6 +31,7 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    email: str | None = Field(default=None, max_length=255)
     display_name: str = Field(min_length=1, max_length=120)
     role: str = Field(min_length=1, max_length=32)
     is_active: bool = True

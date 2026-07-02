@@ -1,10 +1,13 @@
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
+from io import BytesIO
 
+from openpyxl import Workbook
+from openpyxl.styles import Font
 from sqlalchemy.orm import Session
 
 from backend.app.repositories.inventory_repository import InventoryRepository
 from backend.app.schemas.common import CsvImportPayload
-from backend.app.schemas.inventory import StockTransactionCreate
+from backend.app.schemas.inventory import StockTransactionCreate, normalize_transaction_identifier
 from backend.app.services.production_service import ProductionService
 from backend.app.utils.csv_tools import parse_csv_bytes, render_csv_text
 
@@ -21,8 +24,14 @@ class InventoryService:
     def return_material(self, payload: StockTransactionCreate, *, commit: bool = True) -> None:
         self._apply_transaction(payload, "return", commit=commit)
 
+    @staticmethod
+    def _normalize_occurred_at(value: datetime | None) -> datetime:
+        source = value or datetime.now(tz=timezone.utc)
+        tzinfo = source.tzinfo or timezone.utc
+        return datetime.combine(source.date(), time.min, tzinfo=tzinfo)
+
     def _apply_transaction(self, payload: StockTransactionCreate, transaction_type: str, *, commit: bool = True) -> None:
-        occurred_at = payload.occurred_at or datetime.now(tz=timezone.utc)
+        occurred_at = self._normalize_occurred_at(payload.occurred_at)
         transaction = self.repo.create_transaction(
             customer_id=payload.customer_id,
             transaction_type=transaction_type,
@@ -101,6 +110,9 @@ class InventoryService:
     def list_alerts(self, customer_id: int | None = None):
         return self.repo.list_stock_alert_rows(customer_id=customer_id)
 
+    def list_identifier_stock_summary(self, customer_id: int | None = None):
+        return self.repo.list_identifier_stock_summary_rows(customer_id=customer_id)
+
     def list_transactions(
         self,
         limit: int,
@@ -114,6 +126,9 @@ class InventoryService:
         identifier: str | None = None,
         created_by: str | None = None,
     ):
+        normalized_identifier = None
+        if identifier is not None and identifier.strip():
+            normalized_identifier = normalize_transaction_identifier(identifier)
         return self.repo.list_transactions(
             limit,
             customer_id=customer_id,
@@ -122,9 +137,140 @@ class InventoryService:
             date_to=date_to,
             fixture_code=fixture_code,
             transaction_no=transaction_no,
+            identifier=normalized_identifier,
+            created_by=created_by,
+        )
+
+    def build_transaction_export_report(
+        self,
+        customer_id: int | None = None,
+        *,
+        report_type: str,
+        transaction_type: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        fixture_code: str | None = None,
+        transaction_no: str | None = None,
+        identifier: str | None = None,
+        created_by: str | None = None,
+    ) -> tuple[list[str], list[dict]]:
+        normalized_identifier = None
+        if identifier is not None and identifier.strip():
+            normalized_identifier = normalize_transaction_identifier(identifier)
+        item_rows = self.repo.list_transaction_item_rows(
+            customer_id=customer_id,
+            transaction_type=transaction_type,
+            date_from=date_from,
+            date_to=date_to,
+            fixture_code=fixture_code,
+            transaction_no=transaction_no,
+            identifier=normalized_identifier,
+            created_by=created_by,
+        )
+        if report_type == "summary":
+            columns = ["治具編號", "收料數", "退料數", "總數"]
+            grouped: dict[str, dict] = {}
+            for row in item_rows:
+                target = grouped.setdefault(
+                    row["fixture_code"],
+                    {"治具編號": row["fixture_code"], "收料數": 0, "退料數": 0, "總數": 0},
+                )
+                if row["transaction_type"] == "receipt":
+                    target["收料數"] += int(row["quantity"])
+                else:
+                    target["退料數"] += int(row["quantity"])
+                target["總數"] = target["收料數"] - target["退料數"]
+            rows = sorted(grouped.values(), key=lambda row: str(row["治具編號"]))
+            return columns, rows
+
+        columns = ["治具編號", "識別碼", "收料數", "退料數", "總數"]
+        grouped_detail: dict[tuple[str, str], dict] = {}
+        for row in item_rows:
+            key = (row["fixture_code"], row["identifier"] or "")
+            target = grouped_detail.setdefault(
+                key,
+                {
+                    "治具編號": row["fixture_code"],
+                    "識別碼": row["identifier"] or "",
+                    "收料數": 0,
+                    "退料數": 0,
+                    "總數": 0,
+                },
+            )
+            if row["transaction_type"] == "receipt":
+                target["收料數"] += int(row["quantity"])
+            else:
+                target["退料數"] += int(row["quantity"])
+            target["總數"] = target["收料數"] - target["退料數"]
+        rows = sorted(grouped_detail.values(), key=lambda row: (str(row["治具編號"]), str(row["識別碼"])))
+        return columns, rows
+
+    def get_transaction_export_preview(
+        self,
+        customer_id: int | None = None,
+        *,
+        report_type: str,
+        transaction_type: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        fixture_code: str | None = None,
+        transaction_no: str | None = None,
+        identifier: str | None = None,
+        created_by: str | None = None,
+    ) -> dict:
+        columns, rows = self.build_transaction_export_report(
+            customer_id=customer_id,
+            report_type=report_type,
+            transaction_type=transaction_type,
+            date_from=date_from,
+            date_to=date_to,
+            fixture_code=fixture_code,
+            transaction_no=transaction_no,
             identifier=identifier,
             created_by=created_by,
         )
+        normalized_identifier = None
+        if identifier is not None and identifier.strip():
+            normalized_identifier = normalize_transaction_identifier(identifier)
+        item_rows = self.repo.list_transaction_item_rows(
+            customer_id=customer_id,
+            transaction_type=transaction_type,
+            date_from=date_from,
+            date_to=date_to,
+            fixture_code=fixture_code,
+            transaction_no=transaction_no,
+            identifier=normalized_identifier,
+            created_by=created_by,
+        )
+        return {
+            "report_type": report_type,
+            "column_count": len(columns),
+            "raw_item_count": len(item_rows),
+            "export_row_count": len(rows),
+        }
+
+    @staticmethod
+    def render_transaction_report_txt(columns: list[str], rows: list[dict]) -> str:
+        return render_csv_text(columns, rows).replace(",", "\t")
+
+    @staticmethod
+    def render_transaction_report_xlsx(report_title: str, columns: list[str], rows: list[dict]) -> bytes:
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "匯出資料"
+        sheet.append([report_title])
+        sheet.append(columns)
+        sheet["A1"].font = Font(bold=True)
+        for cell in sheet[2]:
+            cell.font = Font(bold=True)
+        for row in rows:
+            sheet.append([row.get(column, "") for column in columns])
+        for column_cells in sheet.columns:
+            max_length = max(len(str(cell.value or "")) for cell in column_cells)
+            sheet.column_dimensions[column_cells[0].column_letter].width = min(max(max_length + 2, 10), 24)
+        buffer = BytesIO()
+        workbook.save(buffer)
+        return buffer.getvalue()
 
     def export_transactions_csv(
         self,
@@ -162,7 +308,7 @@ class InventoryService:
                         "identifier": item["identifier"] or "",
                         "quantity": item["quantity"],
                         "created_by": tx["created_by"],
-                        "occurred_at": tx["occurred_at"].isoformat(),
+                        "occurred_at": tx["occurred_at"].date().isoformat(),
                         "note": item["note"] or tx["note"] or "",
                     }
                 )
@@ -202,7 +348,7 @@ class InventoryService:
                     "identifier": "2605",
                     "quantity": "10",
                     "created_by": "System Admin",
-                    "occurred_at": "2026-05-26T08:30:00+00:00",
+                    "occurred_at": "2026-05-26",
                     "note": "sample",
                 }
             ],
@@ -226,7 +372,7 @@ class InventoryService:
             if quantity <= 0:
                 continue
             occurred_at_raw = row.get("occurred_at", "")
-            occurred_at = datetime.fromisoformat(occurred_at_raw) if occurred_at_raw else None
+            occurred_at = self._normalize_occurred_at(datetime.fromisoformat(occurred_at_raw)) if occurred_at_raw else None
             payload_row = StockTransactionCreate(
                 customer_id=customer_id,
                 created_by=row.get("created_by", "") or operator_name,

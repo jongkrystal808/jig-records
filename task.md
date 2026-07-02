@@ -58,6 +58,58 @@
 - [x] `production` 的目前開站數非固定值
 - [x] `search` 不再出現示意字串 `---`
 
+## Current Snapshot
+
+- 目前 `App.vue` 左側欄位包含：導航、登入狀態、客戶切換、日期、全域治具搜尋、今日統計；目前沒有「最近異動」卡片。
+- 目前側邊欄支援手機/平板 overlay 開關，但沒有桌面版 mini mode。
+- `MasterPage` 已有前端分頁；`SearchWorkspacePage` 目前沒有查詢結果分頁。
+- `SearchWorkspacePage` 目前沒有可收合的篩選區。
+- `.venv\\Scripts\\python.exe -m pytest tests -q` 目前為 `4 passed, 1 failed`。
+- 失敗案例在 `tests/test_inventory_and_production.py`：測試資料使用 `identifier = "202606"`，但目前後端驗證限制為「4 碼以內」，且 validation error payload 仍帶出未序列化的 `ValueError`。
+
+## Phase 0-4 Approved Update
+
+### Shell / Navigation
+
+- [x] 側邊欄改為頂部欄
+- [x] 頂部欄常駐顯示：登入者 / 登入登出、目前客戶 / 切換客戶、今日收退料總數、低水位提醒
+- [x] 頂部欄新增 `收/退料` 按鈕，開啟全域 Modal
+- [x] 頂部欄新增 `更多功能` 下拉，包含 `收退料總檢視 / 資料維護 / 產能管理`
+- [x] Logo 可點擊回 `/search`
+- [x] `MasterPage` 新增 `返回搜尋` 按鈕
+- [x] `ProductionPage` 新增 `返回搜尋` 按鈕
+- [x] 手機版 shell 改為常駐漢堡按鈕 + 目前客戶名稱，其餘收進選單
+
+### Search Page
+
+- [x] 拆出 `FixtureInfoPanel.vue` / `ModelInfoPanel.vue`，純展示、只吃 props
+- [x] 拆出 `FixtureEditForm.vue` / `ModelEditForm.vue`，供搜尋頁內嵌編輯使用
+- [x] 搜尋頁新增區塊勾選顯示 chip 列，並以 localStorage 分開記住治具 / 機種偏好
+- [x] 全部取消勾選時擋住，至少保留一個區塊
+- [x] 新增 `資料維護` 勾選項，勾上後出現 `編輯` 分頁
+- [x] `資料維護` 勾選狀態也要記住在 localStorage
+- [x] 查無結果時顯示 `找不到，新增一筆？`，並可直接打開建立流程
+- [x] 機種搜尋結果提供輕量入口跳轉既有 `ProductionPage`，並帶入該機種預選
+- [x] 編輯分頁首次 lazy load 時顯示共用小型 inline spinner
+
+### Inventory / Global Modal
+
+- [x] 抽出 `BatchImportPanel.vue` 共用元件
+- [x] `/inventory` 與全域 Modal 共用同一份批次匯入 UI / 資料流
+- [x] 全域 Modal 只含批次貼上匯入，不含庫存總覽 / 低水位 / 最近紀錄
+- [x] Modal 成功送出後不自動關閉，僅清空輸入框
+
+### Master / Production Scope
+
+- [ ] `MasterPage` 的治具 / 機種頁籤收斂為：CSV 匯入匯出、瀏覽停用項目、建立全新項目
+- [ ] `MasterPage` 的站點 / 客戶 / 使用者維持現狀單頁表單
+- [x] `ProductionPage` 內部結構維持不動，只新增搜尋頁導入入口
+
+### Loading
+
+- [x] 新增一個共用小型 inline spinner
+- [x] spinner 先套用於：搜尋頁編輯分頁 lazy load、收退料 Modal 資料載入
+
 ## To Update
 
 ### 7) 收退料頁布局與總覽
@@ -144,7 +196,7 @@
 - [x] 補齊 loading / empty / no-result 狀態，特別是查詢頁與維護頁
 - [x] 統一表格操作列的按鈕順序與樣式，例如編輯、刪除、停用的排列方式
 - [x] 抽出共用 UI 元件，像是區塊卡片、操作列、確認對話框、表單標題
-- [x] 讓查詢頁的篩選區可收合，預設只露出最常用條件
+- [ ] 讓查詢頁的篩選區可收合，預設只露出最常用條件
 - [x] 調整收退料頁的常用操作優先順序，讓單筆新增、批次匯入、最近操作分區更清楚
 - [x] 用更直觀的視覺方式呈現產能狀態，例如顏色、進度條、警示標籤
 - [x] 讓資料維護頁的啟用 / 停用、可用 / 不可用狀態更一致、更容易辨識
@@ -161,7 +213,7 @@
 
 #### P0 - 核心空間優化 (解決 50% 縮放問題)
 - [x] **重構主布局柵格**：將 `.inventory-board` 從固定的 `minmax` 寬度改為動態 `1fr` 彈性布局，確保內容依視窗寬度自適應。
-- [x] **實作收納式側邊欄**：左側選單支援 Mini 模式（僅顯示 Icon 或可完全收起），為操作區爭取 10-15% 的水平寬度。
+- [ ] **實作收納式側邊欄**：左側選單支援桌面版 Mini 模式（目前只有手機/平板 overlay 開關），為操作區爭取 10-15% 的水平寬度。
 - [x] **表單 Inline 化**：將收退料單筆表單從「標籤在上、輸入在下」改為「標籤與輸入框左右併排」，大幅減少垂直高度消耗。
 - [x] **批次匯入 Modal 化**：將「批次貼上解析」功能移至全螢幕或大型對話框 (Modal) 中處理，避免解析後的大型表格撐開主頁面布局。
 - [x] **移除頂欄**：登入狀態、客戶選擇、時間、登出全部集中到側邊欄
@@ -175,7 +227,7 @@
 
 #### P2 - 細節 hardening
 - [x] **全局字體大小微調**：針對工業管理場景，將表格預設字體微調至 12px，並減少單元格 `padding`，提升資訊密度。
-- [x] **自動對焦優化**：單筆表單展開後，自動對焦至「治具編號」或「Datecode」欄位。
+- [ ] **自動對焦優化**：舊的單筆表單已移除；若要補齊，目前應改為批次匯入 modal 的首欄自動對焦。
 
 ### 15) 查詢頁重構
 
@@ -281,7 +333,7 @@
 - 已將 `MasterPage` 與 `ProductionPage` 補上載入中提示與空狀態列，避免資料尚未載入或清單為空時畫面顯得像壞掉。
 - 已將 `MasterPage` 的主要操作按鈕在載入中鎖定，降低切換客戶或重整時的誤操作。
 - 已將 `ProductionPage` 的查詢/匯入/更新操作在載入與儲存中鎖定，避免表單與資料刷新互相打架。
-- 已把 `SearchWorkspace` 的篩選區改成可收合，縮小預設占用空間。
+- 當時曾規劃將 `SearchWorkspace` 的篩選區改成可收合；目前程式碼中尚未保留這個互動。
 - 已把 `ProductionPage` 的 Station Capacity 改成進度條 + 狀態標籤呈現，讓產能是否接近上限更容易一眼看懂。
 - 已將 `ProductionPage` 兩個表格的操作列包成一致的動作區塊，統一編輯 / 刪除的排列方式。
 - 已將前端錯誤訊息解析強化為可讀的欄位驗證/後端錯誤訊息，避免只看到模糊的 request failed。
@@ -291,16 +343,21 @@
 - 已抽出共用 `StatusPill` 元件，並在 `MasterPage`、`ProductionPage`、`InventoryPage` 內共用使用。
 - 已抽出共用 `UiFormActions` 元件，讓主檔與產能頁的新增 / 編輯 / 取消 / 儲存動作列統一。
 - 已新增 `audit_logs` 與 `/audit/logs`，將主資料異動、使用者更新與匯入事件納入審計記錄。
-- 已在首頁側欄加入最近異動卡片，讓客戶資訊、登入狀態、今日統計與近期異動的層級更清楚。
+- 已完成 `audit_logs` 與 `/audit/logs` 後端能力；目前首頁側欄沒有渲染最近異動卡片。
 - 已將全站主要按鈕配色統一為綠色儲存、灰色取消、紅色停用/刪除。
-- 已將 `MasterPage` 清單與 `SearchWorkspace` 查詢結果補上分頁，開始處理高資料量下的列表效能。
+- 已將 `MasterPage` 清單補上分頁；`SearchWorkspace` 查詢結果目前尚未分頁。
 - 已把 `ProductionPage` 的 Station Capacity / Model Query 區塊拆成獨立元件，降低單一頁面的程式碼密度。
-- 已將首頁側欄補上收合 / 展開 mini mode，並將狀態記住於 session。
+- 目前首頁側欄支援 mobile overlay 開關；桌面版 mini mode 尚未保留。
 - 已將收退料頁主布局改為頂部摘要列 + 左中右三欄配置，並把批次貼上匯入改為 modal。
 - 已把收退料操作區改成 segmented control，並補上庫存水位條與批次行動作精簡。
 - 已驗證 `frontend` 的 `npm run build` 通過。
 - 已將前端表格與 body 字級微調至 12px，並略縮 cell padding，提升工業管理場景下的資訊密度。
-- 已讓收退料單筆表單在展開後自動聚焦到治具編號或 Datecode / 序號欄位，減少手動定位成本。
+- 舊的單筆表單自動聚焦調整不再適用，因目前流程已收斂為批次貼上匯入。
+
+### 2026-06-27
+
+- 已重新對照目前程式碼校正文檔，確認 `ARCHITECTURE.md` 與 `task.md` 不再把「最近異動側欄卡片」與「桌面 mini sidebar」視為已落地現況。
+- 已補記目前測試現況：`.venv\\Scripts\\python.exe -m pytest tests -q` 尚有 1 個失敗案例，集中在 `identifier` 驗證與 validation error 序列化。
 
 ### 2026-06-12
 
@@ -345,3 +402,16 @@
 - 已新增 Alembic `0007_user_customer_scope`，將一般使用者的客戶可見範圍正式落到 `user_customers`。
 - 已新增 Alembic `0008_fixture_responsible_user`，在 `fixtures` 補上 `responsible_user_id`。
 - 已新增 Alembic `0009_remove_owners_and_scope_fixture_code`，移除 `owners` 並將治具代碼唯一鍵收斂為 `(customer_id, code)`。
+
+### 2026-06-20
+
+- 已修正首頁左側側邊欄右側的白邊問題，收斂 scrollbar 預留空間與滾動區背景，避免主內容區左側出現視覺縫隙。
+- 已將前端共用日期格式化工具統一為只顯示 `年月日`，不再顯示時分秒。
+- 已將首頁側邊欄顯示文案由 `時間` 調整為 `日期`，並只呈現當日日期。
+- 已將 `收退料總檢視`、`資料維護`、`查詢頁`、`產能頁` 中所有建立/更新/交易日期顯示統一改為 `年月日`。
+- 已將後端 API 的 `datetime` 回應序列化統一收斂為 `YYYY-MM-DD`，避免前端再收到帶時分秒的日期字串。
+- 已將收退料 CSV 匯出的 `occurred_at` 與範本日期格式統一改為 `YYYY-MM-DD`。
+- 已將收退料建立交易與 CSV 匯入流程收斂為「只記錄日期」：即使輸入帶時分秒，也會在寫入前正規化為當日零點。
+- 已補齊 `資料維護` 頁的停用資料恢復流程，`治具 / 機種 / 站點 / 使用者` 現在都可從停用狀態恢復使用。
+- 已讓 `資料維護` 頁的狀態篩選一致套用到 `治具 / 機種 / 站點 / 使用者` 清單，便於找到停用資料後重新啟用。
+- 已將 `資料維護` 頁底部動作按鈕改為依當前狀態動態顯示 `停用 / 恢復使用`，不再只有單向停用途徑。

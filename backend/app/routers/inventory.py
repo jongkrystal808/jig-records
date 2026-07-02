@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.auth import SessionContext, require_permission, resolve_customer_scope
 from backend.app.core.database import get_db
 from backend.app.schemas.common import CsvImportPayload, ImportResultRead
-from backend.app.schemas.inventory import StockAlertRead, StockSummaryRead, StockTransactionCreate, StockTransactionRead
+from backend.app.schemas.inventory import IdentifierStockSummaryRead, StockAlertRead, StockSummaryRead, StockTransactionCreate, StockTransactionRead
 from backend.app.services.inventory_service import InventoryService
 
 router = APIRouter(prefix="/inventory", tags=["inventory"], dependencies=[Depends(require_permission("read"))])
@@ -61,6 +61,17 @@ def list_alerts(
     customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
     service = InventoryService(db)
     return service.list_alerts(customer_id=customer_id)
+
+
+@router.get("/identifier-stock-summary", response_model=list[IdentifierStockSummaryRead])
+def list_identifier_stock_summary(
+    customer_id: int | None = Query(default=None),
+    session: SessionContext = Depends(require_permission("read")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    service = InventoryService(db)
+    return service.list_identifier_stock_summary(customer_id=customer_id)
 
 
 @router.get("/transactions", response_model=list[StockTransactionRead])
@@ -127,6 +138,83 @@ def export_transactions(
         content=content,
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="transactions.csv"'},
+    )
+
+
+@router.get("/transactions/export-report")
+def export_transaction_report(
+    customer_id: int | None = Query(default=None),
+    report_type: str = Query(..., pattern="^(summary|detail)$"),
+    file_format: str = Query(..., pattern="^(xlsx|txt)$"),
+    transaction_type: str | None = Query(default=None, pattern="^(receipt|return)?$"),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    fixture_code: str | None = Query(default=None),
+    transaction_no: str | None = Query(default=None),
+    identifier: str | None = Query(default=None),
+    created_by: str | None = Query(default=None),
+    session: SessionContext = Depends(require_permission("read")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    service = InventoryService(db)
+    dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc) if date_from else None
+    dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc) if date_to else None
+    columns, rows = service.build_transaction_export_report(
+        customer_id=customer_id,
+        report_type=report_type,
+        transaction_type=transaction_type,
+        date_from=dt_from,
+        date_to=dt_to,
+        fixture_code=fixture_code,
+        transaction_no=transaction_no,
+        identifier=identifier,
+        created_by=created_by,
+    )
+    report_label = "summary" if report_type == "summary" else "detail"
+    if file_format == "xlsx":
+        content = service.render_transaction_report_xlsx(f"transaction-{report_label}", columns, rows)
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="transaction-{report_label}.xlsx"'},
+        )
+    content = service.render_transaction_report_txt(columns, rows)
+    return Response(
+        content=content,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="transaction-{report_label}.txt"'},
+    )
+
+
+@router.get("/transactions/export-report/preview")
+def preview_transaction_report_export(
+    customer_id: int | None = Query(default=None),
+    report_type: str = Query(..., pattern="^(summary|detail)$"),
+    transaction_type: str | None = Query(default=None, pattern="^(receipt|return)?$"),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    fixture_code: str | None = Query(default=None),
+    transaction_no: str | None = Query(default=None),
+    identifier: str | None = Query(default=None),
+    created_by: str | None = Query(default=None),
+    session: SessionContext = Depends(require_permission("read")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    service = InventoryService(db)
+    dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc) if date_from else None
+    dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc) if date_to else None
+    return service.get_transaction_export_preview(
+        customer_id=customer_id,
+        report_type=report_type,
+        transaction_type=transaction_type,
+        date_from=dt_from,
+        date_to=dt_to,
+        fixture_code=fixture_code,
+        transaction_no=transaction_no,
+        identifier=identifier,
+        created_by=created_by,
     )
 
 

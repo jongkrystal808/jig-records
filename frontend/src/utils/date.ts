@@ -5,7 +5,10 @@ export function formatLocalDateKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-export function formatLocalDateTime(value: string | Date): string {
+export function formatLocalDate(value: string | Date | null | undefined): string {
+  if (!value) return "-";
   const date = typeof value === "string" ? new Date(value) : value;
-  return date.toLocaleString("zh-TW", { hour12: false });
+  return Number.isNaN(date.getTime())
+    ? "-"
+    : new Intl.DateTimeFormat("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
