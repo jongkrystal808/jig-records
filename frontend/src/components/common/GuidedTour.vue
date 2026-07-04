@@ -1,0 +1,247 @@
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+
+interface GuidedTourStep {
+  id: string;
+  target: string;
+  title: string;
+  description: string;
+  placement?: "top" | "bottom" | "left" | "right";
+}
+
+const props = defineProps<{
+  open: boolean;
+  steps: GuidedTourStep[];
+  currentIndex: number;
+}>();
+
+const emit = defineEmits<{
+  close: [];
+  next: [];
+  prev: [];
+}>();
+
+const spotlightRect = ref<DOMRect | null>(null);
+const cardStyle = ref<Record<string, string>>({});
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryCount = 0;
+
+const currentStep = computed(() => props.steps[props.currentIndex] ?? null);
+const isFirstStep = computed(() => props.currentIndex <= 0);
+const isLastStep = computed(() => props.currentIndex >= props.steps.length - 1);
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function updateLayout(): void {
+  if (!props.open || !currentStep.value) {
+    spotlightRect.value = null;
+    cardStyle.value = {};
+    retryCount = 0;
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+    return;
+  }
+
+  const target = document.querySelector(currentStep.value.target);
+  if (!(target instanceof HTMLElement)) {
+    spotlightRect.value = null;
+    cardStyle.value = {
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%)"
+    };
+    if (retryCount < 8) {
+      retryCount += 1;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+      }
+      retryTimer = setTimeout(() => {
+        updateLayout();
+      }, 120);
+    }
+    return;
+  }
+  retryCount = 0;
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+
+  target.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+  const rect = target.getBoundingClientRect();
+  spotlightRect.value = rect;
+
+  const cardWidth = Math.min(320, window.innerWidth - 32);
+  const gap = 16;
+  const placement = currentStep.value.placement ?? "bottom";
+  let top = rect.bottom + gap;
+  let left = rect.left + rect.width / 2 - cardWidth / 2;
+
+  if (placement === "top") {
+    top = rect.top - 196;
+  } else if (placement === "left") {
+    top = rect.top + rect.height / 2 - 90;
+    left = rect.left - cardWidth - gap;
+  } else if (placement === "right") {
+    top = rect.top + rect.height / 2 - 90;
+    left = rect.right + gap;
+  }
+
+  top = clamp(top, 16, window.innerHeight - 196);
+  left = clamp(left, 16, window.innerWidth - cardWidth - 16);
+
+  cardStyle.value = {
+    width: `${cardWidth}px`,
+    top: `${top}px`,
+    left: `${left}px`
+  };
+}
+
+async function refreshLayout(): Promise<void> {
+  await nextTick();
+  window.requestAnimationFrame(updateLayout);
+}
+
+watch(
+  () => [props.open, props.currentIndex, props.steps.length],
+  () => {
+    void refreshLayout();
+  },
+  { immediate: true }
+);
+
+onMounted(() => {
+  window.addEventListener("resize", updateLayout);
+  window.addEventListener("scroll", updateLayout, true);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("resize", updateLayout);
+  window.removeEventListener("scroll", updateLayout, true);
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+  }
+});
+</script>
+
+<template>
+  <teleport to="body">
+    <div v-if="open && currentStep" class="tour-layer" aria-live="polite">
+      <div class="tour-backdrop" @click="emit('close')"></div>
+      <div v-if="spotlightRect" class="tour-spotlight" :style="{
+        top: `${spotlightRect.top - 8}px`,
+        left: `${spotlightRect.left - 8}px`,
+        width: `${spotlightRect.width + 16}px`,
+        height: `${spotlightRect.height + 16}px`
+      }"></div>
+      <aside class="tour-card" :style="cardStyle">
+        <div class="tour-step-count">步驟 {{ currentIndex + 1 }} / {{ steps.length }}</div>
+        <h3>{{ currentStep.title }}</h3>
+        <p>{{ currentStep.description }}</p>
+      </aside>
+      <div class="tour-floating-actions">
+        <button class="outline-btn" type="button" @click="emit('close')">結束</button>
+        <button class="outline-btn" type="button" :disabled="isFirstStep" @click="emit('prev')">上一步</button>
+        <button class="primary-btn" type="button" @click="isLastStep ? emit('close') : emit('next')">
+          {{ isLastStep ? "完成" : "下一步" }}
+        </button>
+      </div>
+    </div>
+  </teleport>
+</template>
+
+<style scoped>
+.tour-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+}
+
+.tour-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.34);
+}
+
+.tour-spotlight {
+  position: fixed;
+  border-radius: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.16), 0 18px 40px rgba(15, 23, 42, 0.18);
+  pointer-events: none;
+}
+
+.tour-card {
+  position: fixed;
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid rgba(214, 224, 238, 0.96);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+}
+
+.tour-step-count {
+  color: #2f6ee5;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tour-card h3 {
+  margin: 0;
+  color: #20304f;
+  font-size: 18px;
+}
+
+.tour-card p {
+  margin: 0;
+  color: #55657f;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.tour-floating-actions {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  z-index: 121;
+  pointer-events: auto;
+  padding: 10px 12px;
+  border: 1px solid rgba(214, 224, 238, 0.96);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.18);
+}
+
+.tour-floating-actions button {
+  width: auto;
+}
+
+@media (max-width: 720px) {
+  .tour-card {
+    width: calc(100vw - 24px) !important;
+    left: 12px !important;
+    right: 12px;
+    top: auto !important;
+    bottom: 12px;
+  }
+
+  .tour-floating-actions {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    justify-content: flex-end;
+  }
+}
+</style>

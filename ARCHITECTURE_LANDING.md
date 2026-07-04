@@ -41,8 +41,10 @@ This file maps `AGENT.md` direction to the current implementation state.
 - stock summary / stock alerts / transaction query are implemented
 - unified `identifier` inventory model is implemented
 - transaction CSV export / import / template flow is implemented
-- frontend batch paste import modal is implemented
+- transaction report export (`xlsx` / `txt`) and preview flow are implemented
+- shared frontend batch paste import flow is implemented
 - on-the-fly fixture creation from inventory batch flow is implemented
+- onboarding tutorial mode can exercise the batch flow without writing official transactions
 
 ### Production
 
@@ -60,8 +62,9 @@ This file maps `AGENT.md` direction to the current implementation state.
 - search workspace is implemented
 - fixture / model dual-mode search UI is implemented
 - fixture image preview and transaction context are implemented
+- first-login onboarding and replayable guided tour are implemented in the frontend shell
 - audit log API is implemented
-- recent audit summary is surfaced in the app shell
+- recent audit summary API remains available, but is not currently rendered in the app shell
 
 ### Migration / startup compatibility
 
@@ -84,10 +87,12 @@ This file maps `AGENT.md` direction to the current implementation state.
 
 ### UI shell
 
-- app shell is sidebar-first, not top-nav-first
+- app shell is top-nav-first, not sidebar-first
 - login and guest entry live in `App.vue` before route content
 - `/inventory` and `/inventory/overview` are two entry routes into the same page component
-- today receipt / return / low-stock summary live in the sidebar
+- today receipt / return / low-stock summary live in the top bar
+- top bar exposes global `收/退料` and `收退料資訊匯出` actions
+- onboarding flow is orchestrated by `App.vue` and `frontend/src/onboarding.ts`
 
 ### Permission model
 
@@ -108,11 +113,12 @@ This file maps `AGENT.md` direction to the current implementation state.
 ## Suggested Verification Before Production
 
 1. Run backend tests, especially auth / inventory / production / migration coverage
-2. Run frontend build
-3. Apply migrations against a staging copy of the production database
-4. Verify at least one account per role: `admin` / `user` / `guest`
-5. Verify customer-scoped users cannot access unauthorized customer data
-6. Verify fixture image directory is mounted and readable in deployment
+2. Ensure Python environment has `openpyxl` installed before running inventory export tests
+3. Run frontend build
+4. Apply migrations against a staging copy of the production database
+5. Verify at least one account per role: `admin` / `user` / `guest`
+6. Verify customer-scoped users cannot access unauthorized customer data
+7. Verify fixture image directory is mounted and readable in deployment
 
 ## Quick Start
 

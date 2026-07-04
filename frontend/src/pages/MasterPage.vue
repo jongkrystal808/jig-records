@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 
 import { api } from "@/api";
-import { authSession, selectedCustomerId } from "@/appState";
+import { authSession, customers, onboardingActive, onboardingStepIndex, selectedCustomerId } from "@/appState";
+import { onboardingSteps } from "@/onboarding";
 import { pushToast } from "@/toastState";
 import type { AppUser, Customer, Fixture, MachineModel, Station } from "@/types";
 import { fallbackText } from "@/utils/display";
@@ -48,6 +49,7 @@ const canManageUsers = computed(() => authSession.value?.role === "admin");
 const canManageCustomers = computed(() => authSession.value?.role === "admin");
 const selectedCustomerScopeCount = computed(() => customerFormAssignedUserIds.value.length);
 const customerFormAssignedUserIds = ref<number[]>([]);
+const selectedGlobalCustomer = computed(() => customers.value.find((row) => row.id === selectedCustomerId.value) ?? null);
 
 function normalizeText(value: string | null | undefined): string {
   return (value ?? "").trim();
@@ -354,6 +356,19 @@ const summaryCards = computed(() => [
   { label: "客戶", value: customerRows.value.length, meta: `可見 ${customerRows.value.length}` },
   { label: "使用者", value: users.value.length, meta: `啟用 ${users.value.filter((row) => row.is_active).length}` }
 ]);
+
+async function startDemoTour(): Promise<void> {
+  if (!selectedGlobalCustomer.value) {
+    pushToast("請先選擇客戶，才可以開始新手導覽。", "warning");
+    return;
+  }
+  if (!confirmDiscardChanges("開始導覽會從首頁重新開始，並使用目前客戶的資料做教學流程。要繼續嗎？")) {
+    return;
+  }
+  onboardingStepIndex.value = 0;
+  onboardingActive.value = true;
+  await router.push({ path: onboardingSteps[0].route, query: { tour: "1" } });
+}
 
 async function loadData(showLoading = true): Promise<void> {
   if (showLoading) {
@@ -964,7 +979,7 @@ onBeforeUnmount(() => {
     </section>
 
     <section class="toolbar panel">
-      <div class="tab-bar">
+      <div class="tab-bar" data-tour="master-tabs">
         <div class="tab-group">
           <span class="tab-group-label">資料維護</span>
           <button class="tab-btn" :class="{ active: activeTab === 'fixture' }" @click="switchTab('fixture')">治具資訊</button>
@@ -978,10 +993,18 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="toolbar-side">
-        <div class="toolbar-actions">
-          <button class="outline-btn toolbar-primary-action" type="button" @click="router.push({ name: 'search' })">返回搜尋</button>
-          <button class="outline-btn toolbar-primary-action" type="button" :disabled="loading" @click="exportActiveCsv">匯出 CSV</button>
+        <div class="toolbar-side">
+          <div class="toolbar-actions">
+            <button
+              class="outline-btn toolbar-primary-action demo-tour-btn"
+              type="button"
+              :disabled="loading"
+              @click="startDemoTour"
+            >
+              {{ selectedGlobalCustomer ? "開始新手導覽" : "先選客戶再導覽" }}
+            </button>
+            <button class="outline-btn toolbar-primary-action" type="button" @click="router.push({ name: 'search' })">返回搜尋</button>
+            <button class="outline-btn toolbar-primary-action" type="button" :disabled="loading" @click="exportActiveCsv">匯出 CSV</button>
           <div ref="moreMenuRef" class="more-menu">
             <button class="outline-btn more-menu-trigger" type="button" :disabled="loading" :aria-expanded="moreMenuOpen" @click.stop="toggleMoreMenu">更多</button>
             <div v-if="moreMenuOpen" class="more-menu-panel">
@@ -1004,7 +1027,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="list-toolbar">
+        <div class="list-toolbar" data-tour="master-list-toolbar">
           <input v-model="keyword" :placeholder="searchPlaceholder" :disabled="loading" />
           <select v-if="activeTab !== 'customer'" v-model="statusFilter">
             <option value="all">狀態：全部</option>
@@ -1016,7 +1039,7 @@ onBeforeUnmount(() => {
 
         <div v-if="loading" class="loading-banner">資料載入中，請稍候...</div>
 
-        <div class="table-scroll">
+        <div class="table-scroll" data-tour="master-list-table">
           <table class="data-table">
             <thead>
               <tr v-if="activeTab === 'fixture'"><th>治具編號</th><th>治具名稱</th><th>水位</th><th>產線儲位</th><th>部門儲位</th><th>狀態</th></tr>
@@ -1097,7 +1120,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <form class="detail-form" @submit.prevent="saveCurrent">
+        <form class="detail-form" data-tour="master-detail-form" @submit.prevent="saveCurrent">
           <template v-if="activeTab === 'fixture'">
             <label>
               <span>治具編號 *</span>
@@ -1196,6 +1219,7 @@ onBeforeUnmount(() => {
 
           <UiFormActions
             class="form-actions-full"
+            data-tour="master-form-actions"
             :editing="!isCreateMode"
             :saving="saving"
             submit-label="儲存"

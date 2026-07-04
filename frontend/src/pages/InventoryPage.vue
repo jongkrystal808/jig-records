@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import { api } from "@/api";
-import { authSession, globalFixtureKeyword, selectedCustomerId } from "@/appState";
+import { authSession, globalFixtureKeyword, onboardingSandboxMode, selectedCustomerId } from "@/appState";
 import BatchImportPanel from "@/components/inventory/BatchImportPanel.vue";
 import { pushToast } from "@/toastState";
 import type { Fixture, MaterialTransaction, StockSummary, TransactionQueryFilters } from "@/types";
@@ -901,7 +901,7 @@ watch(batchPasteText, () => {
       <article class="panel op-panel" :class="mode">
         <div class="panel-head">
           <div class="panel-actions">
-            <div class="segmented-control" role="tablist" aria-label="收退料切換">
+            <div class="segmented-control" data-tour="inventory-mode-switch" role="tablist" aria-label="收退料切換">
               <button class="segmented-btn" :class="{ active: mode === 'receipt' }" type="button" @click="switchMode('receipt')">
                 收料
               </button>
@@ -922,9 +922,10 @@ watch(batchPasteText, () => {
           </div>
         </div>
 
-        <section v-if="showBatchPanel" class="batch-inline-panel">
+        <section v-if="showBatchPanel" class="batch-inline-panel" data-tour="inventory-batch-panel">
           <BatchImportPanel
             :customer-id="selectedCustomerId ?? undefined"
+            :tutorial-mode="onboardingSandboxMode"
             title="批次貼上匯入"
             description="共用批次匯入元件，同時提供 /inventory 與全域 Modal 使用。"
             @success="handleBatchImportSuccess"
@@ -1059,7 +1060,7 @@ watch(batchPasteText, () => {
     </section>
 
     <section v-else class="panel overview-panel">
-      <div class="overview-head">
+      <div class="overview-head" data-tour="overview-page-head">
         <div>
           <h2>收 / 退料總檢視</h2>
         </div>
@@ -1070,7 +1071,7 @@ watch(batchPasteText, () => {
         </div>
       </div>
 
-      <form class="overview-form" @submit.prevent="searchOverview">
+      <form class="overview-form" data-tour="overview-filter-form" @submit.prevent="searchOverview">
         <label>
           <span>類型</span>
           <select v-model="overviewFilters.transaction_type">

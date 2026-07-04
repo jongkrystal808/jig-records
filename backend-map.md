@@ -79,6 +79,7 @@
 - `guest` 只會拿到 guest session，不可寫
 - 密碼雜湊為 PBKDF2，並相容舊 sha256 資料
 - `allowed_customer_ids` 仍會出現在 user API payload，但實際 customer 指派入口已移到 customer tab
+- onboarding / guided tour 沒有獨立後端 API，完全由前端 shell 控制
 
 #### 前端入口
 
@@ -153,6 +154,7 @@
 
 - `frontend/src/pages/SearchWorkspacePage.vue`
   - fixture 圖片載入
+  - fixture / model lookup 基礎資料
 
 ### Inventory
 
@@ -171,6 +173,8 @@
 - `GET /inventory/identifier-stock-summary`
 - `GET /inventory/transactions`
 - `GET /inventory/transactions/export`
+- `GET /inventory/transactions/export-report`
+- `GET /inventory/transactions/export-report/preview`
 - `GET /inventory/transactions/template`
 - `POST /inventory/transactions/import`
 
@@ -178,23 +182,36 @@
 
 - 交易明細正式使用單一 `identifier`
 - `ownership_type` 在 transaction item 層
-- 批次貼上匯入前端仍走 `receipts` / `returns`
+- 批次貼上匯入前端仍走 `/receipts` / `/returns`
 - CSV 匯入走 `/inventory/transactions/import`
 - overview 查詢支援 `transaction_type` / `date_from` / `date_to` / `fixture_code` / `transaction_no` / `identifier` / `created_by`
+- 報表匯出支援 `summary|detail` 與 `xlsx|txt`
+- 匯出 preview 由 `/inventory/transactions/export-report/preview` 提供
+- onboarding 教學模式不會新增後端 tutorial endpoint；只是前端不真正送出 `/receipts` 或 `/returns`
 
 #### 前端入口
 
 - `frontend/src/pages/InventoryPage.vue`
   - 收料 / 退料主作業
-  - 批次貼上匯入 modal
+  - 內嵌批次貼上匯入
   - 庫存總覽
   - 低水位提醒
   - 收退料總檢視
   - overview 交易 CSV 匯出
-  - 批次匯入 CSV 匯入 / 範本下載
+
+- `frontend/src/components/inventory/BatchImportPanel.vue`
+  - 批次貼上匯入
+  - 新治具即時建立
+  - 教學模式試跑
+
+- `frontend/src/components/inventory/InventoryExportPanel.vue`
+  - 報表 preview
+  - `xlsx` / `txt` 匯出
 
 - `frontend/src/App.vue`
-  - 側邊欄今日收料 / 今日退料 / 低水位統計
+  - 頂欄今日收料 / 今日退料 / 低水位統計
+  - 全域收退料 modal
+  - 全域收退料匯出 modal
 
 - `frontend/src/pages/SearchWorkspacePage.vue`
   - 收退料記錄、fixture context、identifier stock context
@@ -266,6 +283,7 @@
 - query 支援 fixture code / name、model、station、storage location、identifier transaction context
 - fixture 側 related models 直接來自 `fixture_requirements.model_id`
 - 不再從 station 反推 model
+- 搜尋頁的「相近編號」提示排序屬於前端行為，不是 search API 自帶 ranking contract
 
 #### 前端入口
 
@@ -358,7 +376,10 @@
   - `responsible_user_id`
   - `code`
   - `name`
+  - `line_storage_location`
+  - `department_storage_location`
   - `storage_location`
+  - `min_stock_qty`
   - `description`
   - `is_active`
 - 前端使用：
@@ -462,8 +483,9 @@
   - `quantity`
   - `note`
 - 前端使用：
-  - `frontend/src/pages/InventoryPage.vue`
+  - `frontend/src/components/inventory/BatchImportPanel.vue`
     - 批次收退料 payload
+  - `frontend/src/pages/InventoryPage.vue`
     - overview rows
   - `frontend/src/pages/SearchWorkspacePage.vue`
     - transaction rows
@@ -519,50 +541,8 @@
     - fixture 識別碼庫存標籤
     - model query 內的識別碼庫存摘要
 
-### `machine_capacity_summary`
+## 現況提醒
 
-- 檔案：`backend/app/models/production.py`
-- 主要欄位：
-  - `station_id`
-  - `max_open_station_count`
-  - `bottleneck_fixture_code`
-- 前端使用：
-  - 不直接作為唯一來源
-  - capacity / model query 以 runtime 計算為主
-- 備註：
-  - 現在比較接近 cache / summary table
-
-### `audit_logs`
-
-- 檔案：`backend/app/models/audit.py`
-- 主要欄位：
-  - `id`
-  - `customer_id`
-  - `entity_type`
-  - `entity_key`
-  - `action`
-  - `summary`
-  - `actor_username`
-  - `actor_display_name`
-  - `actor_role`
-  - `created_at`
-- 前端使用：
-  - 目前前端未渲染
-  - `frontend/src/api.ts`
-    - `listAuditLogs`
-
-## 改欄位時的最小連動清單
-
-如果你改任何 API 欄位或資料表欄位，最少要一起檢查：
-
-- `backend/app/models/*.py`
-- `backend/app/schemas/*.py`
-- `backend/app/repositories/*.py`
-- `backend/app/services/*.py`
-- `backend/app/routers/*.py`
-- `backend/alembic/versions/*.py`
-- `backend/app/core/schema_patch.py`
-- `frontend/src/types.ts`
-- `frontend/src/api.ts`
-- 對應頁面的 `.vue`
-- 權限有變時再加看 `backend/app/core/auth.py`
+- `InventoryService` 現在依賴 `openpyxl` 來輸出 `xlsx` 報表；若環境沒安裝，backend import 與 pytest 都會失敗。
+- onboarding / guided tour 完全是前端功能，不要在 backend 補假的 tutorial router。
+- `App.vue` 目前沒有渲染 audit 摘要區塊，因此 `/audit/logs` 雖保留，但不是首頁主流程的一部分。

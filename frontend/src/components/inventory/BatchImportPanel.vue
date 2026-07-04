@@ -2,8 +2,10 @@
 import { computed, onMounted, ref, watch } from "vue";
 
 import { api } from "@/api";
-import { authSession } from "@/appState";
+import { authSession, onboardingActive, onboardingStepIndex } from "@/appState";
 import InlineSpinner from "@/components/common/InlineSpinner.vue";
+import { onboardingSteps } from "@/onboarding";
+import { pushToast } from "@/toastState";
 import type { Fixture } from "@/types";
 
 type ImportMode = "receipt" | "return";
@@ -30,12 +32,14 @@ const props = withDefaults(defineProps<{
   showModeSwitch?: boolean;
   initialMode?: ImportMode;
   hideFrame?: boolean;
+  tutorialMode?: boolean;
 }>(), {
   title: "批次貼上匯入",
   description: "支援兩行一組與表格式單行資料。",
   showModeSwitch: true,
   initialMode: "receipt",
-  hideFrame: false
+  hideFrame: false,
+  tutorialMode: false
 });
 
 const emit = defineEmits<{
@@ -55,6 +59,10 @@ const readyRows = computed(() => rows.value.filter((row) => row.status === "read
 const pendingRows = computed(() => rows.value.filter((row) => row.status === "needs-confirm" || row.status === "needs-add"));
 const errorRows = computed(() => rows.value.filter((row) => row.status === "error"));
 const canSubmit = computed(() => readyRows.value.length > 0 && pendingRows.value.length === 0 && errorRows.value.length === 0 && batchTransactionNo.value.trim().length > 0);
+const currentOnboardingStepId = computed(() => onboardingSteps[onboardingStepIndex.value]?.id ?? "");
+const tutorialBannerText = computed(() =>
+  mode.value === "receipt" ? "教學模式：本次會模擬收料，不會寫入正式資料。" : "教學模式：本次會模擬退料，不會寫入正式資料。"
+);
 
 function normalizeText(value: string): string {
   return value.replace(/\u00a0/g, " ").trim();
@@ -326,12 +334,31 @@ async function createMissingFixture(row: BatchImportRow): Promise<void> {
   row.message = "已建立新治具";
 }
 
+function fillTutorialSample(): void {
+  const sampleFixture = fixtures.value[0];
+  if (!sampleFixture) {
+    pushToast("目前客戶下沒有治具資料，無法進行教學試跑。", "warning");
+    return;
+  }
+  const sampleIdentifier = "0001";
+  batchTransactionNo.value = `TUTORIAL-${mode.value === "receipt" ? "RCV" : "RTN"}-001`;
+  batchNote.value = "導覽教學試跑";
+  batchPasteText.value = `${sampleFixture.code}-${sampleIdentifier}\n1`;
+  refreshPreview();
+}
+
 async function submit(): Promise<void> {
   if (!props.customerId || !canSubmit.value) {
     return;
   }
   saving.value = true;
   try {
+    if (props.tutorialMode) {
+      clearPanel();
+      emit("success");
+      pushToast("教學試跑完成，未寫入正式收退料資料。", "success");
+      return;
+    }
     const payload = {
       customer_id: props.customerId,
       created_by: authSession.value?.display_name || "System",
@@ -366,6 +393,23 @@ watch(batchPasteText, () => {
   refreshPreview();
 });
 
+watch(
+  () => [props.tutorialMode, onboardingActive.value, currentOnboardingStepId.value, fixtures.value.length] as const,
+  () => {
+    if (!props.tutorialMode || !onboardingActive.value) {
+      return;
+    }
+    if (!["inventory-paste", "inventory-submit"].includes(currentOnboardingStepId.value)) {
+      return;
+    }
+    if (rows.value.length > 0 && batchTransactionNo.value.trim().length > 0) {
+      return;
+    }
+    fillTutorialSample();
+  },
+  { immediate: true }
+);
+
 onMounted(async () => {
   await loadFixtures();
 });
@@ -378,7 +422,7 @@ onMounted(async () => {
         <h2>{{ title }}</h2>
         <p>{{ description }}</p>
       </div>
-      <div v-if="showModeSwitch" class="segmented-control">
+      <div v-if="showModeSwitch" class="segmented-control" data-tour="inventory-mode-switch">
         <button class="segmented-btn" :class="{ active: mode === 'receipt' }" type="button" @click="mode = 'receipt'">收料</button>
         <button class="segmented-btn" :class="{ active: mode === 'return' }" type="button" @click="mode = 'return'">退料</button>
       </div>
@@ -389,6 +433,11 @@ onMounted(async () => {
     </div>
 
     <template v-else>
+      <div v-if="tutorialMode" class="tutorial-banner">
+        <strong>教學模式</strong>
+        <span>{{ tutorialBannerText }}</span>
+      </div>
+
       <div class="meta-grid">
         <label>
           <span>單號 *</span>
@@ -400,7 +449,7 @@ onMounted(async () => {
         </label>
       </div>
 
-      <label class="paste-field">
+      <label class="paste-field" data-tour="inventory-paste-field">
         <span>批次內容</span>
         <textarea v-model="batchPasteText" placeholder="支援 fixture-code-identifier / quantity，或 fixture-code[TAB]identifier[TAB]quantity"></textarea>
       </label>
@@ -412,8 +461,18 @@ onMounted(async () => {
           <span>錯誤 {{ errorRows.length }} 筆</span>
         </div>
         <div class="action-group">
+          <button
+            v-if="tutorialMode"
+            class="ghost-btn"
+            data-tour="inventory-sandbox-action"
+            type="button"
+            :disabled="saving || fixtures.length === 0"
+            @click="fillTutorialSample"
+          >
+            套用教學試跑
+          </button>
           <button class="outline-btn" type="button" :disabled="saving" @click="clearPanel">清空</button>
-          <button class="primary-btn" type="button" :disabled="saving || !canSubmit" @click="submit">
+          <button class="primary-btn" data-tour="inventory-submit-action" type="button" :disabled="saving || !canSubmit" @click="submit">
             {{ saving ? "送出中..." : mode === "receipt" ? "送出收料" : "送出退料" }}
           </button>
         </div>
@@ -510,6 +569,20 @@ label span {
 
 .batch-head p {
   margin: 4px 0 0;
+}
+
+.tutorial-banner {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #cfe0ff;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
+}
+
+.tutorial-banner strong {
+  color: #214b97;
+  font-size: 12px;
 }
 
 .segmented-control {

@@ -1267,7 +1267,7 @@ onMounted(async () => {
     <div class="page-head-actions">
       <button class="outline-btn" type="button" @click="router.push({ name: 'search' })">返回搜尋</button>
     </div>
-    <nav class="page-tabs" aria-label="生產管理檢視切換">
+    <nav class="page-tabs" data-tour="production-tabs" aria-label="生產管理檢視切換">
       <button class="page-tab" type="button" :class="{ active: isMainOverview }" @click="closeDetailPage">
         總覽
       </button>
@@ -1279,7 +1279,7 @@ onMounted(async () => {
       </button>
     </nav>
 
-    <section class="filter-row">
+    <section class="filter-row" data-tour="production-filter-row">
       <div class="filter-group">
         <span class="filter-row-label">目前篩選條件</span>
         <div class="filter-fields">

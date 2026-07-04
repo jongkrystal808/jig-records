@@ -3,10 +3,11 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import { useRouter } from "vue-router";
 
 import { api, fetchFixtureImageObjectUrl } from "@/api";
+import { customers, onboardingActive, onboardingStepIndex, selectedCustomerId } from "@/appState";
 import InlineSpinner from "@/components/common/InlineSpinner.vue";
 import FixtureInfoPanel from "@/components/search/FixtureInfoPanel.vue";
 import ModelInfoPanel from "@/components/search/ModelInfoPanel.vue";
-import { authSession, selectedCustomerId } from "@/appState";
+import { authSession } from "@/appState";
 import { pushToast } from "@/toastState";
 import type {
   AppUser,
@@ -26,7 +27,6 @@ type SearchMode = "fixture" | "model";
 type DetailTab = "info" | "edit";
 type SearchHint = {
   key: string;
-  kind: "direct" | "related" | "identifier";
   mode: SearchMode;
   entityId: number;
   title: string;
@@ -83,6 +83,14 @@ const resultPanel = ref<HTMLElement | null>(null);
 const fixtureSectionSelection = ref<string[]>(loadSelection(FIXTURE_SECTION_KEY, defaultFixtureSections));
 const modelSectionSelection = ref<string[]>(loadSelection(MODEL_SECTION_KEY, defaultModelSections));
 
+function startOnboarding(): void {
+  if (!selectedCustomerId.value && customers.value.length > 0) {
+    selectedCustomerId.value = customers.value[0].id;
+  }
+  onboardingStepIndex.value = 0;
+  onboardingActive.value = true;
+}
+
 function loadSelection(key: string, fallback: string[]): string[] {
   const raw = localStorage.getItem(key);
   if (!raw) return [...fallback];
@@ -96,6 +104,25 @@ function loadSelection(key: string, fallback: string[]): string[] {
 
 function formatCount(value: number): string {
   return nf.format(value);
+}
+
+function normalizeSearchText(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normalizeCodeToken(value: string): string {
+  return normalizeSearchText(value).replace(/[^a-z0-9]/g, "");
+}
+
+function rankCodeMatch(code: string, query: string): number {
+  const normalizedCode = normalizeCodeToken(code);
+  const normalizedQuery = normalizeCodeToken(query);
+  if (!normalizedQuery) return Number.MAX_SAFE_INTEGER;
+  const startsWithScore = normalizedCode.startsWith(normalizedQuery) ? 0 : 1000;
+  const containsIndex = normalizedCode.indexOf(normalizedQuery);
+  const containsScore = containsIndex >= 0 ? containsIndex : 500;
+  const lengthScore = Math.abs(normalizedCode.length - normalizedQuery.length);
+  return startsWithScore + containsScore * 10 + lengthScore;
 }
 
 function stockTone(status: StockSummary["stock_status"] | undefined): "normal" | "warn" | "danger" | "muted" {
@@ -266,114 +293,43 @@ const smartHints = computed(() => {
   if (mode.value === "fixture" && hasConfirmedFixtureResult.value && committedQuery.value.trim() === queryDraft.value.trim()) return [];
   if (mode.value === "model" && hasConfirmedModelResult.value && committedQuery.value.trim() === queryDraft.value.trim()) return [];
 
-  const hints: SearchHint[] = [];
-  const pushUniqueHint = (hint: SearchHint) => {
-    if (!hints.some((item) => item.key === hint.key)) {
-      hints.push(hint);
-    }
-  };
-
   if (mode.value === "fixture") {
-    for (const row of fixtureMatches.value.slice(0, 4)) {
-      pushUniqueHint({
+    return fixtures.value
+      .filter((row) => normalizeCodeToken(row.code).includes(normalizeCodeToken(q)))
+      .slice()
+      .sort((a, b) => {
+        const scoreDiff = rankCodeMatch(a.code, q) - rankCodeMatch(b.code, q);
+        if (scoreDiff !== 0) return scoreDiff;
+        return a.code.localeCompare(b.code);
+      })
+      .slice(0, 10)
+      .map((row): SearchHint => ({
         key: `fixture-direct-${row.id}`,
-        kind: "direct",
         mode: "fixture",
         entityId: row.id,
         title: row.code,
         subtitle: row.name,
         badge: "治具"
-      });
-    }
-
-    for (const row of identifierStockRows.value.filter((item) => item.identifier.toLowerCase().includes(q)).slice(0, 4)) {
-      const fixture = fixtureMap.value.get(row.fixture_id);
-      if (!fixture) continue;
-      pushUniqueHint({
-        key: `fixture-identifier-${fixture.id}-${row.identifier}`,
-        kind: "identifier",
-        mode: "fixture",
-        entityId: fixture.id,
-        title: fixture.code,
-        subtitle: `識別碼 ${row.identifier} / 庫存 ${formatCount(row.stock_qty)}`,
-        badge: "識別碼"
-      });
-    }
-
-    const fixtureIds = new Set(fixtureMatches.value.slice(0, 6).map((row) => row.id));
-    const relatedModelIds = new Set(
-      fixtureRequirements.value.filter((row) => fixtureIds.has(row.fixture_id)).map((row) => row.model_id)
-    );
-    for (const modelId of relatedModelIds) {
-      const row = modelMap.value.get(modelId);
-      if (!row) continue;
-      pushUniqueHint({
-        key: `model-related-${row.id}`,
-        kind: "related",
-        mode: "model",
-        entityId: row.id,
-        title: row.code,
-        subtitle: `${row.name} ・ 由治具關聯`,
-        badge: "關聯機種"
-      });
-    }
-
-    for (const row of models.value.filter((item) => [item.code, item.name].some((value) => value.toLowerCase().includes(q))).slice(0, 3)) {
-      pushUniqueHint({
-        key: `model-direct-switch-${row.id}`,
-        kind: "related",
-        mode: "model",
-        entityId: row.id,
-        title: row.code,
-        subtitle: `${row.name} ・ 可切換至機種`,
-        badge: "機種"
-      });
-    }
-  } else {
-    for (const row of modelMatches.value.slice(0, 4)) {
-      pushUniqueHint({
-        key: `model-direct-${row.id}`,
-        kind: "direct",
-        mode: "model",
-        entityId: row.id,
-        title: row.code,
-        subtitle: row.name,
-        badge: "機種"
-      });
-    }
-
-    const modelIds = new Set(modelMatches.value.slice(0, 6).map((row) => row.id));
-    const relatedFixtureIds = new Set(
-      fixtureRequirements.value.filter((row) => modelIds.has(row.model_id)).map((row) => row.fixture_id)
-    );
-    for (const fixtureId of relatedFixtureIds) {
-      const row = fixtureMap.value.get(fixtureId);
-      if (!row) continue;
-      pushUniqueHint({
-        key: `fixture-related-${row.id}`,
-        kind: "related",
-        mode: "fixture",
-        entityId: row.id,
-        title: row.code,
-        subtitle: `${row.name} ・ 由機種關聯`,
-        badge: "關聯治具"
-      });
-    }
-
-    for (const row of fixtures.value.filter((item) => [item.code, item.name, item.storage_location ?? ""].some((value) => value.toLowerCase().includes(q))).slice(0, 3)) {
-      pushUniqueHint({
-        key: `fixture-direct-switch-${row.id}`,
-        kind: "related",
-        mode: "fixture",
-        entityId: row.id,
-        title: row.code,
-        subtitle: `${row.name} ・ 可切換至治具`,
-        badge: "治具"
-      });
-    }
+      }));
   }
 
-  return hints.slice(0, 8);
+  return models.value
+    .filter((row) => normalizeCodeToken(row.code).includes(normalizeCodeToken(q)))
+    .slice()
+    .sort((a, b) => {
+      const scoreDiff = rankCodeMatch(a.code, q) - rankCodeMatch(b.code, q);
+      if (scoreDiff !== 0) return scoreDiff;
+      return a.code.localeCompare(b.code);
+    })
+    .slice(0, 10)
+    .map((row): SearchHint => ({
+        key: `model-direct-${row.id}`,
+        mode: "model",
+        entityId: row.id,
+        title: row.code,
+        subtitle: row.name,
+        badge: "機種"
+    }));
 });
 
 function applySmartHint(hint: SearchHint): void {
@@ -609,11 +565,11 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="search-toolbar">
-        <div class="mode-switch">
+        <div class="mode-switch" data-tour="search-mode-switch">
           <button class="mode-btn" :class="{ active: mode === 'fixture' }" type="button" @click="mode = 'fixture'">治具</button>
           <button class="mode-btn" :class="{ active: mode === 'model' }" type="button" @click="mode = 'model'">機種</button>
         </div>
-        <label class="query-field">
+        <label class="query-field" data-tour="search-query-field">
           <input
             v-model="queryDraft"
             :placeholder="mode === 'fixture' ? '請輸入治具編號 / 名稱,例如 C-00003' : '請輸入機種編號 / 名稱,例如 VPort-254'"
@@ -627,7 +583,7 @@ onBeforeUnmount(() => {
 
       <div v-if="smartHints.length > 0" class="smart-hint-panel">
         <div class="smart-hint-head">
-          <strong>智慧關聯提示</strong>
+          <strong>相近編號</strong>
           <span>{{ smartHints.length }} 筆</span>
         </div>
         <div class="smart-hint-grid">
@@ -645,7 +601,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="chip-row">
+      <div class="chip-row" data-tour="search-section-chips">
         <button
           v-for="chip in mode === 'fixture' ? fixtureSectionChips : modelSectionChips"
           :key="`${mode}-${chip.key}`"
@@ -659,6 +615,8 @@ onBeforeUnmount(() => {
       </div>
 
     </section>
+
+    <button class="floating-onboarding-btn" data-tour="search-onboarding-entry" type="button" @click="startOnboarding">開始新手教學</button>
 
     <section v-if="hasActiveQuery" ref="resultPanel" class="content-grid">
       <article class="detail-panel">
@@ -812,6 +770,29 @@ h1 {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 12px;
+}
+
+.floating-onboarding-btn {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 25;
+  min-height: 42px;
+  padding: 10px 16px;
+  border: 1px solid #c8d8f4;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 32px rgba(28, 47, 84, 0.18);
+  color: #244578;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+
+.floating-onboarding-btn:hover {
+  border-color: #9eb8ea;
+  transform: translateY(-1px);
 }
 
 .hero-card.idle .search-toolbar {
@@ -1066,6 +1047,13 @@ input {
 
   .search-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .floating-onboarding-btn {
+    right: 14px;
+    bottom: 14px;
+    padding: 10px 14px;
+    font-size: 12px;
   }
 }
 </style>

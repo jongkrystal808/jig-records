@@ -60,12 +60,15 @@
 
 ## Current Snapshot
 
-- 目前 `App.vue` 左側欄位包含：導航、登入狀態、客戶切換、日期、全域治具搜尋、今日統計；目前沒有「最近異動」卡片。
-- 目前側邊欄支援手機/平板 overlay 開關，但沒有桌面版 mini mode。
-- `MasterPage` 已有前端分頁；`SearchWorkspacePage` 目前沒有查詢結果分頁。
-- `SearchWorkspacePage` 目前沒有可收合的篩選區。
+- 目前 `App.vue` 已改為頂部 shell，不再使用左側常駐導覽；頂欄包含登入狀態、客戶切換、今日統計、全域 `收/退料` 與 `收退料資訊匯出` 入口，以及 `更多功能` 選單。
+- 目前 shell 仍沒有桌面版 mini sidebar；手機版則維持漢堡選單 / overlay 導覽。
+- `SearchWorkspacePage` 已新增固定的新手教學入口，首次登入也會自動啟動導覽。
+- `SearchWorkspacePage` 的智慧提示已收斂為「相近編號」排序提示，不再混用 direct / related / identifier 類型提示。
+- `MasterPage` 已有前端分頁；`SearchWorkspacePage` 目前仍沒有查詢結果分頁。
+- `SearchWorkspacePage` 目前仍沒有可收合的篩選區。
+- `npm run build` 目前可通過。
 - `.venv\\Scripts\\python.exe -m pytest tests -q` 目前為 `4 passed, 1 failed`。
-- 失敗案例在 `tests/test_inventory_and_production.py`：測試資料使用 `identifier = "202606"`，但目前後端驗證限制為「4 碼以內」，且 validation error payload 仍帶出未序列化的 `ValueError`。
+- 目前剩餘失敗案例在 `tests/test_inventory_and_production.py::test_inventory_capacity_and_search_flow`：測試資料使用 `identifier = "202606"`，但現行驗證仍限制「4 碼以內」，且 validation error payload 的 `ctx.error` 仍帶出未序列化的 `ValueError`。
 
 ## Phase 0-4 Approved Update
 
@@ -263,7 +266,17 @@
 - [x] 切換機種後，站點選擇會自動收斂到該機種可用站點
 - [x] 查詢頁與產能頁已移除 `station -> model` 執行期反推邏輯
 
-### 17) Migration / 啟動穩定性修補
+### 17) 新手導覽 / 教學模式
+
+- [x] 新增全域 `GuidedTour` 浮層元件，支援 spotlight、高亮目標與逐步導覽
+- [x] 首次登入後自動啟動新手導覽，並以 sessionStorage 記住本次 session 已看過
+- [x] 搜尋首頁新增固定「開始新手教學」入口，可隨時重播
+- [x] 導覽步驟已涵蓋：搜尋首頁、收退料入口、匯出入口、總檢視、資料維護、產能管理
+- [x] 收退料批次匯入元件新增 `tutorialMode`，教學模式下可自動帶入試跑資料
+- [x] 教學模式送出收 / 退料時不寫入正式資料，只清空畫面並提示試跑完成
+- [x] `MasterPage` 新增「開始新手導覽」按鈕，可從資料維護頁回到導覽起點
+
+### 18) Migration / 啟動穩定性修補
 - [x] 新增 Alembic migration `0004_model_station_scope`
 - [x] 新增 Alembic migration `0005_remove_warehouse_tables`
 - [x] 新增 Alembic migration `0006_identifier_cleanup`
@@ -277,13 +290,13 @@
 - [x] 舊 `owners` 資料表正式移除，責任人收斂為 `fixtures.responsible_user_id`
 - [x] Docker 環境已驗證 migration 可正常完成且 API 可正常啟動
 
-### 18) 測試補強
+### 19) 測試補強
 - [x] 新增 migration preflight 測試
 - [x] 新增 production service 測試，覆蓋同站點多機種共用情境
 - [x] 新增 production API 測試，驗證同站點多機種共用時 capacity / query 不互相污染
 - [x] 新增 auth / customer scope 測試，驗證 `admin` / `guest` / `user` 三種角色行為
 
-### 19) 角色與客戶權限定案
+### 20) 角色與客戶權限定案
 - [x] `admin` 不限制客戶可視範圍，且可編輯全部資料
 - [x] `guest` 不限制客戶可視範圍，但只能讀取
 - [x] `guest` 不顯示 `資料維護` 導航，且不可直接進入 `/master`
@@ -297,36 +310,76 @@
 
 ## Update Log
 
+### 2026-07-04
 
-### 2026-06-09
+- 已重新同步 `task.md`、`ARCHITECTURE.md`、`frontend-map.md`、`backend-map.md`、`map.md`、`ARCHITECTURE_LANDING.md`，讓文件描述對齊目前 topbar shell、全域收退料/匯出 modal、onboarding 導覽與教學模式。
+- 已在文件中補上 `GuidedTour`、`frontend/src/onboarding.ts`、`InventoryExportPanel.vue`、搜尋頁「相近編號」提示收斂等最新前端結構。
+- 已確認 `requirements.txt` 原本就包含 `openpyxl`；本次已補安裝到目前 `.venv`，排除測試因缺套件而在 import 階段直接失敗的問題。
+- 已重新驗證 `npm run build` 通過。
+- 已重新驗證 `.venv\\Scripts\\python.exe -m pytest tests -q`，目前結果為 `4 passed, 1 failed`。
+- 目前剩餘失敗案例集中在 `tests/test_inventory_and_production.py::test_inventory_capacity_and_search_flow`：`identifier = "202606"` 仍被限制為 4 碼內，且 validation error payload 的 `ctx.error` 仍含未序列化的 `ValueError`。
 
-- 已將前一次 review 的改善項目整理進 `Review / Hardening Backlog`。
-- 已完成密碼雜湊升級為 PBKDF2，並保留舊 sha256 密碼相容性。
-- 已補上治具 code lookup 的 customer scope，降低跨客戶資料污染風險。
-- 已將治具列表與匯出改為純讀取，避免 GET request 產生副作用。
-- 已將 CSV 匯入調整為批次原子流程，避免部分成功、部分失敗。
-- 已修正前端今日統計的本地日期判定，並提高取樣筆數。
-- 已補上 `.gitignore` 對前端生成檔與 build 產物的忽略規則。
-- 已驗證 `python -m compileall backend/app` 與 `npm run build` 通過。
-- 已依圖片要求調整收退料操作區，移除管理型態欄位，並將來源預設改為客供。
-- 已將收退料單筆表單改成預設收起，需時再手動展開填寫。
-- 已依最新圖片進一步移除治具詳細資料中的管理類型欄位，並把收退料單筆輸入的可見 `Datecode / 序號` 標籤隱藏。
-- 已為 `Fixture Requirement` 與 `Model-Station Mapping` 補上編輯功能，且編輯按鈕放在刪除前。
-- 已將後續可做的 UI / 架構優化整理成 `P0 / P1 / P2` 三層優先級待辦。
-- 已將前端 typecheck 改為 no-emit，避免 `vue-tsc` 再把 `.js` / `.map` 產物寫回 `frontend/src`。
-- 已補上 backend service 的 unittest，覆蓋 `auth`、`production`、`inventory` 的核心流程。
-- 已把 `auth` 的資料庫依賴改成 lazy import，讓 service 測試不再被 MySQL driver 綁死。
-- 已正式把啟動流程收斂到 Alembic：startup 只做 `upgrade head`，並新增 `0002_schema_backfill` 作為 legacy DB 的 backfill migration。
+### 2026-06-27
 
-### 2026-06-10
+- 已重新對照目前程式碼校正文檔，確認 `ARCHITECTURE.md` 與 `task.md` 不再把「最近異動側欄卡片」與「桌面 mini sidebar」視為已落地現況。
+- 已補記目前測試現況：`.venv\\Scripts\\python.exe -m pytest tests -q` 尚有 1 個失敗案例，集中在 `identifier` 驗證與 validation error 序列化。
 
-- 已補上前端 Vitest 測試骨架，並新增共用 helper 的 unit tests。
-- 已將前端日期格式化與 API 錯誤訊息解析抽成共用 util，減少重複邏輯。
-- 已補上查詢頁與收退料頁的空狀態 / 載入狀態回饋，讓資料不足時的 UI 更清楚。
-- 已將收退料頁的庫存列表補上空狀態提示。
-- 已將收退料頁的左側操作區加寬，並把「最近收料 / 退料」區塊提前到批次匯入前面，降低使用時的垂直捲動壓力。
-- 已補上 backend unittest，覆蓋 auth / role、API error payload、inventory、production 核心流程。
-- 已將 frontend 測試擴充到共用 util 層，驗證日期格式化、API 錯誤解析與治具圖片 URL 組裝。
+### 2026-06-20
+
+- 已修正首頁左側側邊欄右側的白邊問題，收斂 scrollbar 預留空間與滾動區背景，避免主內容區左側出現視覺縫隙。
+- 已將前端共用日期格式化工具統一為只顯示 `年月日`，不再顯示時分秒。
+- 已將首頁側邊欄顯示文案由 `時間` 調整為 `日期`，並只呈現當日日期。
+- 已將 `收退料總檢視`、`資料維護`、`查詢頁`、`產能頁` 中所有建立/更新/交易日期顯示統一改為 `年月日`。
+- 已將後端 API 的 `datetime` 回應序列化統一收斂為 `YYYY-MM-DD`，避免前端再收到帶時分秒的日期字串。
+- 已將收退料 CSV 匯出的 `occurred_at` 與範本日期格式統一改為 `YYYY-MM-DD`。
+- 已將收退料建立交易與 CSV 匯入流程收斂為「只記錄日期」：即使輸入帶時分秒，也會在寫入前正規化為當日零點。
+- 已補齊 `資料維護` 頁的停用資料恢復流程，`治具 / 機種 / 站點 / 使用者` 現在都可從停用狀態恢復使用。
+- 已讓 `資料維護` 頁的狀態篩選一致套用到 `治具 / 機種 / 站點 / 使用者` 清單，便於找到停用資料後重新啟用。
+- 已將 `資料維護` 頁底部動作按鈕改為依當前狀態動態顯示 `停用 / 恢復使用`，不再只有單向停用途徑。
+
+### 2026-06-15
+
+- 已將 production requirement 的正式資料模型定案為 `model_id + station_id + fixture_id`。
+- 已將 production 展開與計算邏輯定案為：
+  - `機種 -> 機種已綁定站點 -> 該機種該站點的治具需求`
+- 已修正 production 頁站點選擇邏輯，切換機種後不再保留無效 `station_id`。
+- 已修正 production 頁 requirement 清單過濾，改為 `model_id + station_id`，不再只看 `station_id`。
+- 已修正查詢頁治具關聯機種與站點詳細，不再從站點反推機種。
+- 已將 production capacity UI 改為單站獨立語意，不再展示誤導性的「目前開站 / 剩餘開站」資訊。
+- 已將 `current_open_station_count` 從 backend schema / service、frontend types / page props / UI 中正式移除。
+- 已修正 Alembic `0004` revision id 過長造成的 MySQL `alembic_version.version_num` 寫入失敗問題。
+- 已將 migration revision 正式收斂為 `0004_model_station_scope`，並補上 legacy revision alias normalization。
+- 已驗證 docker compose 下的 API 與 Web 可正常重建與啟動。
+- 已修正批次收退料自定義單號不生效問題，後端現在會保留使用者輸入的 `transaction_no`。
+- 已新增 migration 測試與 production API / service 測試，特別覆蓋「同站點多機種共用」情境。
+- 已移除 warehouse 相關資料表，正式收斂為 `fixtures.storage_location` 單一文字儲位策略。
+- 已新增 Alembic `0006_identifier_cleanup`，將 `material_transaction_items` 正式改為 `identifier` 欄位，並移除 legacy `manage_type / datecode / serial_number` 與 `fixture_serials`。
+- 已將客戶可見範圍維護入口從使用者分頁移到客戶分頁，改由 `assigned_user_ids` 管理 `user_customers`。
+- 已將治具負責人收斂為客戶已指派使用者，並移除前端負責人分頁與對應 API 使用。
+- 已新增 Alembic `0007_user_customer_scope`，將一般使用者的客戶可見範圍正式落到 `user_customers`。
+- 已新增 Alembic `0008_fixture_responsible_user`，在 `fixtures` 補上 `responsible_user_id`。
+- 已新增 Alembic `0009_remove_owners_and_scope_fixture_code`，移除 `owners` 並將治具代碼唯一鍵收斂為 `(customer_id, code)`。
+
+### 2026-06-12
+
+- 已將側邊欄改回淺色系，保留清楚的 active 狀態與層次，但不再使用深色 sidebar。
+- 已移除頂欄與左上角四個分頁切換按鈕。
+- 已把已登入狀態、客戶選擇、時間、登出整合到側邊欄。
+- 已把新增客戶功能移到 `資料維護` 分頁。
+- 已把收退料操作區的手動表單移除，只保留批次貼上匯入。
+- 已在批次貼上匯入加入自由輸入的單號欄位，並套用到整批收料 / 退料交易。
+- 已把收退料總檢視的下載範本與匯入 CSV 入口移除。
+- 已把收退料總檢視簡化成單一主查詢頁，移除 `序號查詢` 模式。
+- 已把收退料總檢視的篩選與表格文案統一改成 `識別碼`。
+- 已把 `manage_type` 從治具主檔維護與查詢展示中移除。
+- 已把 `datecode / serial_number` 對外概念統一為單一 `identifier`。
+- 已更新前端 API、型別與頁面，只收發 `identifier`，不再使用 `manage_type` / `serial_number`。
+- 已更新後端 inventory / master / search 的 schema、router、service、repository，對外不再暴露 `manage_type` / `serial_number`。
+- 已於後續 migration 正式移除 `manage_type / datecode / serial_number` 與 `fixture_serials`，資料庫也改成單一 `identifier`。
+- 已重構查詢頁為 `治具 / 機種` 兩種模式，並加入固定統計方格。
+- 已讓查詢頁改為面板內滾動，避免內容超出頁面高度。
+- 已依圖片移除查詢頁右側重複的治具名稱卡片。
+- 已驗證 `npm run build` 與 `python -m compileall backend/app` 通過。
 
 ### 2026-06-11
 
@@ -354,64 +407,32 @@
 - 已將前端表格與 body 字級微調至 12px，並略縮 cell padding，提升工業管理場景下的資訊密度。
 - 舊的單筆表單自動聚焦調整不再適用，因目前流程已收斂為批次貼上匯入。
 
-### 2026-06-27
+### 2026-06-10
 
-- 已重新對照目前程式碼校正文檔，確認 `ARCHITECTURE.md` 與 `task.md` 不再把「最近異動側欄卡片」與「桌面 mini sidebar」視為已落地現況。
-- 已補記目前測試現況：`.venv\\Scripts\\python.exe -m pytest tests -q` 尚有 1 個失敗案例，集中在 `identifier` 驗證與 validation error 序列化。
+- 已補上前端 Vitest 測試骨架，並新增共用 helper 的 unit tests。
+- 已將前端日期格式化與 API 錯誤訊息解析抽成共用 util，減少重複邏輯。
+- 已補上查詢頁與收退料頁的空狀態 / 載入狀態回饋，讓資料不足時的 UI 更清楚。
+- 已將收退料頁的庫存列表補上空狀態提示。
+- 已將收退料頁的左側操作區加寬，並把「最近收料 / 退料」區塊提前到批次匯入前面，降低使用時的垂直捲動壓力。
+- 已補上 backend unittest，覆蓋 auth / role、API error payload、inventory、production 核心流程。
+- 已將 frontend 測試擴充到共用 util 層，驗證日期格式化、API 錯誤解析與治具圖片 URL 組裝。
 
-### 2026-06-12
+### 2026-06-09
 
-- 已將側邊欄改回淺色系，保留清楚的 active 狀態與層次，但不再使用深色 sidebar。
-- 已移除頂欄與左上角四個分頁切換按鈕。
-- 已把已登入狀態、客戶選擇、時間、登出整合到側邊欄。
-- 已把新增客戶功能移到 `資料維護` 分頁。
-- 已把收退料操作區的手動表單移除，只保留批次貼上匯入。
-- 已在批次貼上匯入加入自由輸入的單號欄位，並套用到整批收料 / 退料交易。
-- 已把收退料總檢視的下載範本與匯入 CSV 入口移除。
-- 已把收退料總檢視簡化成單一主查詢頁，移除 `序號查詢` 模式。
-- 已把收退料總檢視的篩選與表格文案統一改成 `識別碼`。
-- 已把 `manage_type` 從治具主檔維護與查詢展示中移除。
-- 已把 `datecode / serial_number` 對外概念統一為單一 `identifier`。
-- 已更新前端 API、型別與頁面，只收發 `identifier`，不再使用 `manage_type` / `serial_number`。
-- 已更新後端 inventory / master / search 的 schema、router、service、repository，對外不再暴露 `manage_type` / `serial_number`。
-- 已於後續 migration 正式移除 `manage_type / datecode / serial_number` 與 `fixture_serials`，資料庫也改成單一 `identifier`。
-- 已重構查詢頁為 `治具 / 機種` 兩種模式，並加入固定統計方格。
-- 已讓查詢頁改為面板內滾動，避免內容超出頁面高度。
-- 已依圖片移除查詢頁右側重複的治具名稱卡片。
-- 已驗證 `npm run build` 與 `python -m compileall backend/app` 通過。
-
-### 2026-06-15
-
-- 已將 production requirement 的正式資料模型定案為 `model_id + station_id + fixture_id`。
-- 已將 production 展開與計算邏輯定案為：
-  - `機種 -> 機種已綁定站點 -> 該機種該站點的治具需求`
-- 已修正 production 頁站點選擇邏輯，切換機種後不再保留無效 `station_id`。
-- 已修正 production 頁 requirement 清單過濾，改為 `model_id + station_id`，不再只看 `station_id`。
-- 已修正查詢頁治具關聯機種與站點詳細，不再從站點反推機種。
-- 已將 production capacity UI 改為單站獨立語意，不再展示誤導性的「目前開站 / 剩餘開站」資訊。
-- 已將 `current_open_station_count` 從 backend schema / service、frontend types / page props / UI 中正式移除。
-- 已修正 Alembic `0004` revision id 過長造成的 MySQL `alembic_version.version_num` 寫入失敗問題。
-- 已將 migration revision 正式收斂為 `0004_model_station_scope`，並補上 legacy revision alias normalization。
-- 已驗證 docker compose 下的 API 與 Web 可正常重建與啟動。
-- 已修正批次收退料自定義單號不生效問題，後端現在會保留使用者輸入的 `transaction_no`。
-- 已新增 migration 測試與 production API / service 測試，特別覆蓋「同站點多機種共用」情境。
-- 已移除 warehouse 相關資料表，正式收斂為 `fixtures.storage_location` 單一文字儲位策略。
-- 已新增 Alembic `0006_identifier_cleanup`，將 `material_transaction_items` 正式改為 `identifier` 欄位，並移除 legacy `manage_type / datecode / serial_number` 與 `fixture_serials`。
-- 已將客戶可見範圍維護入口從使用者分頁移到客戶分頁，改由 `assigned_user_ids` 管理 `user_customers`。
-- 已將治具負責人收斂為客戶已指派使用者，並移除前端負責人分頁與對應 API 使用。
-- 已新增 Alembic `0007_user_customer_scope`，將一般使用者的客戶可見範圍正式落到 `user_customers`。
-- 已新增 Alembic `0008_fixture_responsible_user`，在 `fixtures` 補上 `responsible_user_id`。
-- 已新增 Alembic `0009_remove_owners_and_scope_fixture_code`，移除 `owners` 並將治具代碼唯一鍵收斂為 `(customer_id, code)`。
-
-### 2026-06-20
-
-- 已修正首頁左側側邊欄右側的白邊問題，收斂 scrollbar 預留空間與滾動區背景，避免主內容區左側出現視覺縫隙。
-- 已將前端共用日期格式化工具統一為只顯示 `年月日`，不再顯示時分秒。
-- 已將首頁側邊欄顯示文案由 `時間` 調整為 `日期`，並只呈現當日日期。
-- 已將 `收退料總檢視`、`資料維護`、`查詢頁`、`產能頁` 中所有建立/更新/交易日期顯示統一改為 `年月日`。
-- 已將後端 API 的 `datetime` 回應序列化統一收斂為 `YYYY-MM-DD`，避免前端再收到帶時分秒的日期字串。
-- 已將收退料 CSV 匯出的 `occurred_at` 與範本日期格式統一改為 `YYYY-MM-DD`。
-- 已將收退料建立交易與 CSV 匯入流程收斂為「只記錄日期」：即使輸入帶時分秒，也會在寫入前正規化為當日零點。
-- 已補齊 `資料維護` 頁的停用資料恢復流程，`治具 / 機種 / 站點 / 使用者` 現在都可從停用狀態恢復使用。
-- 已讓 `資料維護` 頁的狀態篩選一致套用到 `治具 / 機種 / 站點 / 使用者` 清單，便於找到停用資料後重新啟用。
-- 已將 `資料維護` 頁底部動作按鈕改為依當前狀態動態顯示 `停用 / 恢復使用`，不再只有單向停用途徑。
+- 已將前一次 review 的改善項目整理進 `Review / Hardening Backlog`。
+- 已完成密碼雜湊升級為 PBKDF2，並保留舊 sha256 密碼相容性。
+- 已補上治具 code lookup 的 customer scope，降低跨客戶資料污染風險。
+- 已將治具列表與匯出改為純讀取，避免 GET request 產生副作用。
+- 已將 CSV 匯入調整為批次原子流程，避免部分成功、部分失敗。
+- 已修正前端今日統計的本地日期判定，並提高取樣筆數。
+- 已補上 `.gitignore` 對前端生成檔與 build 產物的忽略規則。
+- 已驗證 `python -m compileall backend/app` 與 `npm run build` 通過。
+- 已依圖片要求調整收退料操作區，移除管理型態欄位，並將來源預設改為客供。
+- 已將收退料單筆表單改成預設收起，需時再手動展開填寫。
+- 已依最新圖片進一步移除治具詳細資料中的管理類型欄位，並把收退料單筆輸入的可見 `Datecode / 序號` 標籤隱藏。
+- 已為 `Fixture Requirement` 與 `Model-Station Mapping` 補上編輯功能，且編輯按鈕放在刪除前。
+- 已將後續可做的 UI / 架構優化整理成 `P0 / P1 / P2` 三層優先級待辦。
+- 已將前端 typecheck 改為 no-emit，避免 `vue-tsc` 再把 `.js` / `.map` 產物寫回 `frontend/src`。
+- 已補上 backend service 的 unittest，覆蓋 `auth`、`production`、`inventory` 的核心流程。
+- 已把 `auth` 的資料庫依賴改成 lazy import，讓 service 測試不再被 MySQL driver 綁死。
+- 已正式把啟動流程收斂到 Alembic：startup 只做 `upgrade head`，並新增 `0002_schema_backfill` 作為 legacy DB 的 backfill migration。

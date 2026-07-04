@@ -112,8 +112,10 @@ components/
 │  ├─ FixtureEditForm.vue
 │  └─ ModelEditForm.vue
 ├─ inventory/
-│  └─ BatchImportPanel.vue
+│  ├─ BatchImportPanel.vue
+│  └─ InventoryExportPanel.vue
 └─ common/
+   ├─ GuidedTour.vue
    └─ InlineSpinner.vue
 ```
 
@@ -121,15 +123,17 @@ Application shell notes:
 
 - Login / guest entry is rendered in the root app shell before route content
 - `/inventory` remains the operation-focused receipt/return page
-- `/inventory/overview` remains a full-page route, but its primary entry is moving under the top-bar `更多功能` menu
+- `/inventory/overview` remains a full-page route, and its primary entry is the top-bar `更多功能` menu
 - guest users do not see `資料維護`, and router guard blocks direct `/master` access
-- the current shell is being migrated from a left sidebar to a top bar
-- the top bar will surface login state, customer switch, today receipt/return totals, and low-stock count
-- the top bar adds a primary `收/退料` action that opens a global batch-import modal
-- the top bar adds a `更多功能` menu with `收退料總檢視` / `資料維護` / `產能管理`
+- the current shell is a top bar rather than a left sidebar
+- the top bar surfaces login state, customer switch, today receipt/return totals, and low-stock count
+- the top bar provides primary `收/退料` and `收退料資訊匯出` actions that open global modals
+- the top bar provides a `更多功能` menu with `收退料總檢視` / `資料維護` / `產能管理`
 - clicking the logo returns to `/search`
 - `MasterPage` and `ProductionPage` each provide a local `返回搜尋` action
 - mobile layout keeps a persistent hamburger trigger plus current customer name, with non-essential controls collapsed into the menu
+- the root shell now owns the first-login onboarding flow and reuses `data-tour` anchors rendered across multiple pages
+- onboarding state is stored in lightweight reactive app state and uses route-aware step syncing
 
 ---
 
@@ -190,6 +194,7 @@ Includes:
 - Inventory query
 - Transaction history
 - Export
+- Report export (`xlsx` / `txt`) and preview
 - Stock summary
 - Batch paste import for receipt/return
 - On-the-fly fixture creation from pasted rows
@@ -215,8 +220,10 @@ Current layout direction for inventory entry points:
 
 - `/inventory` keeps the full operation workspace route
 - the global top-bar `收/退料` button opens a modal that exposes only the shared batch-import flow
+- the global top-bar `收退料資訊匯出` button opens a modal that exposes report preview and export options
 - the global modal intentionally excludes stock overview, low-stock panel, and recent-transaction panels
 - after a successful modal submission, the input is cleared but the modal stays open for consecutive batches
+- tutorial mode can run the batch-import UI without writing official inventory transactions, for onboarding use only
 
 Batch paste import accepts rows in either of these practical formats:
 

@@ -3,15 +3,26 @@ import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 
 import { api } from "@/api";
+import {
+  authSession,
+  customers,
+  onboardingActive,
+  onboardingSandboxMode,
+  onboardingStepIndex,
+  resetSession,
+  selectedCustomerId
+} from "@/appState";
+import GuidedTour from "@/components/common/GuidedTour.vue";
 import BatchImportPanel from "@/components/inventory/BatchImportPanel.vue";
 import InventoryExportPanel from "@/components/inventory/InventoryExportPanel.vue";
-import { authSession, customers, resetSession, selectedCustomerId } from "@/appState";
+import { onboardingSteps } from "@/onboarding";
 import { dismissToast, pushToast, toasts } from "@/toastState";
 import type { MaterialTransaction } from "@/types";
 import { formatLocalDateKey as formatDateKey } from "@/utils/date";
 
 const SESSION_KEY = "jig-record-session";
 const CUSTOMER_KEY = "jig-record-customer-id";
+const ONBOARDING_KEY = "jig-record-onboarding-seen";
 
 const route = useRoute();
 const router = useRouter();
@@ -31,6 +42,7 @@ const currentCustomerId = computed(() => selectedCustomerId.value ?? undefined);
 const selectedCustomer = computed(() => customers.value.find((row) => row.id === selectedCustomerId.value) ?? null);
 const canEnterMaster = computed(() => authSession.value?.role !== "guest");
 const today = computed(() => formatDateKey(new Date()));
+const currentOnboardingStep = computed(() => onboardingSteps[onboardingStepIndex.value] ?? null);
 const dateTimeFormatter = new Intl.DateTimeFormat("zh-TW", {
   month: "2-digit",
   day: "2-digit",
@@ -49,6 +61,83 @@ async function loadCustomers(): Promise<void> {
   if (!selectedCustomerId.value && customers.value.length > 0) {
     selectedCustomerId.value = customers.value[0].id;
   }
+}
+
+function resolveOnboardingCustomerId(): number | null {
+  if (selectedCustomerId.value) {
+    return selectedCustomerId.value;
+  }
+  return customers.value[0]?.id ?? null;
+}
+
+async function runFirstLoginOnboarding(): Promise<void> {
+  const hasSeenOnboarding = sessionStorage.getItem(ONBOARDING_KEY) === "1";
+  if (hasSeenOnboarding) {
+    return;
+  }
+  const onboardingCustomerId = resolveOnboardingCustomerId();
+  if (onboardingCustomerId === null) {
+    pushToast("目前沒有可用客戶，無法自動啟動新手導覽。", "warning");
+    return;
+  }
+  selectedCustomerId.value = onboardingCustomerId;
+  onboardingStepIndex.value = 0;
+  onboardingActive.value = true;
+  sessionStorage.setItem(ONBOARDING_KEY, "1");
+  await router.push({ path: onboardingSteps[0].route, query: { tour: "1" } });
+}
+
+function stopOnboarding(): void {
+  onboardingActive.value = false;
+  onboardingSandboxMode.value = false;
+  batchModalOpen.value = false;
+  exportModalOpen.value = false;
+  moreMenuOpen.value = false;
+  if (route.query.tour === "1") {
+    void router.replace({ path: route.path, query: {} });
+  }
+}
+
+async function syncOnboardingRoute(): Promise<void> {
+  const step = currentOnboardingStep.value;
+  if (!onboardingActive.value || !step) {
+    onboardingSandboxMode.value = false;
+    batchModalOpen.value = false;
+    exportModalOpen.value = false;
+    moreMenuOpen.value = false;
+    return;
+  }
+  onboardingSandboxMode.value = step.id === "inventory-sandbox";
+  batchModalOpen.value = step.id.startsWith("inventory-");
+  exportModalOpen.value = step.id.startsWith("export-");
+  moreMenuOpen.value = ["menu-trigger", "overview-entry", "master-entry", "production-entry"].includes(step.id);
+  if (route.path !== step.route) {
+    await router.push({ path: step.route, query: { ...route.query, tour: "1" } });
+    return;
+  }
+  if (route.query.tour !== "1") {
+    await router.replace({ path: step.route, query: { ...route.query, tour: "1" } });
+  }
+}
+
+async function nextOnboardingStep(): Promise<void> {
+  if (onboardingStepIndex.value >= onboardingSteps.length - 1) {
+    stopOnboarding();
+    if (route.query.tour === "1") {
+      await router.replace({ path: route.path, query: {} });
+    }
+    return;
+  }
+  onboardingStepIndex.value += 1;
+  await syncOnboardingRoute();
+}
+
+async function prevOnboardingStep(): Promise<void> {
+  if (onboardingStepIndex.value <= 0) {
+    return;
+  }
+  onboardingStepIndex.value -= 1;
+  await syncOnboardingRoute();
 }
 
 async function loadTopbarStats(): Promise<void> {
@@ -125,6 +214,7 @@ async function login(): Promise<void> {
     });
     await loadCustomers();
     await loadTopbarStats();
+    await runFirstLoginOnboarding();
     pushToast(`已登入：${authSession.value.display_name}`, "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "登入失敗", "error");
@@ -202,6 +292,13 @@ watch(selectedCustomerId, async (value) => {
 });
 
 watch(
+  () => [onboardingActive.value, onboardingStepIndex.value],
+  async () => {
+    await syncOnboardingRoute();
+  }
+);
+
+watch(
   () => route.fullPath,
   () => {
     moreMenuOpen.value = false;
@@ -262,6 +359,14 @@ onMounted(async () => {
       </template>
 
       <template v-else>
+        <GuidedTour
+          :open="onboardingActive"
+          :steps="onboardingSteps"
+          :current-index="onboardingStepIndex"
+          @close="stopOnboarding"
+          @next="nextOnboardingStep"
+          @prev="prevOnboardingStep"
+        />
         <header class="topbar">
           <div class="topbar-main">
             <button class="outline-btn mobile-trigger" type="button" @click="mobileMenuOpen = !mobileMenuOpen">選單</button>
@@ -276,8 +381,8 @@ onMounted(async () => {
           </div>
 
           <div class="topbar-primary-action">
-            <button class="primary-btn action-btn receipt-btn desktop-receipt-btn" type="button" @click="batchModalOpen = true">治具收/退料</button>
-            <button class="primary-btn action-btn receipt-btn desktop-receipt-btn" type="button" @click="openInventoryExport">收退料資訊匯出</button>
+            <button class="primary-btn action-btn receipt-btn desktop-receipt-btn" data-tour="inventory-entry-trigger" type="button" @click="batchModalOpen = true">治具收/退料</button>
+            <button class="primary-btn action-btn receipt-btn desktop-receipt-btn" data-tour="inventory-export-entry-trigger" type="button" @click="openInventoryExport">收退料資訊匯出</button>
           </div>
 
           <div class="topbar-actions">
@@ -335,19 +440,20 @@ onMounted(async () => {
               </div>
             </div>
 
-            <label class="customer-picker">
+            <label class="customer-picker" data-tour="global-customer-picker">
               <select v-model.number="selectedCustomerId">
                 <option v-for="customer in customers" :key="customer.id" :value="customer.id">{{ customer.code }} - {{ customer.name }}</option>
               </select>
             </label>
 
             <div class="more-menu">
-              <button class="outline-btn action-btn" type="button" :aria-expanded="moreMenuOpen" @click="moreMenuOpen = !moreMenuOpen">更多功能</button>
+              <button class="outline-btn action-btn" data-tour="home-more-menu-trigger" type="button" :aria-expanded="moreMenuOpen" @click="moreMenuOpen = !moreMenuOpen">更多功能</button>
               <div v-if="moreMenuOpen" class="more-menu-panel">
                 <button
                   v-for="entry in menuEntries"
                   :key="entry.to"
                   class="more-menu-item"
+                  :data-tour="entry.to === '/inventory/overview' ? 'home-overview-entry' : entry.to === '/master' ? 'home-master-entry' : entry.to === '/production' ? 'home-production-entry' : undefined"
                   :disabled="entry.disabled"
                   type="button"
                   @click="openMenuRoute(entry.to, entry.disabled)"
@@ -401,7 +507,7 @@ onMounted(async () => {
 
         <teleport to="body">
           <div v-if="batchModalOpen" class="modal-backdrop" @click.self="batchModalOpen = false">
-            <div class="modal-card">
+            <div class="modal-card" data-tour="inventory-batch-panel">
               <div class="modal-head">
                 <div>
                   <span class="modal-eyebrow">Global Action</span>
@@ -419,7 +525,7 @@ onMounted(async () => {
             </div>
           </div>
           <div v-if="exportModalOpen" class="modal-backdrop" @click.self="exportModalOpen = false">
-            <div class="modal-card export-modal-card">
+            <div class="modal-card export-modal-card" data-tour="inventory-export-panel">
               <div class="modal-head">
                 <div>
                   <span class="modal-eyebrow">Global Action</span>

@@ -16,7 +16,7 @@
 
 ### 前端
 
-- 改登入、訪客入口、側邊欄、customer picker、today summary、最近異動
+- 改登入、訪客入口、topbar shell、customer picker、today summary、全域收退料 modal、收退料資訊匯出
   - `frontend/src/App.vue`
 
 - 改查詢頁
@@ -40,6 +40,10 @@
 
 - 改全域狀態
   - `frontend/src/appState.ts`
+
+- 改新手導覽步驟 / 流程
+  - `frontend/src/onboarding.ts`
+  - `frontend/src/components/common/GuidedTour.vue`
 
 - 改全域 toast
   - `frontend/src/toastState.ts`
@@ -108,9 +112,15 @@
   - 再同步 `frontend/src/types.ts`、`frontend/src/api.ts`、對應 page
 
 - 改批次貼上匯入
-  - inventory：`frontend/src/pages/InventoryPage.vue`
+  - inventory：`frontend/src/components/inventory/BatchImportPanel.vue`
   - production：`frontend/src/pages/ProductionPage.vue`
   - 如需新主檔建立，還要同步 `frontend/src/api.ts` 與 `backend/app/routers/master.py`
+
+- 改收退料報表匯出 / preview
+  - `frontend/src/components/inventory/InventoryExportPanel.vue`
+  - `frontend/src/api.ts`
+  - `backend/app/routers/inventory.py`
+  - `backend/app/services/inventory_service.py`
 
 ## 編輯原則
 

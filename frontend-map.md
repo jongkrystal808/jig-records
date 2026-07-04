@@ -19,18 +19,23 @@
   - `/inventory/overview` -> `InventoryPage.vue`
   - `/master` -> `MasterPage.vue`
   - `/production` -> `ProductionPage.vue`
+  - `/production/mapping` -> `ProductionPage.vue`
+  - `/production/requirements` -> `ProductionPage.vue`
   - guest 進 `/master` 會被導回 `/search`
 
 - `frontend/src/App.vue`
   - 全域 shell
   - 登入畫面 / 訪客入口
-  - 左側導覽
+  - 頂部導覽列
   - customer picker
-  - 全域治具搜尋
-  - today summary
+  - 今日收料 / 退料 / 低水位統計
+  - 全域 `收/退料` modal
+  - 全域 `收退料資訊匯出` modal
+  - `更多功能` 選單
+  - 首次登入自動新手導覽
   - 全域 toast 顯示
-  - session / customer / 全域治具搜尋的 sessionStorage 持久化
-  - 手機版側欄 overlay 開關
+  - session / customer 的 sessionStorage 持久化
+  - 手機版選單 overlay 開關
 
 - `frontend/src/api.ts`
   - 前端所有 API 呼叫集中處
@@ -41,6 +46,11 @@
 - `frontend/src/appState.ts`
   - 全域登入 session
   - customer 選擇
+  - onboarding 狀態
+
+- `frontend/src/onboarding.ts`
+  - 新手導覽步驟定義
+  - 每一步對應 route / `data-tour` target / 文案 / 方向
 
 - `frontend/src/toastState.ts`
   - 全域 toast 狀態
@@ -50,14 +60,43 @@
 
 ## 共用元件 / 工具
 
+- `frontend/src/components/common/GuidedTour.vue`
+  - 全域導覽浮層
+  - spotlight 目標高亮
+  - route-aware step 流程
+
+- `frontend/src/components/common/InlineSpinner.vue`
+  - 小型 inline loading indicator
+
 - `frontend/src/components/UiFormActions.vue`
   - 新增 / 編輯 / 取消 / 停用動作列
 
 - `frontend/src/components/UiStatusPill.vue`
   - 主資料 / 狀態標籤顯示
 
+- `frontend/src/components/inventory/BatchImportPanel.vue`
+  - 共用批次貼上匯入元件
+  - `/inventory` 與全域 modal 共用
+  - 支援 tutorial mode 教學試跑
+
+- `frontend/src/components/inventory/InventoryExportPanel.vue`
+  - 收退料報表匯出面板
+  - 匯出前 preview / 報表類型 / 格式選擇
+
 - `frontend/src/components/production/ProductionCapacityPanel.vue`
   - 產能視覺化區塊
+
+- `frontend/src/components/search/FixtureInfoPanel.vue`
+  - 治具查詢展示面板
+
+- `frontend/src/components/search/ModelInfoPanel.vue`
+  - 機種查詢展示面板
+
+- `frontend/src/components/search/FixtureEditForm.vue`
+  - 搜尋頁中的治具編輯表單
+
+- `frontend/src/components/search/ModelEditForm.vue`
+  - 搜尋頁中的機種編輯表單
 
 - `frontend/src/utils/date.ts`
   - 本地日期 key / 顯示輔助
@@ -85,10 +124,24 @@
   - `api.listAlerts`
   - `api.listTransactions`
 
+- 全域收退料 modal
+  - 內部共用 `BatchImportPanel.vue`
+
+- 全域收退料匯出 modal
+  - 內部共用 `InventoryExportPanel.vue`
+
 ### 改全域畫面時去哪裡
 
-- 改登入卡片 / 左側導覽 / customer picker / 全域治具搜尋 / today summary
+- 改頂部導覽、登入卡片、customer picker、全域 modal、更多功能選單
   - `frontend/src/App.vue`
+
+- 改新手導覽步驟、導覽文案、目標 selector
+  - `frontend/src/onboarding.ts`
+  - `frontend/src/components/common/GuidedTour.vue`
+  - 各頁面上的 `data-tour` 標記
+
+- 改全域共享狀態
+  - `frontend/src/appState.ts`
 
 - 改全域 toast 樣式
   - `frontend/src/App.vue`
@@ -108,6 +161,9 @@
 - 識別碼庫存摘要
 - transaction context
 - 內容區內滾動
+- 首頁固定「開始新手教學」入口
+- 相近編號提示排序
+- 區塊 chip 顯示切換與 localStorage 記憶
 
 ### 目前未落地
 
@@ -131,9 +187,6 @@
 - model query
   - `api.getModelQuery`
 
-- 常用機種快捷按鈕
-  - `api.getModelQuery`
-
 - fixture 圖片
   - `fixtureImageUrlByCode`
   - `fetchFixtureImageObjectUrl`
@@ -141,11 +194,15 @@
 
 ### 改查詢頁時去哪裡
 
-- 改模式切換 / 篩選區 / 查詢按鈕
+- 改模式切換 / 關鍵字輸入 / chip 區 / onboarding 入口
+  - `frontend/src/pages/SearchWorkspacePage.vue`
+
+- 改相近編號提示排序規則
   - `frontend/src/pages/SearchWorkspacePage.vue`
 
 - 改 fixture detail / model detail / transaction 表格
   - `frontend/src/pages/SearchWorkspacePage.vue`
+  - `frontend/src/components/search/*.vue`
 
 - 改 fixture 圖片 URL 或載入策略
   - `frontend/src/api.ts`
@@ -159,8 +216,7 @@
 
 - `receipt` / `return` segmented control
 - 操作頁與 overview 頁共用同一支 page
-- 批次貼上匯入 modal
-- 批次匯入 CSV 範本下載 / CSV 匯入
+- 內嵌共用 `BatchImportPanel`
 - 新治具即時建立
 - 相似治具確認 / 替換
 - 庫存總覽
@@ -168,6 +224,7 @@
 - 最近收退料紀錄
 - 收退料總檢視
 - overview 交易 CSV 匯出
+- onboarding 教學模式下的 sandbox 試跑
 
 ### 路由模式
 
@@ -196,23 +253,24 @@
 - overview 匯出 CSV
   - `api.exportTransactionsCsv`
 
-- 批次匯入 CSV 範本下載
-  - `api.downloadTransactionTemplateCsv`
-
-- 批次匯入 CSV 匯入
-  - `api.importTransactionsCsv`
-
 - 批次貼上匯入內的新治具建立
   - `api.createFixture`
 
 ### 改收退料頁時去哪裡
 
-- 改批次貼上解析規則 / 相似治具比對 / 匯入預覽表
+- 改批次貼上解析規則 / 相似治具比對 / 匯入預覽表 / tutorial mode
+  - `frontend/src/components/inventory/BatchImportPanel.vue`
+
+- 改 `/inventory` 與 `/inventory/overview` 路由切換、總覽區塊、頁內篩選欄位
   - `frontend/src/pages/InventoryPage.vue`
 
 - 改交易篩選欄位或 payload
   - `frontend/src/pages/InventoryPage.vue`
   - `frontend/src/types.ts`
+  - `frontend/src/api.ts`
+
+- 改全域收退料匯出互動
+  - `frontend/src/components/inventory/InventoryExportPanel.vue`
   - `frontend/src/api.ts`
 
 - 改 `identifier` / `ownership_type` 顯示文案
@@ -232,6 +290,7 @@
 - customer 維護 `assigned_user_ids`
 - user 建立 / 更新 / 停用 / 重設密碼
 - fixture / model / station CSV 匯入匯出 / 範本下載
+- 從資料維護頁重新啟動新手導覽
 
 ### 頁面初始化
 
@@ -284,11 +343,11 @@
 
 - `guest` 不可進這頁
 - `user` 可維護 fixture / model / station
-- `customer` / `user` tab 實際上是 admin 能力
+- customer / user tab 實際上是 admin 能力
 
 ### 改資料維護頁時去哪裡
 
-- 改 tab、列表欄位、詳細編輯表單
+- 改 tab、列表欄位、詳細編輯表單、導覽啟動按鈕
   - `frontend/src/pages/MasterPage.vue`
 
 - 改主資料型別
@@ -369,7 +428,10 @@
   - API path / query string / payload / response parsing
 
 - `frontend/src/appState.ts`
-  - customer 切換、登入 session 共享狀態
+  - customer 切換、登入 session、onboarding 共享狀態
+
+- `frontend/src/onboarding.ts`
+  - 導覽步驟定義與跨頁流程
 
 - `frontend/src/toastState.ts`
   - 成功 / 失敗提示
@@ -386,7 +448,9 @@
 ## 現況提醒
 
 - `api.listAuditLogs` 仍存在於 `frontend/src/api.ts`，但目前 `App.vue` 沒有渲染最近異動區塊。
-- 側欄目前沒有 desktop compact / mini mode，只有 mobile overlay 開關。
+- shell 目前沒有 desktop compact / mini mode，只有 mobile overlay 開關。
+- 搜尋頁目前沒有查詢結果分頁，也沒有可收合篩選區。
+- 教學模式屬於前端 sandbox 流程，不會呼叫額外的 backend tutorial API。
 
 ## 不要改的前端檔案
 
@@ -395,4 +459,5 @@
 - `frontend/src/*.js.map`
 - `frontend/src/**/*.js.map`
 - `frontend/tsconfig.*.tsbuildinfo`
+- `frontend/dist`
 - `__pycache__`
