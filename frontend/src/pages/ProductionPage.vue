@@ -4,11 +4,13 @@ import { useRoute, useRouter } from "vue-router";
 
 import { api } from "@/api";
 import { globalFixtureKeyword, selectedCustomerId } from "@/appState";
+import ProductionBatchImportModal from "@/components/production/ProductionBatchImportModal.vue";
+import ProductionDetailSection from "@/components/production/ProductionDetailSection.vue";
+import ProductionHeaderSection from "@/components/production/ProductionHeaderSection.vue";
 import { pushToast } from "@/toastState";
 import type { Fixture, FixtureRequirementListItem, MachineModel, ModelQuery, ModelQueryStationRequirement, ModelStation, Station, StationCapacity } from "@/types";
 import { formatLocalDate } from "@/utils/date";
 import { matchesFixtureKeywords, parseFixtureKeywords } from "@/utils/fixtureSearch";
-import UiFormActions from "@/components/UiFormActions.vue";
 import ProductionCapacityPanel from "@/components/production/ProductionCapacityPanel.vue";
 
 const route = useRoute();
@@ -39,8 +41,6 @@ const loading = ref(false);
 const loadedAt = ref("");
 const updatedAt = ref("");
 const bottleneckHighlightTrigger = ref(0);
-const mappingImportInput = ref<HTMLInputElement | null>(null);
-const requirementImportInput = ref<HTMLInputElement | null>(null);
 const editingMappingId = ref<number | null>(null);
 const editingRequirementId = ref<number | null>(null);
 const showMappingBatchModal = ref(false);
@@ -171,6 +171,7 @@ const detailMode = computed<"overview" | "mapping" | "requirements">(() => {
   return "overview";
 });
 const isMainOverview = computed(() => detailMode.value === "overview");
+const detailPanelMode = computed<"mapping" | "requirements">(() => (detailMode.value === "requirements" ? "requirements" : "mapping"));
 const mappingSummaryText = computed(() => {
   const currentModelCode = selectedModel.value?.code || "-";
   return `目前機種：${currentModelCode} / ${selectedModelStationRows.value.length} 筆站點`;
@@ -311,6 +312,74 @@ function selectFixtureSuggestion(code: string): void {
   fixtureCodeInput.value = code;
   syncFixtureSelection();
   openAutocompleteKey.value = null;
+}
+
+function updateModelId(value: number | null): void {
+  modelId.value = value;
+}
+
+function openMappingModelAutocomplete(): void {
+  openAutocomplete("mapping-model", models.value, mappingModelCodeInput.value);
+}
+
+function handleMappingModelInput(value: string): void {
+  mappingModelCodeInput.value = value;
+  syncMappingModelSelection();
+  showAutocompleteOnInput("mapping-model");
+}
+
+function blurMappingModelAutocomplete(): void {
+  syncMappingModelSelection();
+  closeAutocompleteSoon();
+}
+
+function openMappingStationAutocomplete(): void {
+  openAutocomplete("mapping-station", stations.value, mappingStationCodeInput.value);
+}
+
+function handleMappingStationInput(value: string): void {
+  mappingStationCodeInput.value = value;
+  syncMappingStationSelection();
+  showAutocompleteOnInput("mapping-station");
+}
+
+function blurMappingStationAutocomplete(): void {
+  syncMappingStationSelection();
+  closeAutocompleteSoon();
+}
+
+function openRequirementStationAutocomplete(): void {
+  openAutocomplete("requirement-station", availableRequirementStations.value, requirementStationCodeInput.value);
+}
+
+function handleRequirementStationInput(value: string): void {
+  requirementStationCodeInput.value = value;
+  syncRequirementStationInput();
+  showAutocompleteOnInput("requirement-station");
+}
+
+function blurRequirementStationAutocomplete(): void {
+  syncRequirementStationInput();
+  closeAutocompleteSoon();
+}
+
+function openFixtureAutocomplete(): void {
+  openAutocomplete("fixture", fixtures.value, fixtureCodeInput.value);
+}
+
+function handleFixtureInput(value: string): void {
+  fixtureCodeInput.value = value;
+  syncFixtureSelection();
+  showAutocompleteOnInput("fixture");
+}
+
+function blurFixtureAutocomplete(): void {
+  syncFixtureSelection();
+  closeAutocompleteSoon();
+}
+
+function updateRequiredQty(value: number): void {
+  requiredQty.value = value;
 }
 
 function openMappingPage(): void {
@@ -1050,10 +1119,6 @@ async function downloadModelStationTemplate(): Promise<void> {
   }
 }
 
-function triggerModelStationImport(): void {
-  mappingImportInput.value?.click();
-}
-
 async function submitMappingBatchImport(): Promise<void> {
   if (!selectedCustomerId.value) {
     pushToast("請先選擇客戶。", "warning");
@@ -1089,9 +1154,9 @@ async function submitMappingBatchImport(): Promise<void> {
   }
 }
 
-async function importModelStationsCsv(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+async function importModelStationsCsv(source: Event | File): Promise<void> {
+  const input = source instanceof File ? null : (source.target as HTMLInputElement | null);
+  const file = source instanceof File ? source : (input?.files?.[0] ?? null);
   if (!file) return;
   try {
     if (!selectedCustomerId.value) {
@@ -1104,7 +1169,9 @@ async function importModelStationsCsv(event: Event): Promise<void> {
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "匯入 mapping 失敗", "error");
   } finally {
-    input.value = "";
+    if (input) {
+      input.value = "";
+    }
   }
 }
 
@@ -1126,10 +1193,6 @@ async function downloadFixtureRequirementTemplate(): Promise<void> {
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "下載 requirement 範本失敗", "error");
   }
-}
-
-function triggerFixtureRequirementImport(): void {
-  requirementImportInput.value?.click();
 }
 
 async function submitRequirementBatchImport(): Promise<void> {
@@ -1176,9 +1239,9 @@ async function submitRequirementBatchImport(): Promise<void> {
   }
 }
 
-async function importFixtureRequirementsCsv(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+async function importFixtureRequirementsCsv(source: Event | File): Promise<void> {
+  const input = source instanceof File ? null : (source.target as HTMLInputElement | null);
+  const file = source instanceof File ? source : (input?.files?.[0] ?? null);
   if (!file) return;
   try {
     if (!selectedCustomerId.value) {
@@ -1192,7 +1255,9 @@ async function importFixtureRequirementsCsv(event: Event): Promise<void> {
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "匯入 requirement 失敗", "error");
   } finally {
-    input.value = "";
+    if (input) {
+      input.value = "";
+    }
   }
 }
 
@@ -1264,51 +1329,26 @@ onMounted(async () => {
 
 <template>
   <div class="production-page">
-    <div class="page-head-actions">
-      <button class="outline-btn" type="button" @click="router.push({ name: 'search' })">返回搜尋</button>
-    </div>
-    <nav class="page-tabs" data-tour="production-tabs" aria-label="生產管理檢視切換">
-      <button class="page-tab" type="button" :class="{ active: isMainOverview }" @click="closeDetailPage">
-        總覽
-      </button>
-      <button class="page-tab" type="button" :class="{ active: detailMode === 'mapping' }" @click="openMappingPage">
-        機種站點對應
-      </button>
-      <button class="page-tab" type="button" :class="{ active: detailMode === 'requirements' }" @click="openRequirementPage">
-        治具需求
-      </button>
-    </nav>
-
-    <section class="filter-row" data-tour="production-filter-row">
-      <div class="filter-group">
-        <span class="filter-row-label">目前篩選條件</span>
-        <div class="filter-fields">
-          <label class="filter-field">
-            <span>機種</span>
-            <select v-model.number="modelId" :disabled="loading || savingMapping">
-              <option v-for="model in models" :key="`summary-model-${model.id}`" :value="model.id">{{ model.code }}</option>
-            </select>
-          </label>
-        </div>
-        <p class="filter-row-meta">站點請直接從下方總覽表點選。建立時間 {{ loadedAt || "-" }}　更新時間 {{ updatedAt || "-" }}</p>
-      </div>
-
-      <div class="result-group">
-        <span class="filter-row-label">目前站點結果</span>
-        <div class="result-fields">
-          <div class="result-stat" :class="{ alert: (stationCapacity?.max_open_station_count ?? 0) <= 0 }">
-            <span>最大開站數</span>
-            <strong>{{ stationCapacity?.max_open_station_count ?? 0 }}</strong>
-            <small>只開這一站時可支援的最大站數</small>
-          </div>
-          <button class="result-stat result-stat-action" type="button" :disabled="!stationCapacity?.bottleneck_fixture_code || !currentStationHasBottleneck" @click="focusBottleneckEvidence">
-            <span>{{ stationConstraintTitle }}</span>
-            <strong>{{ stationCapacity?.bottleneck_fixture_code || "-" }}</strong>
-            <small>{{ stationConstraintHint }}</small>
-          </button>
-        </div>
-      </div>
-    </section>
+    <ProductionHeaderSection
+      :models="models"
+      :model-id="modelId"
+      :loading="loading"
+      :saving-mapping="savingMapping"
+      :loaded-at="loadedAt"
+      :updated-at="updatedAt"
+      :station-capacity="stationCapacity"
+      :current-station-has-bottleneck="currentStationHasBottleneck"
+      :station-constraint-title="stationConstraintTitle"
+      :station-constraint-hint="stationConstraintHint"
+      :is-main-overview="isMainOverview"
+      :detail-mode="detailMode"
+      @back="router.push({ name: 'search' })"
+      @open-overview="closeDetailPage"
+      @open-mapping="openMappingPage"
+      @open-requirements="openRequirementPage"
+      @focus-bottleneck="focusBottleneckEvidence"
+      @update:model-id="updateModelId"
+    />
 
     <section v-if="isMainOverview" class="top-grid">
       <ProductionCapacityPanel
@@ -1328,220 +1368,82 @@ onMounted(async () => {
       />
     </section>
 
-    <section v-else class="single-panel-layout">
-      <article v-if="detailMode === 'mapping'" class="panel detail-panel">
-        <div class="section-head">
-          <h2>Model-Station Mapping</h2>
-          <div class="toolbar-actions">
-            <span class="editor-state-pill" :class="{ editing: editingMappingId !== null }">
-              {{ editingMappingId === null ? "新增機種站點對應" : "編輯機種站點對應" }}
-            </span>
-            <button class="ghost-btn" type="button" :disabled="loading || savingMapping" @click="showMappingBatchModal = true">批次貼上匯入</button>
-            <input ref="mappingImportInput" type="file" accept=".csv,text/csv" class="hidden-input" @change="importModelStationsCsv" />
-          </div>
-        </div>
-        <form class="inline-form three" @submit.prevent="saveMapping">
-          <div class="autocomplete-field">
-            <input
-              v-model="mappingModelCodeInput"
-              :disabled="loading || savingMapping"
-              placeholder="輸入機種代碼"
-              autocomplete="off"
-              spellcheck="false"
-              @focus="openAutocomplete('mapping-model', models, mappingModelCodeInput)"
-              @click="openAutocomplete('mapping-model', models, mappingModelCodeInput)"
-              @input="syncMappingModelSelection(); showAutocompleteOnInput('mapping-model')"
-              @blur="syncMappingModelSelection(); closeAutocompleteSoon()"
-            />
-            <div v-if="openAutocompleteKey === 'mapping-model'" class="autocomplete-menu">
-              <button v-for="model in filteredModelSuggestions" :key="`mapping-model-${model.id}`" class="autocomplete-option" type="button" @mousedown.prevent="selectModelSuggestion(model.code)">
-                {{ model.code }}
-              </button>
-            </div>
-          </div>
-          <div class="autocomplete-field">
-            <input
-              v-model="mappingStationCodeInput"
-              :disabled="loading || savingMapping"
-              placeholder="輸入站點代碼"
-              autocomplete="off"
-              spellcheck="false"
-              @focus="openAutocomplete('mapping-station', stations, mappingStationCodeInput)"
-              @click="openAutocomplete('mapping-station', stations, mappingStationCodeInput)"
-              @input="syncMappingStationSelection(); showAutocompleteOnInput('mapping-station')"
-              @blur="syncMappingStationSelection(); closeAutocompleteSoon()"
-            />
-            <div v-if="openAutocompleteKey === 'mapping-station'" class="autocomplete-menu">
-              <button v-for="station in filteredStationSuggestions" :key="`mapping-station-${station.id}`" class="autocomplete-option" type="button" @mousedown.prevent="selectMappingStationSuggestion(station.code)">
-                {{ station.code }}
-              </button>
-            </div>
-          </div>
-          <UiFormActions
-            class="form-actions-full"
-            :editing="editingMappingId !== null"
-            :saving="savingMapping"
-            submit-label="新增 / 更新"
-            saving-label="處理中..."
-            cancel-label="取消"
-            :show-delete="false"
-            :show-state="false"
-            @cancel="resetMappingEditor"
-          />
-        </form>
-        <div class="sub-head">
-          <h3>目前機種：{{ selectedModel?.code || "-" }}</h3>
-          <span>{{ selectedModelStationRows.length }} 筆站點</span>
-        </div>
-        <table class="mapping-table">
-          <thead>
-            <tr>
-              <th>站點</th>
-              <th>對應機種</th>
-              <th>動作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in selectedModelStationRows" :key="item.id">
-              <td>{{ item.stationCode }}</td>
-              <td>{{ item.modelCode }}</td>
-              <td class="table-actions">
-                <button class="ghost-btn small" type="button" @click="startEditMapping(item)">編輯</button>
-                <button class="danger-btn small" type="button" @click="removeMapping(item.id)">刪除</button>
-              </td>
-            </tr>
-            <tr v-if="!loading && selectedModelStationRows.length === 0">
-              <td colspan="3" class="empty-cell">此機種尚未綁定站點。</td>
-            </tr>
-          </tbody>
-        </table>
-      </article>
+    <ProductionDetailSection
+      v-else
+      :detail-mode="detailPanelMode"
+      :loading="loading"
+      :saving-mapping="savingMapping"
+      :saving-requirement="savingRequirement"
+      :editing-mapping-id="editingMappingId"
+      :editing-requirement-id="editingRequirementId"
+      :selected-model-code="selectedModel?.code || ''"
+      :selected-station-code="selectedStationCode"
+      :selected-model-station-rows="selectedModelStationRows"
+      :selected-station-requirement-rows="selectedStationRequirementRows"
+      :requirement-needs-mapping="requirementNeedsMapping"
+      :mapping-model-code-input="mappingModelCodeInput"
+      :mapping-station-code-input="mappingStationCodeInput"
+      :requirement-station-code-input="requirementStationCodeInput"
+      :fixture-code-input="fixtureCodeInput"
+      :required-qty="requiredQty"
+      :open-autocomplete-key="openAutocompleteKey"
+      :filtered-model-suggestions="filteredModelSuggestions"
+      :filtered-station-suggestions="filteredStationSuggestions"
+      :filtered-requirement-station-suggestions="filteredRequirementStationSuggestions"
+      :filtered-fixture-suggestions="filteredFixtureSuggestions"
+      :models="models"
+      :stations="stations"
+      :available-requirement-stations="availableRequirementStations"
+      :fixtures="fixtures"
+      :on-open-mapping-batch-modal="() => (showMappingBatchModal = true)"
+      :on-open-requirement-batch-modal="() => (showRequirementBatchModal = true)"
+      :on-import-model-stations-csv="importModelStationsCsv"
+      :on-import-fixture-requirements-csv="importFixtureRequirementsCsv"
+      :on-save-mapping="saveMapping"
+      :on-reset-mapping-editor="resetMappingEditor"
+      :on-start-edit-mapping="startEditMapping"
+      :on-remove-mapping="removeMapping"
+      :on-save-requirement="saveRequirement"
+      :on-reset-requirement-editor="resetRequirementEditor"
+      :on-start-edit-requirement="startEditRequirement"
+      :on-remove-requirement="removeRequirement"
+      :on-open-mapping-page="openMappingPage"
+      :on-mapping-model-focus="openMappingModelAutocomplete"
+      :on-mapping-model-input="handleMappingModelInput"
+      :on-mapping-model-blur="blurMappingModelAutocomplete"
+      :on-select-model-suggestion="selectModelSuggestion"
+      :on-mapping-station-focus="openMappingStationAutocomplete"
+      :on-mapping-station-input="handleMappingStationInput"
+      :on-mapping-station-blur="blurMappingStationAutocomplete"
+      :on-select-mapping-station-suggestion="selectMappingStationSuggestion"
+      :on-requirement-station-focus="openRequirementStationAutocomplete"
+      :on-requirement-station-input="handleRequirementStationInput"
+      :on-requirement-station-blur="blurRequirementStationAutocomplete"
+      :on-select-requirement-station-suggestion="selectRequirementStationSuggestion"
+      :on-fixture-focus="openFixtureAutocomplete"
+      :on-fixture-input="handleFixtureInput"
+      :on-fixture-blur="blurFixtureAutocomplete"
+      :on-select-fixture-suggestion="selectFixtureSuggestion"
+      :on-required-qty-change="updateRequiredQty"
+    />
 
-      <article v-else class="panel detail-panel">
-        <div class="section-head">
-          <h2>Fixture Requirement</h2>
-          <div class="toolbar-actions">
-            <span class="editor-state-pill" :class="{ editing: editingRequirementId !== null }">
-              {{ editingRequirementId === null ? "新增治具需求" : "編輯治具需求" }}
-            </span>
-            <button class="ghost-btn" type="button" :disabled="loading || savingRequirement" @click="showRequirementBatchModal = true">批次貼上匯入</button>
-            <input ref="requirementImportInput" type="file" accept=".csv,text/csv" class="hidden-input" @change="importFixtureRequirementsCsv" />
-          </div>
-        </div>
-        <div v-if="requirementNeedsMapping" class="dependency-callout">
-          <div>
-            <strong>請先建立機種站點對應</strong>
-            <p>目前機種 {{ selectedModel?.code || "-" }} 尚未綁定任何站點。治具需求必須先依附在 Mapping 的站點上，請先完成站點對應再回來設定。</p>
-          </div>
-          <button class="primary-btn dependency-callout-btn" type="button" @click="openMappingPage">前往 Mapping</button>
-        </div>
-        <form class="inline-form four" @submit.prevent="saveRequirement">
-          <div class="autocomplete-field">
-            <input
-              v-model="requirementStationCodeInput"
-              :disabled="loading || savingRequirement || requirementNeedsMapping"
-              :placeholder="requirementNeedsMapping ? '請先建立此機種的站點對應' : '輸入站點代碼'"
-              autocomplete="off"
-              spellcheck="false"
-              @focus="openAutocomplete('requirement-station', availableRequirementStations, requirementStationCodeInput)"
-              @click="openAutocomplete('requirement-station', availableRequirementStations, requirementStationCodeInput)"
-              @input="syncRequirementStationInput(); showAutocompleteOnInput('requirement-station')"
-              @blur="syncRequirementStationInput(); closeAutocompleteSoon()"
-            />
-            <div v-if="openAutocompleteKey === 'requirement-station'" class="autocomplete-menu">
-              <button v-for="station in filteredRequirementStationSuggestions" :key="`req-station-${station.id}`" class="autocomplete-option" type="button" @mousedown.prevent="selectRequirementStationSuggestion(station.code)">
-                {{ station.code }}
-              </button>
-            </div>
-          </div>
-          <div class="autocomplete-field">
-            <input
-              v-model="fixtureCodeInput"
-              :disabled="loading || savingRequirement"
-              placeholder="輸入治具代碼"
-              autocomplete="off"
-              spellcheck="false"
-              @focus="openAutocomplete('fixture', fixtures, fixtureCodeInput)"
-              @click="openAutocomplete('fixture', fixtures, fixtureCodeInput)"
-              @input="syncFixtureSelection(); showAutocompleteOnInput('fixture')"
-              @blur="syncFixtureSelection(); closeAutocompleteSoon()"
-            />
-            <div v-if="openAutocompleteKey === 'fixture'" class="autocomplete-menu">
-              <button v-for="fixture in filteredFixtureSuggestions" :key="`req-fixture-${fixture.id}`" class="autocomplete-option" type="button" @mousedown.prevent="selectFixtureSuggestion(fixture.code)">
-                {{ fixture.code }}
-              </button>
-            </div>
-          </div>
-          <input v-model.number="requiredQty" type="number" min="1" :disabled="loading || savingRequirement" />
-          <UiFormActions
-            class="form-actions-full"
-            :editing="editingRequirementId !== null"
-            :saving="savingRequirement"
-            submit-label="儲存 / 更新"
-            saving-label="儲存中..."
-            cancel-label="取消"
-            :show-delete="false"
-            :show-state="false"
-            @cancel="resetRequirementEditor"
-          />
-        </form>
-        <div class="sub-head">
-          <h3>目前站點：{{ selectedStation?.code || "-" }}</h3>
-          <span>{{ selectedStationRequirementRows.length }} 筆治具</span>
-        </div>
-        <table class="mapping-table">
-          <thead>
-            <tr>
-              <th>站點</th>
-              <th>治具</th>
-              <th>治具名稱</th>
-              <th>數量</th>
-              <th>動作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in selectedStationRequirementRows" :key="item.id">
-              <td>{{ item.station_code }}</td>
-              <td>{{ item.fixture_code }}</td>
-              <td>{{ item.fixture_name }}</td>
-              <td>{{ item.required_qty }}</td>
-              <td class="table-actions">
-                <button class="ghost-btn small" type="button" @click="startEditRequirement(item)">編輯</button>
-                <button class="danger-btn small" type="button" @click="removeRequirement(item.id)">刪除</button>
-              </td>
-            </tr>
-            <tr v-if="!loading && selectedStationRequirementRows.length === 0">
-              <td colspan="5" class="empty-cell">此站點尚未設定治具需求。</td>
-            </tr>
-          </tbody>
-        </table>
-      </article>
-    </section>
-
-    <teleport to="body">
-      <div v-if="showMappingBatchModal" class="batch-modal-backdrop" @click.self="showMappingBatchModal = false">
-        <div class="batch-modal-card">
-          <div class="section-head">
-            <div>
-              <h2>批次貼上匯入 Model-Station Mapping</h2>
-              <p>每行一筆：`機種編號,站點編號`。若找不到會先比對相似資料，再讓你確認、替換或新增。</p>
-            </div>
-            <button class="ghost-btn" type="button" @click="showMappingBatchModal = false">關閉</button>
-          </div>
-          <textarea
-            v-model="mappingBatchText"
-            class="batch-paste-box"
-            placeholder="例如：&#10;EDS,EDS_T1&#10;EDS,EDS_T2"
-          ></textarea>
-          <div class="batch-modal-actions">
-            <button class="outline-btn" type="button" @click="clearMappingBatchImport">清空</button>
-            <button class="primary-btn" type="button" :disabled="savingMapping" @click="submitMappingBatchImport">
-              {{ savingMapping ? "匯入中..." : "匯入 Mapping" }}
-            </button>
-          </div>
-          <div class="batch-meta">可匯入 {{ mappingReadyRows.length }} / 待確認 {{ mappingPendingRows.length }} / 錯誤 {{ mappingErrorRows.length }}</div>
-          <div class="batch-table-wrap">
-            <table class="mapping-table batch-preview-table">
+    <ProductionBatchImportModal
+      :open="showMappingBatchModal"
+      title="批次貼上匯入 Model-Station Mapping"
+      description="每行一筆：`機種編號,站點編號`。若找不到會先比對相似資料，再讓你確認、替換或新增。"
+      :text="mappingBatchText"
+      placeholder="例如：&#10;EDS,EDS_T1&#10;EDS,EDS_T2"
+      :saving="savingMapping"
+      submit-label="匯入 Mapping"
+      :ready-count="mappingReadyRows.length"
+      :pending-count="mappingPendingRows.length"
+      :error-count="mappingErrorRows.length"
+      @close="showMappingBatchModal = false"
+      @clear="clearMappingBatchImport"
+      @submit="submitMappingBatchImport"
+      @update:text="mappingBatchText = $event"
+    >
+      <table class="mapping-table batch-preview-table">
               <thead>
                 <tr>
                   <th>行</th>
@@ -1600,36 +1502,26 @@ onMounted(async () => {
                   <td colspan="6" class="empty-cell">貼上表格後會自動解析並顯示預覽</td>
                 </tr>
               </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </teleport>
+      </table>
+    </ProductionBatchImportModal>
 
-    <teleport to="body">
-      <div v-if="showRequirementBatchModal" class="batch-modal-backdrop" @click.self="showRequirementBatchModal = false">
-        <div class="batch-modal-card">
-          <div class="section-head">
-            <div>
-              <h2>批次貼上匯入 Fixture Requirement</h2>
-              <p>每行一筆：`站點編號,治具編號,數量`。若找不到會先比對相似資料，再讓你確認、替換或新增。</p>
-            </div>
-            <button class="ghost-btn" type="button" @click="showRequirementBatchModal = false">關閉</button>
-          </div>
-          <textarea
-            v-model="requirementBatchText"
-            class="batch-paste-box"
-            placeholder="例如：&#10;EDS_T1,test001,1&#10;EDS_T1,test002,10"
-          ></textarea>
-          <div class="batch-modal-actions">
-            <button class="outline-btn" type="button" @click="clearRequirementBatchImport">清空</button>
-            <button class="primary-btn" type="button" :disabled="savingRequirement" @click="submitRequirementBatchImport">
-              {{ savingRequirement ? "匯入中..." : "匯入 Requirement" }}
-            </button>
-          </div>
-          <div class="batch-meta">可匯入 {{ requirementReadyRows.length }} / 待確認 {{ requirementPendingRows.length }} / 錯誤 {{ requirementErrorRows.length }}</div>
-          <div class="batch-table-wrap">
-            <table class="mapping-table batch-preview-table">
+    <ProductionBatchImportModal
+      :open="showRequirementBatchModal"
+      title="批次貼上匯入 Fixture Requirement"
+      description="每行一筆：`站點編號,治具編號,數量`。若找不到會先比對相似資料，再讓你確認、替換或新增。"
+      :text="requirementBatchText"
+      placeholder="例如：&#10;EDS_T1,test001,1&#10;EDS_T1,test002,10"
+      :saving="savingRequirement"
+      submit-label="匯入 Requirement"
+      :ready-count="requirementReadyRows.length"
+      :pending-count="requirementPendingRows.length"
+      :error-count="requirementErrorRows.length"
+      @close="showRequirementBatchModal = false"
+      @clear="clearRequirementBatchImport"
+      @submit="submitRequirementBatchImport"
+      @update:text="requirementBatchText = $event"
+    >
+      <table class="mapping-table batch-preview-table">
               <thead>
                 <tr>
                   <th>行</th>
@@ -1690,11 +1582,8 @@ onMounted(async () => {
                   <td colspan="7" class="empty-cell">貼上表格後會自動解析並顯示預覽</td>
                 </tr>
               </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </teleport>
+      </table>
+    </ProductionBatchImportModal>
 
   </div>
 </template>
@@ -2302,58 +2191,6 @@ input {
   color: var(--blue);
 }
 
-.batch-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  background: rgba(17, 24, 39, 0.42);
-}
-
-.batch-modal-card {
-  width: min(860px, 100%);
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: #fff;
-  box-shadow: 0 24px 60px rgba(17, 24, 39, 0.22);
-  padding: 16px;
-}
-
-.batch-paste-box {
-  width: 100%;
-  min-height: 260px;
-  margin-top: 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
-  padding: 12px;
-  font: inherit;
-  line-height: 1.6;
-  resize: vertical;
-  background: #fff;
-}
-
-.batch-modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.batch-meta {
-  margin-top: 10px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.batch-table-wrap {
-  margin-top: 10px;
-  max-height: 360px;
-  overflow: auto;
-}
-
 .batch-preview-table {
   min-width: 100%;
 }
@@ -2609,9 +2446,6 @@ input {
     flex: 1 1 120px;
   }
 
-  .batch-modal-actions {
-    flex-direction: column;
-  }
 }
 
 @media (max-width: 640px) {

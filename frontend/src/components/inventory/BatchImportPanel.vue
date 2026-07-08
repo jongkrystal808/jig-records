@@ -31,6 +31,7 @@ const props = withDefaults(defineProps<{
   description?: string;
   showModeSwitch?: boolean;
   initialMode?: ImportMode;
+  mode?: ImportMode | undefined;
   hideFrame?: boolean;
   tutorialMode?: boolean;
 }>(), {
@@ -44,9 +45,10 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   success: [];
+  "update:mode": [value: ImportMode];
 }>();
 
-const mode = ref<ImportMode>(props.initialMode);
+const internalMode = ref<ImportMode>(props.initialMode);
 const loading = ref(false);
 const saving = ref(false);
 const fixtures = ref<Fixture[]>([]);
@@ -60,6 +62,15 @@ const pendingRows = computed(() => rows.value.filter((row) => row.status === "ne
 const errorRows = computed(() => rows.value.filter((row) => row.status === "error"));
 const canSubmit = computed(() => readyRows.value.length > 0 && pendingRows.value.length === 0 && errorRows.value.length === 0 && batchTransactionNo.value.trim().length > 0);
 const currentOnboardingStepId = computed(() => onboardingSteps[onboardingStepIndex.value]?.id ?? "");
+const mode = computed<ImportMode>({
+  get: () => props.mode ?? internalMode.value,
+  set: (value) => {
+    if (props.mode === undefined) {
+      internalMode.value = value;
+    }
+    emit("update:mode", value);
+  }
+});
 const tutorialBannerText = computed(() =>
   mode.value === "receipt" ? "教學模式：本次會模擬收料，不會寫入正式資料。" : "教學模式：本次會模擬退料，不會寫入正式資料。"
 );
@@ -295,6 +306,25 @@ function clearPanel(): void {
   rows.value = [];
 }
 
+function handleBatchPasteKeydown(event: KeyboardEvent): void {
+  if (event.key !== "Tab") {
+    return;
+  }
+  const target = event.target;
+  if (!(target instanceof HTMLTextAreaElement)) {
+    return;
+  }
+  event.preventDefault();
+  const selectionStart = target.selectionStart ?? 0;
+  const selectionEnd = target.selectionEnd ?? selectionStart;
+  batchPasteText.value = `${batchPasteText.value.slice(0, selectionStart)}\t${batchPasteText.value.slice(selectionEnd)}`;
+  const nextCursor = selectionStart + 1;
+  requestAnimationFrame(() => {
+    target.focus();
+    target.setSelectionRange(nextCursor, nextCursor);
+  });
+}
+
 function acceptSimilar(row: BatchImportRow): void {
   if (!row.suggestedFixtureId) return;
   row.resolvedFixtureId = row.suggestedFixtureId;
@@ -394,6 +424,15 @@ watch(batchPasteText, () => {
 });
 
 watch(
+  () => props.initialMode,
+  (value) => {
+    if (props.mode === undefined) {
+      internalMode.value = value;
+    }
+  }
+);
+
+watch(
   () => [props.tutorialMode, onboardingActive.value, currentOnboardingStepId.value, fixtures.value.length] as const,
   () => {
     if (!props.tutorialMode || !onboardingActive.value) {
@@ -416,7 +455,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="batch-panel" :class="{ frameless: hideFrame }">
+  <section class="batch-panel" :class="[mode, { frameless: hideFrame }]">
     <header class="batch-head">
       <div>
         <h2>{{ title }}</h2>
@@ -451,7 +490,11 @@ onMounted(async () => {
 
       <label class="paste-field" data-tour="inventory-paste-field">
         <span>批次內容</span>
-        <textarea v-model="batchPasteText" placeholder="支援 fixture-code-identifier / quantity，或 fixture-code[TAB]identifier[TAB]quantity"></textarea>
+        <textarea
+          v-model="batchPasteText"
+          placeholder="支援 fixture-code-0001 / quantity，或 fixture-code[TAB]0001[TAB]quantity"
+          @keydown="handleBatchPasteKeydown"
+        ></textarea>
       </label>
 
       <div class="action-row">
@@ -463,7 +506,7 @@ onMounted(async () => {
         <div class="action-group">
           <button
             v-if="tutorialMode"
-            class="ghost-btn"
+            class="ghost-btn panel-accent-ghost"
             data-tour="inventory-sandbox-action"
             type="button"
             :disabled="saving || fixtures.length === 0"
@@ -472,7 +515,7 @@ onMounted(async () => {
             套用教學試跑
           </button>
           <button class="outline-btn" type="button" :disabled="saving" @click="clearPanel">清空</button>
-          <button class="primary-btn" data-tour="inventory-submit-action" type="button" :disabled="saving || !canSubmit" @click="submit">
+          <button class="primary-btn panel-accent-btn" data-tour="inventory-submit-action" type="button" :disabled="saving || !canSubmit" @click="submit">
             {{ saving ? "送出中..." : mode === "receipt" ? "送出收料" : "送出退料" }}
           </button>
         </div>
@@ -490,19 +533,19 @@ onMounted(async () => {
               <td>{{ row.inputToken || "-" }}</td>
               <td>{{ row.quantity || "-" }}</td>
               <td>
-                <span class="status-pill" :class="row.status">{{ row.status }}</span>
+                <span class="status-pill batch-state" :class="row.status">{{ row.status }}</span>
                 <div v-if="row.message" class="row-note">{{ row.message }}</div>
               </td>
               <td>
                 <div class="row-actions">
                   <template v-if="row.status === 'needs-confirm'">
-                    <button class="ghost-btn small" type="button" @click="acceptSimilar(row)">同一治具</button>
-                    <button class="outline-btn small" type="button" @click="rejectSimilar(row)">改為新增</button>
-                    <button class="outline-btn small" type="button" @click="skipRow(row)">略過</button>
+                    <button class="ghost-btn panel-accent-ghost btn-sm" type="button" @click="acceptSimilar(row)">同一治具</button>
+                    <button class="outline-btn btn-sm" type="button" @click="rejectSimilar(row)">改為新增</button>
+                    <button class="outline-btn btn-sm" type="button" @click="skipRow(row)">略過</button>
                   </template>
                   <template v-else-if="row.status === 'needs-add'">
-                    <button class="ghost-btn small" type="button" @click="createMissingFixture(row)">新增治具</button>
-                    <button class="outline-btn small" type="button" @click="skipRow(row)">略過</button>
+                    <button class="ghost-btn panel-accent-ghost btn-sm" type="button" @click="createMissingFixture(row)">新增治具</button>
+                    <button class="outline-btn btn-sm" type="button" @click="skipRow(row)">略過</button>
                   </template>
                   <template v-else-if="row.status === 'error'">
                     <span class="muted">請修正原始資料</span>
@@ -528,12 +571,40 @@ onMounted(async () => {
 
 <style scoped>
 .batch-panel {
+  --panel-accent: var(--action-in);
+  --panel-accent-strong: var(--action-in-strong);
+  --panel-accent-soft: var(--action-in-soft);
+  --panel-input-border: rgba(47, 125, 224, 0.34);
   display: grid;
   gap: 12px;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: #fff;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel-accent-soft) 72%, white) 0%, #ffffff 22%);
   padding: 14px;
+  position: relative;
+}
+
+.batch-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 4px;
+  border-radius: 18px 18px 0 0;
+  background: linear-gradient(90deg, var(--panel-accent) 0%, var(--panel-accent-strong) 100%);
+}
+
+.batch-panel.receipt {
+  --panel-accent: var(--action-in);
+  --panel-accent-strong: var(--action-in-strong);
+  --panel-accent-soft: var(--action-in-soft);
+  --panel-input-border: rgba(47, 125, 224, 0.34);
+}
+
+.batch-panel.return {
+  --panel-accent: var(--action-out);
+  --panel-accent-strong: var(--action-out-strong);
+  --panel-accent-soft: var(--action-out-soft);
+  --panel-input-border: rgba(106, 95, 196, 0.34);
 }
 
 .batch-panel.frameless {
@@ -541,6 +612,10 @@ onMounted(async () => {
   border-radius: 0;
   padding: 0;
   background: transparent;
+}
+
+.batch-panel.frameless::before {
+  display: none;
 }
 
 .batch-head,
@@ -575,13 +650,13 @@ label span {
   display: grid;
   gap: 4px;
   padding: 10px 12px;
-  border: 1px solid #cfe0ff;
+  border: 1px solid var(--panel-input-border);
   border-radius: 12px;
-  background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel-accent-soft) 82%, white) 0%, color-mix(in srgb, var(--panel-accent-soft) 48%, white) 100%);
 }
 
 .tutorial-banner strong {
-  color: #214b97;
+  color: var(--panel-accent-strong);
   font-size: 12px;
 }
 
@@ -589,9 +664,9 @@ label span {
   display: inline-flex;
   gap: 4px;
   padding: 4px;
-  border: 1px solid #d7e2f5;
+  border: 1px solid var(--panel-input-border);
   border-radius: 999px;
-  background: #f5f9ff;
+  background: color-mix(in srgb, var(--panel-accent-soft) 64%, white);
 }
 
 .segmented-btn {
@@ -605,9 +680,9 @@ label span {
 }
 
 .segmented-btn.active {
-  background: #fff;
-  color: #2f6ee5;
-  box-shadow: 0 6px 16px rgba(47, 110, 229, 0.12);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel-accent-soft) 70%, white) 0%, color-mix(in srgb, var(--panel-accent-soft) 92%, white) 100%);
+  color: var(--panel-accent-strong);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--panel-accent) 18%, transparent);
 }
 
 .meta-grid {
@@ -628,11 +703,18 @@ label span {
 input,
 textarea {
   width: 100%;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--panel-input-border);
   border-radius: 10px;
   padding: 8px 10px;
   background: #fff;
   font: inherit;
+}
+
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--panel-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--panel-accent-soft) 88%, white);
 }
 
 textarea {
@@ -687,71 +769,16 @@ textarea {
   border-bottom: none;
 }
 
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 82px;
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: capitalize;
-}
-
-.status-pill.ready {
-  color: var(--green);
-  background: var(--green-soft);
-}
-
-.status-pill.needs-confirm,
-.status-pill.needs-add {
-  color: var(--orange);
-  background: var(--orange-soft);
-}
-
-.status-pill.error {
-  color: var(--red);
-  background: var(--red-soft);
-}
-
-.status-pill.skipped {
-  color: #66748d;
-  background: #edf1f7;
-}
-
-.primary-btn,
-.outline-btn,
-.ghost-btn {
-  border-radius: 10px;
-  font-weight: 700;
-  min-height: 34px;
-}
-
-.primary-btn {
-  border: 1px solid var(--green);
-  background: linear-gradient(180deg, #4cc36b 0%, #2ea54e 100%);
+.primary-btn.panel-accent-btn {
+  border: 1px solid var(--panel-accent-strong);
+  background: linear-gradient(180deg, var(--panel-accent) 0%, var(--panel-accent-strong) 100%);
   color: #fff;
-  padding: 8px 14px;
 }
 
-.outline-btn,
-.ghost-btn {
-  border: 1px solid var(--line-strong);
-  background: linear-gradient(180deg, #ffffff 0%, #f7f9fd 100%);
-  color: #5b677d;
-  padding: 8px 14px;
-}
-
-.ghost-btn {
-  border-color: #bfd0ef;
-  color: #2f6ee5;
-  background: #f7faff;
-}
-
-.small {
-  min-height: 30px;
-  padding: 6px 10px;
+.ghost-btn.panel-accent-ghost {
+  border-color: var(--panel-input-border);
+  color: var(--panel-accent-strong);
+  background: color-mix(in srgb, var(--panel-accent-soft) 72%, white);
 }
 
 .loading-row {

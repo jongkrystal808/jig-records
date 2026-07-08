@@ -30,6 +30,17 @@ class InventoryService:
         tzinfo = source.tzinfo or timezone.utc
         return datetime.combine(source.date(), time.min, tzinfo=tzinfo)
 
+    @staticmethod
+    def _resolve_identifier_query(value: str | None) -> tuple[list[str] | None, str | None]:
+        token = (value or "").strip()
+        if not token:
+            return None, None
+        if token.isdigit() and len(token) <= 4:
+            significant = token.lstrip("0") or "0"
+            exact_matches = list(dict.fromkeys(significant.zfill(width) for width in range(len(significant), 5)))
+            return exact_matches, None
+        return None, token
+
     def _apply_transaction(self, payload: StockTransactionCreate, transaction_type: str, *, commit: bool = True) -> None:
         occurred_at = self._normalize_occurred_at(payload.occurred_at)
         transaction = self.repo.create_transaction(
@@ -126,9 +137,7 @@ class InventoryService:
         identifier: str | None = None,
         created_by: str | None = None,
     ):
-        normalized_identifier = None
-        if identifier is not None and identifier.strip():
-            normalized_identifier = normalize_transaction_identifier(identifier)
+        identifier_exact_matches, identifier_contains = self._resolve_identifier_query(identifier)
         return self.repo.list_transactions(
             limit,
             customer_id=customer_id,
@@ -137,7 +146,8 @@ class InventoryService:
             date_to=date_to,
             fixture_code=fixture_code,
             transaction_no=transaction_no,
-            identifier=normalized_identifier,
+            identifier_exact_matches=identifier_exact_matches,
+            identifier_contains=identifier_contains,
             created_by=created_by,
         )
 
@@ -154,9 +164,7 @@ class InventoryService:
         identifier: str | None = None,
         created_by: str | None = None,
     ) -> tuple[list[str], list[dict]]:
-        normalized_identifier = None
-        if identifier is not None and identifier.strip():
-            normalized_identifier = normalize_transaction_identifier(identifier)
+        identifier_exact_matches, identifier_contains = self._resolve_identifier_query(identifier)
         item_rows = self.repo.list_transaction_item_rows(
             customer_id=customer_id,
             transaction_type=transaction_type,
@@ -164,7 +172,8 @@ class InventoryService:
             date_to=date_to,
             fixture_code=fixture_code,
             transaction_no=transaction_no,
-            identifier=normalized_identifier,
+            identifier_exact_matches=identifier_exact_matches,
+            identifier_contains=identifier_contains,
             created_by=created_by,
         )
         if report_type == "summary":
@@ -229,9 +238,7 @@ class InventoryService:
             identifier=identifier,
             created_by=created_by,
         )
-        normalized_identifier = None
-        if identifier is not None and identifier.strip():
-            normalized_identifier = normalize_transaction_identifier(identifier)
+        identifier_exact_matches, identifier_contains = self._resolve_identifier_query(identifier)
         item_rows = self.repo.list_transaction_item_rows(
             customer_id=customer_id,
             transaction_type=transaction_type,
@@ -239,7 +246,8 @@ class InventoryService:
             date_to=date_to,
             fixture_code=fixture_code,
             transaction_no=transaction_no,
-            identifier=normalized_identifier,
+            identifier_exact_matches=identifier_exact_matches,
+            identifier_contains=identifier_contains,
             created_by=created_by,
         )
         return {

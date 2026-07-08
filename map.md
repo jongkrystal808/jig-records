@@ -3,37 +3,77 @@
 這份文件是索引頁。實際查找請優先看：
 
 - `frontend-map.md`
-  - 前端頁面、互動、API 對應
-  - 共用元件 / 共用工具
-  - 改哪個畫面要進哪個 `.vue`
+  - 前端頁面拆分
+  - 共用元件 / 共用 CSS / API client 對應
+  - 改哪個互動要進哪個 `.vue` / `.ts`
 
 - `backend-map.md`
   - 後端 router / service / repository / model / schema 對應
-  - 各資料表欄位目前的使用面
+  - 啟動 / bootstrap / migration 責任分工
   - 改 API / 欄位時需要連動的後端層
 
 ## 最快定位
 
 ### 前端
 
-- 改登入、訪客入口、topbar shell、customer picker、today summary、全域收退料 modal、收退料資訊匯出
+- 改全域 shell 協調
   - `frontend/src/App.vue`
+  - 只保留 session、route、onboarding、global refresh orchestration
+
+- 改登入畫面
+  - `frontend/src/components/app/AppAuthScreen.vue`
+
+- 改 topbar / customer picker / 今日摘要
+  - `frontend/src/components/app/AppTopbar.vue`
+
+- 改手機版抽屜選單
+  - `frontend/src/components/app/AppMobileDrawer.vue`
+
+- 改全域收退料 / 匯出 modal
+  - `frontend/src/components/app/AppGlobalModals.vue`
+
+- 改全域 toast
+  - `frontend/src/components/app/AppToastStack.vue`
+  - 狀態在 `frontend/src/toastState.ts`
 
 - 改查詢頁
   - `frontend/src/pages/SearchWorkspacePage.vue`
+  - `frontend/src/components/search/SearchHeroSection.vue`
+  - `frontend/src/components/search/SearchResultPanel.vue`
+  - `frontend/src/components/search/FixtureInfoPanel.vue`
+  - `frontend/src/components/search/ModelInfoPanel.vue`
 
-- 改收退料作業 / overview / 批次貼上匯入
+- 改查詢頁最近收 / 退料治具快捷入口
+  - 資料整理：`frontend/src/pages/SearchWorkspacePage.vue`
+  - 顯示與點擊入口：`frontend/src/components/search/SearchHeroSection.vue`
+
+- 改收退料作業 / overview
   - `frontend/src/pages/InventoryPage.vue`
+  - `frontend/src/components/inventory/InventoryOperationBoard.vue`
+  - `frontend/src/components/inventory/InventoryOverviewPanel.vue`
+
+- 改批次貼上匯入
+  - inventory：`frontend/src/components/inventory/BatchImportPanel.vue`
+  - production：`frontend/src/components/production/ProductionBatchImportModal.vue`
+  - production page orchestration：`frontend/src/pages/ProductionPage.vue`
+
+- 改收退料報表匯出
+  - `frontend/src/components/inventory/InventoryExportPanel.vue`
 
 - 改資料維護頁
   - `frontend/src/pages/MasterPage.vue`
+  - `frontend/src/components/master/MasterListPanel.vue`
+  - `frontend/src/components/master/MasterDetailPanel.vue`
 
 - 改產能頁
   - `frontend/src/pages/ProductionPage.vue`
+  - `frontend/src/components/production/ProductionHeaderSection.vue`
+  - `frontend/src/components/production/ProductionDetailSection.vue`
   - `frontend/src/components/production/ProductionCapacityPanel.vue`
 
 - 改前端 API 方法
-  - `frontend/src/api.ts`
+  - 對外入口：`frontend/src/api.ts`
+  - 內部分域：`frontend/src/api/*.ts`
 
 - 改前端資料型別
   - `frontend/src/types.ts`
@@ -45,15 +85,21 @@
   - `frontend/src/onboarding.ts`
   - `frontend/src/components/common/GuidedTour.vue`
 
-- 改全域 toast
-  - `frontend/src/toastState.ts`
-
 - 改共用顯示 / 日期 / error parsing
   - `frontend/src/utils/display.ts`
   - `frontend/src/utils/date.ts`
   - `frontend/src/utils/apiError.ts`
 
+- 改共用 UI 元件 / 共用樣式
+  - 元件：`frontend/src/components/Ui*.vue`
+  - CSS utility：`frontend/src/styles.css`
+
 ### 後端
+
+- 改啟動 / bootstrap 路徑
+  - launcher：`main.py`
+  - bootstrap：`backend/app/bootstrap.py`
+  - FastAPI app：`backend/app/main.py`
 
 - 改登入 / 使用者 API
   - `backend/app/routers/auth.py`
@@ -66,6 +112,7 @@
 - 改收退料 / 庫存 API
   - `backend/app/routers/inventory.py`
   - `backend/app/services/inventory_service.py`
+  - `backend/app/repositories/inventory_repository.py`
 
 - 改 production API
   - `backend/app/routers/production.py`
@@ -73,6 +120,7 @@
 
 - 改查詢 API
   - `backend/app/routers/search.py`
+  - `backend/app/services/search_service.py`
 
 - 改審計 API
   - `backend/app/routers/audit.py`
@@ -90,37 +138,48 @@
 - 改權限 / customer scope
   - `backend/app/core/auth.py`
 
-- 改 migration / 啟動兼容
+- 改 migration / DB 相容
   - `backend/alembic/versions/*.py`
   - `backend/app/core/migrations.py`
   - `backend/app/core/schema_patch.py`
+
+- 改錯誤序列化 / validation handler
+  - `backend/app/core/errors.py`
 
 ## 常見修改路徑
 
 - 改 API 欄位
   - 先看 `frontend/src/types.ts`
   - 再看 `frontend/src/api.ts`
-  - 再看 `backend-map.md` 對應 model / schema / service
+  - 再看 `frontend-map.md` 與 `backend-map.md` 的對應 router / service / schema
 
-- 改 customer scope / 權限
-  - 先看 `backend/app/core/auth.py`
-  - 再看 `backend/app/routers/*`
-  - 前端顯示面通常在 `frontend/src/App.vue` 與 `frontend/src/router/index.ts`
+- 改 domain API 方法
+  - 外部呼叫面不變：`import { api } from "@/api"`
+  - 內部實作請進 `frontend/src/api/authClient.ts`、`masterClient.ts`、`inventoryClient.ts`、`productionClient.ts`、`searchClient.ts`、`auditClient.ts`
+  - transport / error handling 在 `frontend/src/api/core.ts`
 
-- 改 fixture / model / station 資料模型
-  - 先看 `backend-map.md` 的資料表欄位使用面
-  - 再同步 `frontend/src/types.ts`、`frontend/src/api.ts`、對應 page
+- 改頁面視覺與互動
+  - 先看 page 容器
+  - 再看對應的拆分元件
+  - 共用樣式優先放 `frontend/src/styles.css`
+  - 共用外殼優先放 `frontend/src/components/Ui*.vue`
 
 - 改批次貼上匯入
   - inventory：`frontend/src/components/inventory/BatchImportPanel.vue`
-  - production：`frontend/src/pages/ProductionPage.vue`
-  - 如需新主檔建立，還要同步 `frontend/src/api.ts` 與 `backend/app/routers/master.py`
+  - production：`frontend/src/pages/ProductionPage.vue` + `frontend/src/components/production/ProductionBatchImportModal.vue`
+  - 如需新主檔建立，還要同步 `frontend/src/api/masterClient.ts` 與 `backend/app/routers/master.py`
 
 - 改收退料報表匯出 / preview
   - `frontend/src/components/inventory/InventoryExportPanel.vue`
-  - `frontend/src/api.ts`
+  - `frontend/src/api/inventoryClient.ts`
   - `backend/app/routers/inventory.py`
   - `backend/app/services/inventory_service.py`
+
+- 改 `identifier`
+  - 前端顯示與查詢輸入：`frontend/src/pages/InventoryPage.vue`、`frontend/src/components/inventory/InventoryExportPanel.vue`
+  - 前端顯示文字：`frontend/src/utils/display.ts`
+  - 後端寫入規格：`backend/app/schemas/inventory.py`
+  - 後端查詢相容：`backend/app/services/inventory_service.py`、`backend/app/repositories/inventory_repository.py`
 
 ## 編輯原則
 

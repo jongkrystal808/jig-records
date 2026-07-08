@@ -70,7 +70,7 @@ def test_inventory_capacity_and_search_flow(app_client):
                 {
                     "fixture_id": fixture_id,
                     "ownership_type": "self_purchased",
-                    "identifier": "202606",
+                    "identifier": "2606",
                     "quantity": 6,
                 }
             ],
@@ -95,6 +95,50 @@ def test_inventory_capacity_and_search_flow(app_client):
     search = app_client.get("/api/v2/search/global", params={"q": "T-001"}, headers=headers)
     assert search.status_code == 200
     assert search.json()[0]["entity_type"] == "fixture"
+
+
+def test_inventory_rejects_identifier_longer_than_four_digits_with_json_safe_error(app_client):
+    token = _login(app_client)
+    headers = {"Authorization": f"Bearer {token}"}
+    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+
+    fixture = app_client.post(
+        "/api/v2/master/fixtures",
+        json={
+            "customer_id": customer_id,
+            "code": "T-ERR-001",
+            "name": "Validation Fixture",
+            "storage_location": "A-01",
+            "min_stock_qty": 1,
+        },
+        headers=headers,
+    )
+    assert fixture.status_code == 201
+    fixture_id = fixture.json()["id"]
+
+    response = app_client.post(
+        "/api/v2/inventory/receipts",
+        json={
+            "customer_id": customer_id,
+            "created_by": "System Admin",
+            "items": [
+                {
+                    "fixture_id": fixture_id,
+                    "ownership_type": "self_purchased",
+                    "identifier": "12345",
+                    "quantity": 1,
+                }
+            ],
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["error"]["code"] == "validation_error"
+    assert payload["error"]["message"] == "欄位驗證失敗"
+    assert payload["error"]["details"][0]["msg"] == "Value error, identifier must be 4 digits or fewer"
+    assert payload["error"]["details"][0]["ctx"]["error"] == "identifier must be 4 digits or fewer"
 
 
 def test_csv_import_flow(app_client):

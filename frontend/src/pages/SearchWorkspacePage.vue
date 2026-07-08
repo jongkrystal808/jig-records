@@ -7,6 +7,8 @@ import { customers, onboardingActive, onboardingStepIndex, selectedCustomerId } 
 import InlineSpinner from "@/components/common/InlineSpinner.vue";
 import FixtureInfoPanel from "@/components/search/FixtureInfoPanel.vue";
 import ModelInfoPanel from "@/components/search/ModelInfoPanel.vue";
+import SearchHeroSection from "@/components/search/SearchHeroSection.vue";
+import SearchResultPanel from "@/components/search/SearchResultPanel.vue";
 import { authSession } from "@/appState";
 import { pushToast } from "@/toastState";
 import type {
@@ -21,6 +23,7 @@ import type {
   StockSummary
 } from "@/types";
 import { formatLocalDate } from "@/utils/date";
+import { formatIdentifierStockTags } from "@/utils/display";
 import { matchesFixtureKeywords, parseFixtureKeywords } from "@/utils/fixtureSearch";
 
 type SearchMode = "fixture" | "model";
@@ -33,6 +36,16 @@ type SearchHint = {
   subtitle: string;
   badge: string;
 };
+
+type RecentFixtureShortcut = {
+  fixtureCode: string;
+  transactionType: "receipt" | "return";
+  occurredAt: string;
+};
+
+const MAX_RECENT_FIXTURE_SHORTCUTS = 20;
+const MAX_FIXTURE_TRANSACTION_ROWS = 30;
+const FULL_FIXTURE_TRANSACTION_HISTORY_LIMIT = 2000;
 
 const FixtureEditForm = defineAsyncComponent({
   loader: () => import("@/components/search/FixtureEditForm.vue"),
@@ -79,6 +92,9 @@ const modelQuery = ref<ModelQuery | null>(null);
 const selectedFixtureImage = ref("");
 const imageLoadFailed = ref(false);
 const resultPanel = ref<HTMLElement | null>(null);
+const fixtureTransactionHistoryRows = ref<MaterialTransaction[]>([]);
+const fixtureTransactionHistoryLoadedForCode = ref<string | null>(null);
+const fixtureTransactionHistoryLoading = ref(false);
 
 const fixtureSectionSelection = ref<string[]>(loadSelection(FIXTURE_SECTION_KEY, defaultFixtureSections));
 const modelSectionSelection = ref<string[]>(loadSelection(MODEL_SECTION_KEY, defaultModelSections));
@@ -233,6 +249,13 @@ const resultScrollKey = computed(() => {
   return modelMatches.value.length > 0 && selectedModelId.value ? `model-${selectedModelId.value}-${committedQuery.value.trim()}` : "";
 });
 
+// Keep the page focused on search state and result data; hero/detail shells live in dedicated components.
+const activeSectionKeys = computed(() => (mode.value === "fixture" ? fixtureSectionSelection.value : modelSectionSelection.value));
+const currentSectionChips = computed(() => (mode.value === "fixture" ? fixtureSectionChips.value : modelSectionChips.value));
+const shouldShowEmptyResultState = computed(
+  () => (mode.value === "fixture" ? fixtureMatches.value : modelMatches.value).length === 0 && !shouldShowFixtureCreateForm.value && !shouldShowModelCreateForm.value
+);
+
 const identifierMap = computed(() => {
   const map = new Map<number, Map<string, number>>();
   for (const row of identifierStockRows.value) {
@@ -248,14 +271,27 @@ const selectedFixtureIdentifierTags = computed(() => {
   if (!fixtureId) return [];
   const entry = identifierMap.value.get(fixtureId);
   if (!entry) return [];
-  return [...entry.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0], "zh-TW", { numeric: true }))
-    .map(([identifier, quantity]) => `${identifier}（${formatCount(quantity)}）`);
+  return formatIdentifierStockTags(entry.entries(), formatCount);
 });
 
-const selectedFixtureTransactions = computed(() =>
-  transactions.value.filter((tx) => tx.items.some((item) => item.fixture_id === selectedFixture.value?.id)).slice(0, 8)
-);
+const selectedFixtureIdentifierTotalQty = computed(() => {
+  const fixtureId = selectedFixture.value?.id;
+  if (!fixtureId) return 0;
+  const entry = identifierMap.value.get(fixtureId);
+  if (!entry) return 0;
+  let total = 0;
+  for (const quantity of entry.values()) {
+    total += quantity;
+  }
+  return total;
+});
+
+const selectedFixtureTransactions = computed(() => {
+  if (fixtureTransactionHistoryLoadedForCode.value === selectedFixture.value?.code) {
+    return fixtureTransactionHistoryRows.value;
+  }
+  return transactions.value.filter((tx) => tx.items.some((item) => item.fixture_id === selectedFixture.value?.id)).slice(0, MAX_FIXTURE_TRANSACTION_ROWS);
+});
 
 const selectedFixtureRequirementRows = computed(() =>
   fixtureRequirements.value
@@ -281,11 +317,38 @@ const selectedFixtureModels = computed(() => {
 const selectedModelFixtures = computed(() =>
   (modelQuery.value?.fixtures ?? []).map((row) => ({
     ...row,
-    identifierTags: [...(identifierMap.value.get(row.fixture_id)?.entries() ?? [])]
-      .sort((a, b) => a[0].localeCompare(b[0], "zh-TW", { numeric: true }))
-      .map(([identifier, quantity]) => `${identifier}（${formatCount(quantity)}）`)
+    identifierTags: formatIdentifierStockTags(identifierMap.value.get(row.fixture_id)?.entries() ?? [], formatCount)
   }))
 );
+
+// Keep recent fixture shortcuts query-free so operators can jump back to the latest receiving/returning targets quickly.
+// The hero previews 5 by default, but we keep a larger recent pool here so the UI can offer a "show more" action.
+const recentFixtureShortcuts = computed<RecentFixtureShortcut[]>(() => {
+  const seen = new Set<string>();
+  const shortcuts: RecentFixtureShortcut[] = [];
+  const sortedTransactions = transactions.value
+    .slice()
+    .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
+
+  for (const tx of sortedTransactions) {
+    for (const item of tx.items) {
+      if (!item.fixture_code || seen.has(item.fixture_code)) {
+        continue;
+      }
+      seen.add(item.fixture_code);
+      shortcuts.push({
+        fixtureCode: item.fixture_code,
+        transactionType: tx.transaction_type,
+        occurredAt: tx.occurred_at
+      });
+      if (shortcuts.length >= MAX_RECENT_FIXTURE_SHORTCUTS) {
+        return shortcuts;
+      }
+    }
+  }
+
+  return shortcuts;
+});
 
 const smartHints = computed(() => {
   const q = hintSearchText.value;
@@ -343,6 +406,37 @@ function applySmartHint(hint: SearchHint): void {
   }
   selectedModelId.value = hint.entityId;
   detailTab.value = "info";
+}
+
+function applyRecentFixtureShortcut(fixtureCode: string): void {
+  mode.value = "fixture";
+  queryDraft.value = fixtureCode;
+  committedQuery.value = fixtureCode;
+  detailTab.value = "info";
+  const matchedFixture = fixtures.value.find((row) => row.code === fixtureCode);
+  selectedFixtureId.value = matchedFixture?.id ?? null;
+}
+
+async function loadSelectedFixtureTransactionHistory(): Promise<void> {
+  const fixture = selectedFixture.value;
+  if (!fixture || !customerId.value || fixtureTransactionHistoryLoading.value) {
+    return;
+  }
+  if (fixtureTransactionHistoryLoadedForCode.value === fixture.code) {
+    return;
+  }
+
+  fixtureTransactionHistoryLoading.value = true;
+  try {
+    fixtureTransactionHistoryRows.value = await api.listTransactions(FULL_FIXTURE_TRANSACTION_HISTORY_LIMIT, customerId.value, {
+      fixture_code: fixture.code
+    });
+    fixtureTransactionHistoryLoadedForCode.value = fixture.code;
+  } catch (err) {
+    pushToast(err instanceof Error ? err.message : "載入治具歷史收退料記錄失敗。", "error");
+  } finally {
+    fixtureTransactionHistoryLoading.value = false;
+  }
 }
 
 function syncSelection(): void {
@@ -527,6 +621,9 @@ watch(resultScrollKey, (key, previous) => {
   scrollToResultPanel();
 });
 watch(selectedFixtureId, () => {
+  fixtureTransactionHistoryRows.value = [];
+  fixtureTransactionHistoryLoadedForCode.value = null;
+  fixtureTransactionHistoryLoading.value = false;
   void refreshSelectedFixtureImage();
 });
 watch(selectedModelId, async () => {
@@ -558,87 +655,36 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="search-shell" :class="{ idle: !hasActiveQuery }">
-    <section class="hero-card" :class="{ idle: !hasActiveQuery }">
-      <div class="hero-copy">
-        <span class="eyebrow">Search Workspace</span>
-        <h1>治具 / 機種查詢</h1>
-      </div>
-
-      <div class="search-toolbar">
-        <div class="mode-switch" data-tour="search-mode-switch">
-          <button class="mode-btn" :class="{ active: mode === 'fixture' }" type="button" @click="mode = 'fixture'">治具</button>
-          <button class="mode-btn" :class="{ active: mode === 'model' }" type="button" @click="mode = 'model'">機種</button>
-        </div>
-        <label class="query-field" data-tour="search-query-field">
-          <input
-            v-model="queryDraft"
-            :placeholder="mode === 'fixture' ? '請輸入治具編號 / 名稱,例如 C-00003' : '請輸入機種編號 / 名稱,例如 VPort-254'"
-            autocomplete="off"
-            spellcheck="false"
-            @keydown.enter.prevent="submitSearch"
-            @keydown.esc.prevent="clearSearch"
-          />
-        </label>
-      </div>
-
-      <div v-if="smartHints.length > 0" class="smart-hint-panel">
-        <div class="smart-hint-head">
-          <strong>相近編號</strong>
-          <span>{{ smartHints.length }} 筆</span>
-        </div>
-        <div class="smart-hint-grid">
-          <button
-            v-for="hint in smartHints"
-            :key="hint.key"
-            class="smart-hint-card"
-            type="button"
-            @click="applySmartHint(hint)"
-          >
-            <span class="smart-hint-badge">{{ hint.badge }}</span>
-            <strong>{{ hint.title }}</strong>
-            <span>{{ hint.subtitle }}</span>
-          </button>
-        </div>
-      </div>
-
-      <div class="chip-row" data-tour="search-section-chips">
-        <button
-          v-for="chip in mode === 'fixture' ? fixtureSectionChips : modelSectionChips"
-          :key="`${mode}-${chip.key}`"
-          class="chip-toggle"
-          :class="{ active: mode === 'fixture' ? fixtureSectionSelection.includes(chip.key) : modelSectionSelection.includes(chip.key) }"
-          type="button"
-          @click="toggleSection(mode, chip.key)"
-        >
-          {{ chip.label }}
-        </button>
-      </div>
-
-    </section>
-
-    <button class="floating-onboarding-btn" data-tour="search-onboarding-entry" type="button" @click="startOnboarding">開始新手教學</button>
+    <SearchHeroSection
+      :mode="mode"
+      :query-draft="queryDraft"
+      :has-active-query="hasActiveQuery"
+      :smart-hints="smartHints"
+      :recent-fixture-shortcuts="recentFixtureShortcuts"
+      :section-chips="currentSectionChips"
+      :active-section-keys="activeSectionKeys"
+      @update:mode="mode = $event"
+      @update:query-draft="queryDraft = $event"
+      @submit="submitSearch"
+      @clear="clearSearch"
+      @apply-hint="applySmartHint"
+      @apply-recent-fixture-shortcut="applyRecentFixtureShortcut"
+      @toggle-section="toggleSection"
+      @onboarding="startOnboarding"
+    />
 
     <section v-if="hasActiveQuery" ref="resultPanel" class="content-grid">
-      <article class="detail-panel">
-        <div v-if="(mode === 'fixture' ? visibleFixtureSections.maintenance : visibleModelSections.maintenance) && canEdit" class="detail-panel-tabs">
-          <button class="detail-panel-tab" :class="{ active: detailTab === 'info' }" type="button" @click="detailTab = 'info'">資訊</button>
-          <button class="detail-panel-tab" :class="{ active: detailTab === 'edit' }" type="button" @click="detailTab = 'edit'">編輯</button>
-        </div>
-
-        <div v-if="loading" class="loading-panel">
-          <InlineSpinner label="載入查詢資料..." />
-        </div>
-
-        <div
-          v-else-if="(mode === 'fixture' ? fixtureMatches : modelMatches).length === 0 && !shouldShowFixtureCreateForm && !shouldShowModelCreateForm"
-          class="empty-state detail-empty-state"
-        >
-          <strong>找不到符合條件的資料</strong>
-          <span>請調整搜尋條件，或直接建立新的 {{ mode === "fixture" ? "治具" : "機種" }}。</span>
-          <button v-if="canEdit" class="outline-btn empty-action" type="button" @click="goCreateFromNoResult">找不到，新增一筆？</button>
-        </div>
-
-        <template v-else-if="mode === 'fixture'">
+      <SearchResultPanel
+        :can-edit="canEdit"
+        :show-maintenance-tab="mode === 'fixture' ? visibleFixtureSections.maintenance : visibleModelSections.maintenance"
+        :detail-tab="detailTab"
+        :loading="loading"
+        :empty="shouldShowEmptyResultState"
+        :mode="mode"
+        @update:detail-tab="detailTab = $event"
+        @create="goCreateFromNoResult"
+      >
+        <template v-if="mode === 'fixture'">
           <FixtureInfoPanel
             v-if="(detailTab === 'info' || !visibleFixtureSections.maintenance) && !shouldShowFixtureCreateForm"
             :fixture="selectedFixture"
@@ -646,13 +692,17 @@ onBeforeUnmount(() => {
             :image-url="selectedFixtureImage"
             :image-load-failed="imageLoadFailed"
             :identifier-tags="selectedFixtureIdentifierTags"
+            :identifier-total-qty="selectedFixtureIdentifierTotalQty"
             :related-models="selectedFixtureModels"
             :station-rows="selectedFixtureStationRows"
             :transactions="selectedFixtureTransactions"
+            :transaction-history-loaded="fixtureTransactionHistoryLoadedForCode === selectedFixture?.code"
+            :transaction-history-loading="fixtureTransactionHistoryLoading"
             :visible-sections="visibleFixtureSections"
             :format-count="formatCount"
             :format-date="formatLocalDate"
             :stock-tone="stockTone"
+            @load-transaction-history="loadSelectedFixtureTransactionHistory"
           />
           <FixtureEditForm
             v-else
@@ -687,13 +737,16 @@ onBeforeUnmount(() => {
             @cancel="detailTab = 'info'"
           />
         </template>
-      </article>
+      </SearchResultPanel>
     </section>
   </div>
 </template>
 
 <style scoped>
 .search-shell {
+  --search-accent: var(--blue);
+  --search-accent-soft: var(--blue-soft);
+  --search-accent-strong: var(--tone-info);
   display: grid;
   gap: 12px;
   min-height: 100%;
@@ -703,226 +756,6 @@ onBeforeUnmount(() => {
 .search-shell.idle {
   min-height: calc(100dvh - 210px);
   align-content: center;
-}
-
-.hero-card,
-.detail-panel {
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: var(--shadow);
-}
-
-.hero-card {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  background:
-    radial-gradient(circle at top left, rgba(47, 110, 229, 0.09), transparent 28%),
-    linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
-}
-
-.hero-card.idle {
-  justify-items: center;
-  text-align: center;
-  padding: 28px 22px 24px;
-}
-
-.hero-card.idle .hero-copy,
-.hero-card.idle .search-toolbar,
-.hero-card.idle .smart-hint-panel,
-.hero-card.idle .chip-row {
-  width: min(760px, 100%);
-}
-
-.hero-card.idle .mode-switch,
-.hero-card.idle .chip-row {
-  justify-content: center;
-}
-
-.eyebrow {
-  color: #2f6ee5;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-h1,
-h2 {
-  margin: 0;
-  color: #22314a;
-}
-
-h1 {
-  margin-top: 4px;
-  font-size: 24px;
-}
-
-.hero-copy p,
-.panel-head p {
-  margin: 4px 0 0;
-  color: #5d6d89;
-  font-size: 12px;
-}
-
-.search-toolbar {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
-}
-
-.floating-onboarding-btn {
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
-  z-index: 25;
-  min-height: 42px;
-  padding: 10px 16px;
-  border: 1px solid #c8d8f4;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 16px 32px rgba(28, 47, 84, 0.18);
-  color: #244578;
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
-  backdrop-filter: blur(10px);
-}
-
-.floating-onboarding-btn:hover {
-  border-color: #9eb8ea;
-  transform: translateY(-1px);
-}
-
-.hero-card.idle .search-toolbar {
-  align-items: end;
-}
-
-.mode-switch {
-  display: inline-flex;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid #d7e2f5;
-  border-radius: 999px;
-  background: #f5f9ff;
-}
-
-.mode-btn {
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: #5b677d;
-  padding: 8px 14px;
-  min-height: 36px;
-  font-weight: 800;
-}
-
-.mode-btn.active {
-  background: #fff;
-  color: #2f6ee5;
-  box-shadow: 0 6px 16px rgba(47, 110, 229, 0.12);
-}
-
-.query-field {
-  display: grid;
-  gap: 6px;
-}
-
-.query-field span {
-  color: #56657f;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-input {
-  width: 100%;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  padding: 9px 10px;
-  background: #fff;
-  font: inherit;
-}
-
-.chip-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.smart-hint-panel {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid #dce5f3;
-  border-radius: 16px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 249, 255, 0.96) 100%);
-}
-
-.smart-hint-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-}
-
-.smart-hint-head strong {
-  color: #22314a;
-  font-size: 13px;
-}
-
-.smart-hint-head span,
-.smart-hint-card span {
-  color: #5d6d89;
-  font-size: 12px;
-}
-
-.smart-hint-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
-}
-
-.smart-hint-card {
-  display: grid;
-  gap: 4px;
-  padding: 10px 12px;
-  border: 1px solid #d7e2f5;
-  border-radius: 14px;
-  background: #fff;
-  text-align: left;
-}
-
-.smart-hint-card strong {
-  color: #22314a;
-  font-size: 14px;
-}
-
-.smart-hint-badge {
-  width: fit-content;
-  padding: 2px 8px;
-  border: 1px solid #d7e2f5;
-  border-radius: 999px;
-  background: #f7faff;
-  color: #35527d !important;
-  font-size: 11px !important;
-  font-weight: 700;
-}
-
-.chip-toggle {
-  border: 1px solid #d7e2f5;
-  border-radius: 999px;
-  background: #f7faff;
-  color: #35527d;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.chip-toggle.active {
-  border-color: rgba(47, 110, 229, 0.26);
-  background: #eef5ff;
-  color: #2f6ee5;
 }
 
 .content-grid {
@@ -936,11 +769,6 @@ input {
 .content-grid.idle {
   width: min(760px, 100%);
   justify-self: center;
-}
-
-.detail-panel {
-  min-height: 0;
-  padding: 12px;
 }
 
 .collapsed-state {
@@ -959,101 +787,9 @@ input {
   font-size: 15px;
 }
 
-.detail-panel {
-  display: grid;
-  align-content: start;
-  gap: 14px;
-  position: sticky;
-  top: 12px;
-}
-
-.detail-panel-tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  width: fit-content;
-  border: 1px solid #d7e2f5;
-  border-radius: 12px;
-  background: #f7faff;
-  overflow: hidden;
-}
-
-.detail-panel-tab {
-  border: 0;
-  background: transparent;
-  color: #5c6a81;
-  padding: 10px 18px;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.detail-panel-tab + .detail-panel-tab {
-  border-left: 1px solid #d7e2f5;
-}
-
-.detail-panel-tab.active {
-  background: #eef5ff;
-  color: #2f6ee5;
-}
-
-.empty-state {
-  color: #5d6d89;
-  font-size: 12px;
-}
-
-.empty-state {
-  display: grid;
-  gap: 10px;
-  padding: 18px;
-  border: 1px dashed var(--line-strong);
-  border-radius: 14px;
-  background: #fafcff;
-}
-
-.empty-action {
-  width: fit-content;
-}
-
-.detail-empty-state {
-  min-height: 280px;
-  place-content: center;
-}
-
-.loading-panel {
-  min-height: 180px;
-  display: grid;
-  place-items: center;
-}
-
-.outline-btn {
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  background: linear-gradient(180deg, #ffffff 0%, #f7f9fd 100%);
-  color: #5b677d;
-  padding: 8px 14px;
-  min-height: 36px;
-  font-weight: 700;
-}
-
 @media (max-width: 960px) {
   .content-grid {
     grid-template-columns: 1fr;
-  }
-
-  .detail-panel {
-    position: static;
-    top: auto;
-  }
-
-  .search-toolbar {
-    grid-template-columns: 1fr;
-  }
-
-  .floating-onboarding-btn {
-    right: 14px;
-    bottom: 14px;
-    padding: 10px 14px;
-    font-size: 12px;
   }
 }
 </style>

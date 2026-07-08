@@ -88,7 +88,7 @@ async function save(): Promise<void> {
         <span class="eyebrow">資料維護</span>
         <h3>{{ isCreateMode ? "新增治具" : `編輯 ${fixture?.code}` }}</h3>
       </div>
-      <button class="outline-btn small" type="button" :disabled="saving" @click="emit('cancel')">取消</button>
+      <button class="outline-btn btn-sm" type="button" :disabled="saving" @click="emit('cancel')">取消</button>
     </div>
 
     <label>
@@ -203,32 +203,6 @@ textarea {
 .form-actions {
   display: flex;
   justify-content: flex-end;
-}
-
-.primary-btn,
-.outline-btn {
-  border-radius: 10px;
-  font-weight: 700;
-  min-height: 36px;
-}
-
-.primary-btn {
-  border: 1px solid var(--green);
-  background: linear-gradient(180deg, #4cc36b 0%, #2ea54e 100%);
-  color: #fff;
-  padding: 8px 14px;
-}
-
-.outline-btn {
-  border: 1px solid var(--line-strong);
-  background: linear-gradient(180deg, #ffffff 0%, #f7f9fd 100%);
-  color: #5b677d;
-  padding: 8px 14px;
-}
-
-.outline-btn.small {
-  min-height: 32px;
-  padding: 6px 12px;
 }
 
 @media (max-width: 720px) {

@@ -76,7 +76,7 @@ def list_identifier_stock_summary(
 
 @router.get("/transactions", response_model=list[StockTransactionRead])
 def list_transactions(
-    limit: int = Query(20, ge=1, le=200),
+    limit: int = Query(20, ge=1, le=2000),
     customer_id: int | None = Query(default=None),
     transaction_type: str | None = Query(default=None, pattern="^(receipt|return)?$"),
     date_from: date | None = Query(default=None),

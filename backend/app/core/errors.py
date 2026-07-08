@@ -15,6 +15,18 @@ def _build_error_payload(code: str, message: str, *, details: Any | None = None)
     return payload
 
 
+def _sanitize_json_value(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Exception):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _sanitize_json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_sanitize_json_value(item) for item in value]
+    return str(value)
+
+
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
@@ -38,7 +50,7 @@ def register_error_handlers(app: FastAPI) -> None:
     async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            content=_build_error_payload("validation_error", "欄位驗證失敗", details=exc.errors()),
+            content=_build_error_payload("validation_error", "欄位驗證失敗", details=_sanitize_json_value(exc.errors())),
         )
 
     @app.exception_handler(IntegrityError)

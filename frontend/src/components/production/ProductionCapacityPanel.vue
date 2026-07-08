@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from "vue";
+import UiSectionHeader from "@/components/UiSectionHeader.vue";
 import type { ModelQuery, ModelQueryStationRequirement, StationCapacity, StockStatus } from "@/types";
 import { stockStatusLabel } from "@/utils/display";
 import UiStatusPill from "@/components/UiStatusPill.vue";
@@ -80,13 +81,11 @@ watch(
     <div v-if="loading" class="loading-banner">資料載入中，請稍候...</div>
 
     <section class="station-overview">
-      <div class="head-row compact-head">
-        <div>
-          <h2>站點總覽</h2>
-          <p class="overview-story">先掃描整個機種的站點開站能力，再點一個站看瓶頸明細。</p>
-        </div>
-        <span class="overview-count">{{ modelQuery?.stations?.length || 0 }} 站</span>
-      </div>
+      <UiSectionHeader class="head-row compact-head" title="站點總覽" description="先掃描整個機種的站點開站能力，再點一個站看瓶頸明細。">
+        <template #actions>
+          <span class="overview-count">{{ modelQuery?.stations?.length || 0 }} 站</span>
+        </template>
+      </UiSectionHeader>
       <table class="query-table compact-query-table">
         <thead>
           <tr>
@@ -127,13 +126,11 @@ watch(
     </div>
 
     <div class="query-inline drilldown-panel">
-      <div class="head-row compact-head">
-        <div>
-          <h2>站點瓶頸明細</h2>
-          <p class="meta">機種：{{ modelQuery?.model_code || selectedModelCode || "-" }}　站點：{{ selectedStationCode || stationCapacity?.station_code || "-" }}</p>
-        </div>
-        <button class="ghost-btn" :disabled="loading" @click="$emit('refreshModelQuery')">刷新</button>
-      </div>
+      <UiSectionHeader class="head-row compact-head" title="站點瓶頸明細" :description="`機種：${modelQuery?.model_code || selectedModelCode || '-'}　站點：${selectedStationCode || stationCapacity?.station_code || '-'}`">
+        <template #actions>
+          <button class="ghost-btn" :disabled="loading" @click="$emit('refreshModelQuery')">刷新</button>
+        </template>
+      </UiSectionHeader>
       <table class="query-table compact-query-table">
         <thead>
           <tr>

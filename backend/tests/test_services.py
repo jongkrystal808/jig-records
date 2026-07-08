@@ -445,6 +445,54 @@ class ProductionServiceTests(ServiceTestCase):
         self.assertTrue(all(row["model_code"] == bundle["model"].code for row in model_a_query["station_requirements"]))
         self.assertTrue(all(row["model_code"] == second_model.code for row in model_b_query["station_requirements"]))
 
+    def test_model_query_uses_lowest_station_capacity_for_summary(self) -> None:
+        bundle = self.seed_customer_bundle()
+        second_station = self.repo.create_station(customer_id=bundle["customer"].id, code="ST-002", name="Station 2")
+        self.db.commit()
+
+        self.production_service.create_model_station(
+            ModelStationCreate(
+                customer_id=bundle["customer"].id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+            )
+        )
+        self.production_service.create_model_station(
+            ModelStationCreate(
+                customer_id=bundle["customer"].id,
+                model_id=bundle["model"].id,
+                station_id=second_station.id,
+            )
+        )
+
+        self.production_service.create_fixture_requirement(
+            FixtureRequirementCreate(
+                customer_id=bundle["customer"].id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+                fixture_id=bundle["fixture_a"].id,
+                required_qty=2,
+            )
+        )
+        self.production_service.create_fixture_requirement(
+            FixtureRequirementCreate(
+                customer_id=bundle["customer"].id,
+                model_id=bundle["model"].id,
+                station_id=second_station.id,
+                fixture_id=bundle["fixture_b"].id,
+                required_qty=3,
+            )
+        )
+
+        model_query = self.production_service.get_model_query(
+            bundle["model"].id,
+            customer_id=bundle["customer"].id,
+        )
+
+        self.assertEqual(model_query["max_open_station_count"], 3)
+        station_rows = {row["station_code"]: row["max_open_station_count"] for row in model_query["stations"]}
+        self.assertEqual(station_rows, {"ST-001": 6, "ST-002": 3})
+
 
 class InventoryServiceTests(ServiceTestCase):
     def test_receipt_identifier_is_left_padded_to_four_digits(self) -> None:
@@ -480,7 +528,7 @@ class InventoryServiceTests(ServiceTestCase):
                 {
                     "fixture_id": bundle["fixture_a"].id,
                     "ownership_type": "self_purchased",
-                    "identifier": "202606",
+                    "identifier": "2606",
                     "quantity": 5,
                 }
             ],
@@ -508,18 +556,99 @@ class InventoryServiceTests(ServiceTestCase):
                     {
                         "fixture_id": bundle["fixture_a"].id,
                         "ownership_type": "self_purchased",
-                        "identifier": "202606",
+                        "identifier": "12345",
                         "quantity": 1,
                     }
                 ],
             )
 
+    def test_transaction_queries_match_numeric_identifier_across_legacy_padding_formats(self) -> None:
+        bundle = self.seed_customer_bundle()
+
+        self.inventory_service.receipt(
+            StockTransactionCreate(
+                customer_id=bundle["customer"].id,
+                created_by="Tester",
+                occurred_at=datetime(2026, 6, 9, 8, 30, tzinfo=timezone.utc),
+                transaction_no="RCV-NEW-0001",
+                items=[
+                    {
+                        "fixture_id": bundle["fixture_a"].id,
+                        "ownership_type": "self_purchased",
+                        "identifier": "1",
+                        "quantity": 2,
+                    }
+                ],
+            )
+        )
+        legacy_tx = self.inventory_service.repo.create_transaction(
+            customer_id=bundle["customer"].id,
+            transaction_type="receipt",
+            occurred_at=datetime(2026, 6, 8, 8, 30, tzinfo=timezone.utc),
+            created_by="Legacy Loader",
+            transaction_no="RCV-LEGACY-0001",
+            note=None,
+        )
+        self.inventory_service.repo.add_transaction_item(
+            transaction_id=legacy_tx.id,
+            fixture_id=bundle["fixture_a"].id,
+            ownership_type="self_purchased",
+            identifier="01",
+            quantity=1,
+            note=None,
+        )
+        self.db.commit()
+
+        transactions = self.inventory_service.list_transactions(
+            20,
+            customer_id=bundle["customer"].id,
+            identifier="0001",
+        )
+
+        self.assertEqual(
+            {tx["transaction_no"] for tx in transactions},
+            {"RCV-NEW-0001", "RCV-LEGACY-0001"},
+        )
+
+    def test_transaction_export_query_accepts_legacy_identifier_text(self) -> None:
+        bundle = self.seed_customer_bundle()
+
+        legacy_tx = self.inventory_service.repo.create_transaction(
+            customer_id=bundle["customer"].id,
+            transaction_type="receipt",
+            occurred_at=datetime(2026, 6, 8, 8, 30, tzinfo=timezone.utc),
+            created_by="Legacy Loader",
+            transaction_no="RCV-LEGACY-DATECODE",
+            note=None,
+        )
+        self.inventory_service.repo.add_transaction_item(
+            transaction_id=legacy_tx.id,
+            fixture_id=bundle["fixture_a"].id,
+            ownership_type="self_purchased",
+            identifier="2024W12",
+            quantity=3,
+            note=None,
+        )
+        self.db.commit()
+
+        columns, rows = self.inventory_service.build_transaction_export_report(
+            customer_id=bundle["customer"].id,
+            report_type="detail",
+            identifier="2024W12",
+        )
+
+        self.assertEqual(columns, ["治具編號", "識別碼", "收料數", "退料數", "總數"])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["治具編號"], "FX-A")
+        self.assertEqual(rows[0]["識別碼"], "2024W12")
+        self.assertEqual(rows[0]["收料數"], 3)
+
     def test_import_transactions_csv_rolls_back_on_invalid_row(self) -> None:
         bundle = self.seed_customer_bundle()
         csv_content = (
             "transaction_type,fixture_code,ownership_type,identifier,quantity,created_by,occurred_at,note\n"
-            "receipt,FX-A,self_purchased,202606,5,Tester,2026-06-09T08:30:00+00:00,\n"
-            "receipt,NOT-EXIST,self_purchased,202606,5,Tester,2026-06-09T08:30:00+00:00,\n"
+            "receipt,FX-A,self_purchased,2606,5,Tester,2026-06-09T08:30:00+00:00,\n"
+            "receipt,NOT-EXIST,self_purchased,2606,5,Tester,2026-06-09T08:30:00+00:00,\n"
         )
 
         with self.assertRaises(ValueError):

@@ -379,7 +379,7 @@ class ProductionService:
 
         fixtures.sort(key=lambda item: item["fixture_code"])
         station_query_rows.sort(key=lambda item: item["station_code"])
-        model_max_open = 0 if not station_capacity_values else station_capacity_values[0]
+        model_max_open = min(station_capacity_values, default=0)
 
         return {
             "model_id": model.id,

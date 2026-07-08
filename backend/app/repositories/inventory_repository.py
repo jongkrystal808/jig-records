@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.models.inventory import (
@@ -225,7 +225,8 @@ class InventoryRepository:
         date_to: datetime | None = None,
         fixture_code: str | None = None,
         transaction_no: str | None = None,
-        identifier: str | None = None,
+        identifier_exact_matches: list[str] | None = None,
+        identifier_contains: str | None = None,
         created_by: str | None = None,
     ) -> list[dict]:
         tx_id_stmt = (
@@ -246,10 +247,11 @@ class InventoryRepository:
             tx_id_stmt = tx_id_stmt.where(Fixture.code.ilike(f"%{fixture_code.strip()}%"))
         if transaction_no:
             tx_id_stmt = tx_id_stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
-        if identifier:
-            tx_id_stmt = tx_id_stmt.where(
-                MaterialTransactionItem.identifier.ilike(f"%{identifier.strip()}%")
-            )
+        tx_id_stmt = self._apply_identifier_filter(
+            tx_id_stmt,
+            identifier_exact_matches=identifier_exact_matches,
+            identifier_contains=identifier_contains,
+        )
         if created_by:
             tx_id_stmt = tx_id_stmt.where(MaterialTransaction.created_by.ilike(f"%{created_by.strip()}%"))
         tx_id_stmt = tx_id_stmt.order_by(MaterialTransaction.id.desc()).limit(limit)
@@ -318,7 +320,8 @@ class InventoryRepository:
         date_to: datetime | None = None,
         fixture_code: str | None = None,
         transaction_no: str | None = None,
-        identifier: str | None = None,
+        identifier_exact_matches: list[str] | None = None,
+        identifier_contains: str | None = None,
         created_by: str | None = None,
     ) -> list[dict]:
         stmt = (
@@ -350,9 +353,28 @@ class InventoryRepository:
             stmt = stmt.where(Fixture.code.ilike(f"%{fixture_code.strip()}%"))
         if transaction_no:
             stmt = stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
-        if identifier:
-            stmt = stmt.where(MaterialTransactionItem.identifier.ilike(f"%{identifier.strip()}%"))
+        stmt = self._apply_identifier_filter(
+            stmt,
+            identifier_exact_matches=identifier_exact_matches,
+            identifier_contains=identifier_contains,
+        )
         if created_by:
             stmt = stmt.where(MaterialTransaction.created_by.ilike(f"%{created_by.strip()}%"))
         stmt = stmt.order_by(MaterialTransaction.occurred_at.asc(), MaterialTransaction.id.asc(), MaterialTransactionItem.id.asc())
         return [dict(row._mapping) for row in self.db.execute(stmt).all()]
+
+    @staticmethod
+    def _apply_identifier_filter(
+        stmt,
+        *,
+        identifier_exact_matches: list[str] | None = None,
+        identifier_contains: str | None = None,
+    ):
+        clauses = []
+        if identifier_exact_matches:
+            clauses.append(MaterialTransactionItem.identifier.in_(identifier_exact_matches))
+        if identifier_contains:
+            clauses.append(MaterialTransactionItem.identifier.ilike(f"%{identifier_contains.strip()}%"))
+        if not clauses:
+            return stmt
+        return stmt.where(or_(*clauses))

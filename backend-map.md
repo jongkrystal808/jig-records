@@ -4,7 +4,7 @@
 
 - 後端各模組現在的責任分工
 - 前端主要頁面各自依賴哪些後端 API / 資料表
-- 改資料模型時最少要連動檢查哪些地方
+- 改資料模型或啟動流程時最少要連動檢查哪些地方
 
 ## 後端請求路徑
 
@@ -13,24 +13,39 @@
 - `router`
   - HTTP API 入口
   - 權限依賴、query/path 參數、HTTP error mapping
+
 - `service`
   - 業務規則
   - 審計寫入
   - 交易與跨 repository 協調
+
 - `repository`
   - SQLAlchemy 查詢與寫入
+
 - `model`
   - ORM 資料表定義
+
 - `schema`
   - request / response 驗證格式
 
 ## 基礎入口與核心層
 
+- `main.py`
+  - 本機 / image 啟動 launcher
+  - 依 `BOOTSTRAP_BEFORE_RUN` 決定是否先做 bootstrap
+  - 預設會先跑 migration 與 default user 初始化，再起 `uvicorn`
+
+- `backend/app/bootstrap.py`
+  - `bootstrap_application()`
+  - 專責 migration 與 default admin 建立
+  - 可獨立 CLI 執行
+
 - `backend/app/main.py`
   - 建立 FastAPI app
-  - startup 時執行 migration / 啟動前檢查
-  - 確保預設 `admin` 存在
+  - 註冊 error handlers
+  - 提供 `/health`
   - 掛載 `/api/v2`
+  - 不再在 app startup 內直接跑 migration / bootstrap
 
 - `backend/app/routers/api.py`
   - 掛載 `auth` / `master` / `inventory` / `production` / `search` / `audit`
@@ -46,13 +61,17 @@
   - `get_db`
 
 - `backend/app/core/migrations.py`
-  - 啟動前 migration preflight
-  - Alembic version 欄位兼容處理
+  - Alembic upgrade 執行
+  - version table 相容檢查
   - legacy revision normalization
 
 - `backend/app/core/schema_patch.py`
-  - legacy DB 的 runtime 保底 patch
-  - 現在已不是主 migration 機制，只保留兼容用途
+  - legacy DB runtime patch 保底
+  - 現在只保留相容用途，不是主 migration 機制
+
+- `backend/app/core/errors.py`
+  - FastAPI error handler 註冊
+  - `RequestValidationError` payload 序列化保底
 
 ## Router / Service / Repository / Model 對應
 
@@ -131,13 +150,13 @@
 
 - `customers` / `users` 是 `manage` 權限
 - `fixtures` / `models` / `stations` 是 `write` 權限
-- `fixtures.code` 已改為 `(customer_id, code)` 唯一鍵
+- `fixtures.code` 使用 `(customer_id, code)` 唯一鍵
 - `fixtures.responsible_user_id` 候選名單來自該客戶已指派使用者
 - fixture image 採檔案式讀取，不走 DB 圖片表
 
 #### 前端入口
 
-- `frontend/src/App.vue`
+- `frontend/src/components/app/AppTopbar.vue`
   - customer list / current customer picker
 
 - `frontend/src/pages/MasterPage.vue`
@@ -181,6 +200,10 @@
 #### 行為重點
 
 - 交易明細正式使用單一 `identifier`
+- 寫入規格是 `1-4` 位數字，寫入前左補零
+- 查詢規格相容舊資料
+  - `1-4` 位數字會同時匹配不同 padding 寬度的 legacy 值
+  - 非 `1-4` 位數字輸入會當 legacy identifier/datecode 原值查詢
 - `ownership_type` 在 transaction item 層
 - 批次貼上匯入前端仍走 `/receipts` / `/returns`
 - CSV 匯入走 `/inventory/transactions/import`
@@ -207,14 +230,20 @@
 - `frontend/src/components/inventory/InventoryExportPanel.vue`
   - 報表 preview
   - `xlsx` / `txt` 匯出
+  - `identifier` 相容查詢輸入
 
-- `frontend/src/App.vue`
-  - 頂欄今日收料 / 今日退料 / 低水位統計
+- `frontend/src/components/app/AppTopbar.vue`
+  - 今日收料 / 今日退料 / 低水位統計
+
+- `frontend/src/components/app/AppGlobalModals.vue`
   - 全域收退料 modal
   - 全域收退料匯出 modal
 
 - `frontend/src/pages/SearchWorkspacePage.vue`
-  - 收退料記錄、fixture context、identifier stock context
+  - 收退料記錄
+  - fixture context
+  - identifier stock context
+  - 最近收 / 退料治具快捷入口的資料來源
 
 ### Production
 
@@ -246,10 +275,11 @@
 
 #### 行為重點
 
-- requirement scope 已定案為 `model_id + station_id + fixture_id`
+- requirement scope 定案為 `model_id + station_id + fixture_id`
 - 同一站點可被多機種共用
 - capacity 查詢必須帶 `model_id`
 - `current_open_station_count` 已退場
+- `get_model_query` 的 `max_open_station_count` 以瓶頸站點最小值為準
 - production 頁有兩套前端批次貼上匯入流程：mapping 與 requirement
 
 #### 前端入口
@@ -283,7 +313,7 @@
 - query 支援 fixture code / name、model、station、storage location、identifier transaction context
 - fixture 側 related models 直接來自 `fixture_requirements.model_id`
 - 不再從 station 反推 model
-- 搜尋頁的「相近編號」提示排序屬於前端行為，不是 search API 自帶 ranking contract
+- 搜尋頁的「相近編號」提示排序與「最近收 / 退料治具快捷入口」屬於前端行為，不是 search API contract
 
 #### 前端入口
 
@@ -311,8 +341,9 @@
 
 #### 前端入口
 
-- `frontend/src/api.ts`
-  - 目前保留 `listAuditLogs`
+- `frontend/src/api/auditClient.ts`
+  - `listAuditLogs`
+
 - 備註：
   - 目前 `App.vue` 沒有渲染 audit 摘要區塊
 
@@ -330,7 +361,7 @@
 - API contract：
   - `assigned_user_ids`
 - 前端使用：
-  - `frontend/src/App.vue`
+  - `frontend/src/components/app/AppTopbar.vue`
     - customer picker
   - `frontend/src/pages/MasterPage.vue`
     - customer tab
@@ -348,7 +379,7 @@
   - `created_at`
   - `updated_at`
 - 前端使用：
-  - `frontend/src/App.vue`
+  - `frontend/src/components/app/AppTopbar.vue`
     - 顯示登入者名稱
   - `frontend/src/pages/MasterPage.vue`
     - user tab
@@ -469,7 +500,8 @@
     - overview
   - `frontend/src/pages/SearchWorkspacePage.vue`
     - fixture transaction context
-  - `frontend/src/App.vue`
+    - 最近收 / 退料治具快捷入口排序
+  - `frontend/src/components/app/AppTopbar.vue`
     - today receipt / return summary
 
 ### `material_transaction_items`
@@ -489,6 +521,7 @@
     - overview rows
   - `frontend/src/pages/SearchWorkspacePage.vue`
     - transaction rows
+    - 最近收 / 退料治具快捷入口的 fixture code 來源
 
 ### `fixture_stock_levels`
 
@@ -543,6 +576,6 @@
 
 ## 現況提醒
 
-- `InventoryService` 現在依賴 `openpyxl` 來輸出 `xlsx` 報表；若環境沒安裝，backend import 與 pytest 都會失敗。
+- `InventoryService` 依賴 `openpyxl` 輸出 `xlsx` 報表；若環境沒安裝，backend import 與 pytest 會失敗。
 - onboarding / guided tour 完全是前端功能，不要在 backend 補假的 tutorial router。
 - `App.vue` 目前沒有渲染 audit 摘要區塊，因此 `/audit/logs` 雖保留，但不是首頁主流程的一部分。

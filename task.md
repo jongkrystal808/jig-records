@@ -67,8 +67,13 @@
 - `MasterPage` 已有前端分頁；`SearchWorkspacePage` 目前仍沒有查詢結果分頁。
 - `SearchWorkspacePage` 目前仍沒有可收合的篩選區。
 - `npm run build` 目前可通過。
-- `.venv\\Scripts\\python.exe -m pytest tests -q` 目前為 `4 passed, 1 failed`。
-- 目前剩餘失敗案例在 `tests/test_inventory_and_production.py::test_inventory_capacity_and_search_flow`：測試資料使用 `identifier = "202606"`，但現行驗證仍限制「4 碼以內」，且 validation error payload 的 `ctx.error` 仍帶出未序列化的 `ValueError`。
+- `.venv\\Scripts\\python.exe -m pytest -q` 目前為 `33 passed`。
+- 目前 `identifier` 已分成兩套規則：
+  - 寫入規則：只接受 1-4 位數字，寫入前左補零為 4 碼。
+  - 查詢/匯出篩選規則：需相容舊資料庫；輸入 1-4 位數字時，同時匹配 `1 / 01 / 001 / 0001` 類零補齊舊資料；輸入超過 4 碼或含非數字時，視為 legacy `identifier / datecode` 原值查詢。
+- `RequestValidationError` payload 已修正為 JSON-safe 序列化，欄位驗證失敗會穩定回傳 `422`。
+- `auth token` 目前以受信任內網為前提，`sessionStorage + Bearer token` 方案暫不列為本輪必要整改。
+- `main.py` 與 Docker image 預設啟動路徑已改為明確 bootstrap launcher；`docker-compose` 的 `api` service 會顯式關閉重複 bootstrap，維持由獨立 `bootstrap` service 先初始化。
 
 ## Phase 0-4 Approved Update
 
@@ -166,7 +171,8 @@
 
 - 收退料頁不再提供單筆表單，統一由批次貼上匯入處理
 - 每筆貼上資料都必須包含 `治具編號 + 識別碼 + 數量`
-- `identifier` 不限制英數格式，由使用者自定義
+- `identifier` 採後端現行規則：只接受 1-4 位數字，寫入前左補零為 4 碼
+- `identifier` 的查詢 / 匯出篩選需相容舊資料：輸入 1-4 位數字時，需同時匹配舊資料裡不同零補齊寬度；輸入超過 4 碼或含非數字時，則以 legacy `identifier / datecode` 原值查詢
 - 所有收退料明細都必填 `ownership_type`
 
 ### 11) 儲位與圖片整合
@@ -192,6 +198,8 @@
 - [x] 補上 backend 與 frontend 的測試覆蓋，至少涵蓋 auth / inventory / capacity / CSV / production 主流程
 - [x] 清理 `frontend/src` 與專案內的生成檔、`*.js`、`*.map`、`dist` 類產物，避免 source tree 混入 build artifacts
 - [x] 統一 API 錯誤處理與回傳格式，避免前後端對錯誤訊息的解讀不一致
+- [x] 修正 `RequestValidationError` payload 序列化，確保欄位驗證失敗穩定回傳 `422`，不再因 `ctx.error = ValueError(...)` 變成 `500`
+- [x] 將 `identifier` 規格全面對齊後端現行規則：同步更新 backend tests、frontend tests、CSV 範本、頁面文案與文件，移除 `202606` 類舊示例
 
 #### P1 - 中優先
 - [x] 統一各頁面的表單編輯體驗，讓新增 / 編輯 / 取消編輯的操作邏輯一致
@@ -204,10 +212,13 @@
 - [x] 用更直觀的視覺方式呈現產能狀態，例如顏色、進度條、警示標籤
 - [x] 讓資料維護頁的啟用 / 停用、可用 / 不可用狀態更一致、更容易辨識
 - [x] 再整理一次手機版與小螢幕版布局，特別是 top nav、表格操作列、表單寬度
+- [x] 修正 `get_model_query` 的 `max_open_station_count` 摘要算法，改為反映整個機種查詢結果的真實瓶頸值，並補多站點測試
+- [x] 將 DB migration / 預設 admin bootstrap 從 app startup 拆成明確的 deploy/bootstrap 流程，降低多 instance 啟動副作用
 
 #### P2 - 次優先
 - [x] 抽出日期格式化、欄位 fallback、狀態映射等共用工具，降低各頁重複邏輯
-- [ ] 將 `InventoryPage`、`MasterPage`、`ProductionPage` 等大型頁面再拆小，降低後續維護成本
+- [ ] 持續拆分大型頁面，`InventoryPage` / `ProductionPage` / `MasterPage` / `SearchWorkspacePage` / `App.vue` 已拆出主要區塊，剩餘前端結構整理重點轉為 `ProductionPage` batch domain logic 與少量 shell/domain 細部收斂
+- [x] 將 `api.ts` 進一步拆成 domain client，讓前端資料存取不再集中在單一大型檔案
 - [x] 補更完整的審計資訊，例如誰在什麼時間修改了哪些主資料
 - [x] 若資料量持續增加，針對查詢與列表頁開始規劃分頁、索引與查詢效能優化
 - [x] 重新整理首頁資訊層級，讓客戶資訊、登入狀態、今日統計、導航區更清楚
@@ -310,8 +321,87 @@
 
 ## Update Log
 
+### 2026-07-07
+
+- 已把 `identifier` 規則正式拆成「寫入規則」與「查詢相容規則」：
+  - 新增 / 匯入寫入仍只接受 1-4 位數字，並在寫入前左補零為 4 碼。
+  - 收退料查詢、匯出與總檢視篩選則需相容舊資料庫：輸入 1-4 位數字時，同時匹配 `1 / 01 / 001 / 0001` 類零補齊變體；輸入超過 4 碼或含非數字時，則以 legacy `identifier / datecode` 原值查詢。
+- 已修正 `RequestValidationError` payload 的 JSON-safe 序列化，避免 `ctx.error = ValueError(...)` 再把欄位驗證錯誤升級成 `500`。
+- 已補上 backend 測試，涵蓋：
+  - `max_open_station_count` 以機種整體瓶頸值摘要
+  - 舊資料庫 numeric identifier 不同零補齊寬度的相容查詢
+  - legacy `2024W12` 類 identifier/datecode 的查詢與匯出相容
+- 已把 `InventoryExportPanel`、`InventoryPage` 篩選 placeholder 與 onboarding 文案更新為相容規則，不再把使用者導向必定失敗的 `Datecode` 輸入格式。
+- 已將 `InventoryPage` 拆成較薄的頁面容器，並抽出：
+  - `frontend/src/components/inventory/InventoryOperationBoard.vue`
+  - `frontend/src/components/inventory/InventoryOverviewPanel.vue`
+- 已將 `ProductionPage` 的頁首 / detail 編輯區進一步拆出，頁面本體改為較薄的資料容器，並抽出：
+  - `frontend/src/components/production/ProductionHeaderSection.vue`
+  - `frontend/src/components/production/ProductionDetailSection.vue`
+- 已將 `ProductionPage` 的批次貼上匯入 modal shell 進一步抽出為：
+  - `frontend/src/components/production/ProductionBatchImportModal.vue`
+- `ProductionPage` 的批次解析、相似比對與提交邏輯目前仍保留在頁面層，先把 modal shell 抽離，下一步再視需要把 batch domain logic 拆到 composable 或 service helper。
+- 已將 `MasterPage` 的 list / detail 編輯區抽成獨立元件，頁面本體改為以資料載入與 CRUD 為主，並抽出：
+  - `frontend/src/components/master/MasterListPanel.vue`
+  - `frontend/src/components/master/MasterDetailPanel.vue`
+- 已再往上抽出跨頁共用 UI 結構，先集中收斂高重複率區塊：
+  - `frontend/src/components/UiSummaryCards.vue`：統一 `Inventory` / `Master` 的摘要卡片列 rendering 與響應式欄位配置
+  - `frontend/src/components/UiSectionHeader.vue`：統一 `Master` / `Production` 多個 panel header 的標題 + 說明 + actions 結構
+- 已將 `SearchWorkspacePage` 的外層頁面結構拆出：
+  - `frontend/src/components/search/SearchHeroSection.vue`
+  - `frontend/src/components/search/SearchResultPanel.vue`
+- `SearchWorkspacePage` 目前保留查詢狀態、選取邏輯與資料彙整；hero / result shell 已抽離，但內層 `FixtureInfoPanel` / `ModelInfoPanel` 的獨特視覺語言仍維持獨立，避免過度抽象後讓查詢頁失去辨識度。
+- 已將 `App.vue` 的 shell UI 進一步拆出，讓頁面本體只保留 session、route、onboarding 與全域資料刷新協調：
+  - `frontend/src/components/app/AppAuthScreen.vue`
+  - `frontend/src/components/app/AppTopbar.vue`
+  - `frontend/src/components/app/AppMobileDrawer.vue`
+  - `frontend/src/components/app/AppGlobalModals.vue`
+  - `frontend/src/components/app/AppToastStack.vue`
+- 已同步清掉 `App.vue` 搬遷後殘留的 topbar / mobile drawer / toast scoped style 死碼，避免只是搬檔但沒有真正降低頁面密度。
+- 已將一批跨頁重複 CSS 抽回全域 `frontend/src/styles.css`，集中收斂：
+  - 共用按鈕尺寸 utility，如 `btn-sm`
+  - 共用 modal shell，如 `ui-modal-backdrop` / `ui-modal-card`
+  - 共用 detail layout / panel card / section head / chip / info table 樣式
+- 已新增 `frontend/src/components/UiSplitDetailLayout.vue`，把查詢頁 `FixtureInfoPanel` / `ModelInfoPanel` 的 summary rail + detail scroll 外殼抽成共用元件。
+- 已讓 `FixtureInfoPanel` / `ModelInfoPanel`、`AppGlobalModals`、`ProductionBatchImportModal`、`AppAuthScreen`、`AppTopbar`、`AppMobileDrawer`、`FixtureEditForm`、`ModelEditForm` 改接全域 utility，移除重複的 local button / modal / layout CSS。
+- 已再往下補齊兩種高重複率變體 utility，避免 `MasterPage` / `BatchImportPanel` 各自維護一份按鈕與狀態樣式：
+  - `btn-compact`：緊湊型工具列按鈕
+  - `status-pill.batch-state` 與 `ready / needs-confirm / needs-add / error / skipped`：批次匯入狀態膠囊
+- 已將 `MasterPage` 的 toolbar 改接 `btn-compact`，並清掉頁面層殘留的 dead button / status CSS。
+- 已將 `BatchImportPanel` 的 batch row action、accent submit/ghost button、status pill 改接共用 utility，只保留 panel accent 變體本身。
+- 已將 `InventoryExportPanel` 從暖色系收斂回專案主流藍白配色，header pill、filter card、preview chip 與操作按鈕已與全站主色一致，不再保留額外暖色 utility。
+- 已將 `frontend/src/api.ts` 從單一大型實作檔收斂為穩定 barrel 入口，對外仍維持 `import { api } from "@/api"` 不變；內部則拆成：
+  - `frontend/src/api/core.ts`
+  - `frontend/src/api/authClient.ts`
+  - `frontend/src/api/masterClient.ts`
+  - `frontend/src/api/inventoryClient.ts`
+  - `frontend/src/api/productionClient.ts`
+  - `frontend/src/api/searchClient.ts`
+  - `frontend/src/api/auditClient.ts`
+  - `frontend/src/api/mediaClient.ts`
+- 這次 `api.ts` 拆分只做到 domain client 層，不再往更細碎的 function-per-file 方向切，避免過度抽象後降低可發現性；transport/error handling 仍集中在 `core.ts`。
+- 已在查詢首頁補上「最近收 / 退料治具」快捷入口，預設顯示 5 個唯一治具代碼，並提供「顯示更多 / 收合」按鈕；點擊任一快捷入口後會自動切到治具模式並帶入對應查詢，降低現場重複查同一批剛收/退料治具的操作成本。
+- 已同步讓治具查詢結果內的「最近收退料」表格保留較大的近期資料池，預設顯示 8 筆，並提供「顯示更多 / 收合」按鈕，避免明細區只看得到極少數交易。
+- 已將治具查詢結果內的 `查看更多` 接到真正的歷史查詢流程：點擊後會依 `fixture_code` 額外載入該治具更完整的收退料歷史，而不只是把首頁預載的近期交易池展開。
+- 已同步讓 `BatchImportPanel` 支援外部受控 `mode`，避免頁面外層分段切換與批次匯入元件內部模式脫鉤。
+- 已將 app startup 內的 migration / default admin side effect 保持移除，並補上明確 launcher：
+  - `main.py` 直接啟動時會先執行 bootstrap 再啟動 uvicorn
+  - Docker image 預設改走 `python main.py`
+  - `docker-compose` 的 `api` service 顯式關閉 `BOOTSTRAP_BEFORE_RUN`，仍由獨立 `bootstrap` service 先初始化，避免重複 bootstrap
+- 已驗證：
+  - `.venv\\Scripts\\python.exe -m pytest -q` -> `33 passed`
+  - `frontend\\npm run build` -> pass
+  - `tests\\test_inventory_and_production.py -q` -> `3 passed`
+
 ### 2026-07-04
 
+- 已確認 review open questions 的決策：
+  - `identifier` 以後端現行規則為準，只接受 1-4 位數字，並於寫入前左補零為 4 碼。
+  - `auth token` 風險接受前提為「系統只跑在受信任內網」，因此 `sessionStorage + Bearer token` 暫不列為本輪必要整改。
+- 已依上述決策把當前必要修正重排優先級：
+  - `P0`：修正 validation error payload 序列化；全面對齊 `identifier` 規格與測試/範本/文件。
+  - `P1`：修正 `get_model_query` 摘要產能算法；拆除 startup 內的 migration / bootstrap 副作用。
+  - `P2`：持續拆分大型前端頁面與 `api.ts` / shell 模組。
 - 已重新同步 `task.md`、`ARCHITECTURE.md`、`frontend-map.md`、`backend-map.md`、`map.md`、`ARCHITECTURE_LANDING.md`，讓文件描述對齊目前 topbar shell、全域收退料/匯出 modal、onboarding 導覽與教學模式。
 - 已在文件中補上 `GuidedTour`、`frontend/src/onboarding.ts`、`InventoryExportPanel.vue`、搜尋頁「相近編號」提示收斂等最新前端結構。
 - 已確認 `requirements.txt` 原本就包含 `openpyxl`；本次已補安裝到目前 `.venv`，排除測試因缺套件而在 import 階段直接失敗的問題。

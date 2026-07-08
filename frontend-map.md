@@ -2,9 +2,9 @@
 
 這份文件回答三件事：
 
-- 每個頁面 / 主要操作對應哪個 API
-- 要改畫面或互動時應該進哪個檔案
-- 目前有哪些共用元件 / 共用工具已經抽出
+- 每個頁面 / 主要操作現在對應哪個 page 與拆分元件
+- 要改畫面、互動或 API 時應該進哪個檔案
+- 目前哪些共用元件 / 共用 CSS / API client 已經抽出
 
 ## 入口檔與全域骨架
 
@@ -24,24 +24,28 @@
   - guest 進 `/master` 會被導回 `/search`
 
 - `frontend/src/App.vue`
-  - 全域 shell
-  - 登入畫面 / 訪客入口
+  - 全域 shell 協調器
+  - 只保留 session、route、onboarding、topbar stats refresh、global modal open state
+  - 不再直接承接整塊登入頁、topbar、drawer、toast template
+
+- `frontend/src/components/app/AppAuthScreen.vue`
+  - 登入畫面
+  - 訪客入口
+
+- `frontend/src/components/app/AppTopbar.vue`
   - 頂部導覽列
   - customer picker
-  - 今日收料 / 退料 / 低水位統計
-  - 全域 `收/退料` modal
+  - 今日收料 / 退料 / 低水位摘要
+
+- `frontend/src/components/app/AppMobileDrawer.vue`
+  - 手機版抽屜選單
+
+- `frontend/src/components/app/AppGlobalModals.vue`
+  - 全域 `收 / 退料` modal
   - 全域 `收退料資訊匯出` modal
-  - `更多功能` 選單
-  - 首次登入自動新手導覽
+
+- `frontend/src/components/app/AppToastStack.vue`
   - 全域 toast 顯示
-  - session / customer 的 sessionStorage 持久化
-  - 手機版選單 overlay 開關
-
-- `frontend/src/api.ts`
-  - 前端所有 API 呼叫集中處
-
-- `frontend/src/types.ts`
-  - 前端型別定義
 
 - `frontend/src/appState.ts`
   - 全域登入 session
@@ -56,9 +60,44 @@
   - 全域 toast 狀態
 
 - `frontend/src/styles.css`
-  - 全域 CSS 變數與共用基底樣式
+  - 全域 CSS 變數
+  - 共用按鈕、panel、modal、table、chip、summary、state utility
 
-## 共用元件 / 工具
+## API Client 結構
+
+- `frontend/src/api.ts`
+  - 對外穩定入口
+  - 保持 `import { api } from "@/api"` 不變
+  - 只做 barrel 聚合
+
+- `frontend/src/api/core.ts`
+  - transport
+  - headers
+  - query string
+  - response / error handling
+
+- `frontend/src/api/authClient.ts`
+  - auth / user 相關 API
+
+- `frontend/src/api/masterClient.ts`
+  - fixture / model / station / customer 相關 API
+
+- `frontend/src/api/inventoryClient.ts`
+  - stock / alert / receipt / return / transaction / export 相關 API
+
+- `frontend/src/api/productionClient.ts`
+  - model-station / fixture requirement / capacity / model query
+
+- `frontend/src/api/searchClient.ts`
+  - global search
+
+- `frontend/src/api/auditClient.ts`
+  - audit log
+
+- `frontend/src/api/mediaClient.ts`
+  - fixture image URL 與 blob fetch
+
+## 共用元件 / 共用工具
 
 - `frontend/src/components/common/GuidedTour.vue`
   - 全域導覽浮層
@@ -71,32 +110,17 @@
 - `frontend/src/components/UiFormActions.vue`
   - 新增 / 編輯 / 取消 / 停用動作列
 
+- `frontend/src/components/UiSectionHeader.vue`
+  - panel 標題列
+
+- `frontend/src/components/UiSplitDetailLayout.vue`
+  - summary rail + detail scroll 的共用殼層
+
 - `frontend/src/components/UiStatusPill.vue`
   - 主資料 / 狀態標籤顯示
 
-- `frontend/src/components/inventory/BatchImportPanel.vue`
-  - 共用批次貼上匯入元件
-  - `/inventory` 與全域 modal 共用
-  - 支援 tutorial mode 教學試跑
-
-- `frontend/src/components/inventory/InventoryExportPanel.vue`
-  - 收退料報表匯出面板
-  - 匯出前 preview / 報表類型 / 格式選擇
-
-- `frontend/src/components/production/ProductionCapacityPanel.vue`
-  - 產能視覺化區塊
-
-- `frontend/src/components/search/FixtureInfoPanel.vue`
-  - 治具查詢展示面板
-
-- `frontend/src/components/search/ModelInfoPanel.vue`
-  - 機種查詢展示面板
-
-- `frontend/src/components/search/FixtureEditForm.vue`
-  - 搜尋頁中的治具編輯表單
-
-- `frontend/src/components/search/ModelEditForm.vue`
-  - 搜尋頁中的機種編輯表單
+- `frontend/src/components/UiSummaryCards.vue`
+  - 摘要卡片列
 
 - `frontend/src/utils/date.ts`
   - 本地日期 key / 顯示輔助
@@ -120,55 +144,89 @@
 - 初始化 / session 恢復後載入 customer
   - `api.listCustomers`
 
-- customer 切換後更新 today summary
+- customer 切換後更新 topbar summary
   - `api.listAlerts`
   - `api.listTransactions`
 
 - 全域收退料 modal
+  - `AppGlobalModals.vue`
   - 內部共用 `BatchImportPanel.vue`
 
 - 全域收退料匯出 modal
+  - `AppGlobalModals.vue`
   - 內部共用 `InventoryExportPanel.vue`
 
 ### 改全域畫面時去哪裡
 
-- 改頂部導覽、登入卡片、customer picker、全域 modal、更多功能選單
+- 改 session 恢復、route 轉向、onboarding 狀態、topbar refresh orchestration
   - `frontend/src/App.vue`
 
-- 改新手導覽步驟、導覽文案、目標 selector
-  - `frontend/src/onboarding.ts`
-  - `frontend/src/components/common/GuidedTour.vue`
-  - 各頁面上的 `data-tour` 標記
+- 改登入卡片
+  - `frontend/src/components/app/AppAuthScreen.vue`
 
-- 改全域共享狀態
-  - `frontend/src/appState.ts`
+- 改頂部導覽、customer picker、today summary
+  - `frontend/src/components/app/AppTopbar.vue`
 
-- 改全域 toast 樣式
-  - `frontend/src/App.vue`
+- 改手機版選單
+  - `frontend/src/components/app/AppMobileDrawer.vue`
+
+- 改全域收退料 / 匯出 modal
+  - `frontend/src/components/app/AppGlobalModals.vue`
+
+- 改全域 toast UI
+  - `frontend/src/components/app/AppToastStack.vue`
   - 狀態邏輯在 `frontend/src/toastState.ts`
 
 ## 查詢頁
 
-- 檔案：`frontend/src/pages/SearchWorkspacePage.vue`
+- page：`frontend/src/pages/SearchWorkspacePage.vue`
+- 子元件：
+  - `frontend/src/components/search/SearchHeroSection.vue`
+  - `frontend/src/components/search/SearchResultPanel.vue`
+  - `frontend/src/components/search/FixtureInfoPanel.vue`
+  - `frontend/src/components/search/ModelInfoPanel.vue`
+  - `frontend/src/components/search/FixtureEditForm.vue`
+  - `frontend/src/components/search/ModelEditForm.vue`
+
+### 目前責任分工
+
+- `SearchWorkspacePage.vue`
+  - mode / query state
+  - 初始化資料載入
+  - smart hint 排序
+  - 最近收 / 退料治具快捷入口資料整理
+  - fixture / model result 組裝
+
+- `SearchHeroSection.vue`
+  - 查詢首頁 hero shell
+  - mode switch
+  - smart hints
+  - 最近收 / 退料治具快捷入口
+  - onboarding 入口
+
+- `SearchResultPanel.vue`
+  - 查詢結果外層殼層
+
+- `FixtureInfoPanel.vue`
+  - 治具 detail
+  - 圖片、identifier stock、transaction context
+
+- `ModelInfoPanel.vue`
+  - 機種 detail
+  - station / fixture requirement / stock context
 
 ### 主要功能
 
 - 雙模式查詢：`治具` / `機種`
-- 固定 KPI 方格
 - fixture detail
 - model detail
 - fixture 圖片預覽
 - 識別碼庫存摘要
 - transaction context
-- 內容區內滾動
-- 首頁固定「開始新手教學」入口
 - 相近編號提示排序
 - 區塊 chip 顯示切換與 localStorage 記憶
-
-### 目前未落地
-
-- 查詢結果分頁
-- 可收合篩選區
+- 最近收 / 退料治具快捷入口
+- 首頁固定「開始新手教學」入口
 
 ### API 對應
 
@@ -194,42 +252,66 @@
 
 ### 改查詢頁時去哪裡
 
-- 改模式切換 / 關鍵字輸入 / chip 區 / onboarding 入口
+- 改查詢 state、smart hint 排序、快捷入口資料來源、section persistence
   - `frontend/src/pages/SearchWorkspacePage.vue`
 
-- 改相近編號提示排序規則
-  - `frontend/src/pages/SearchWorkspacePage.vue`
+- 改首頁 hero、提示卡、快捷入口、onboarding 按鈕
+  - `frontend/src/components/search/SearchHeroSection.vue`
 
-- 改 fixture detail / model detail / transaction 表格
-  - `frontend/src/pages/SearchWorkspacePage.vue`
-  - `frontend/src/components/search/*.vue`
+- 改查詢結果外殼與版面
+  - `frontend/src/components/search/SearchResultPanel.vue`
+
+- 改治具 / 機種 detail
+  - `frontend/src/components/search/FixtureInfoPanel.vue`
+  - `frontend/src/components/search/ModelInfoPanel.vue`
 
 - 改 fixture 圖片 URL 或載入策略
-  - `frontend/src/api.ts`
+  - `frontend/src/api/mediaClient.ts`
   - `frontend/src/pages/SearchWorkspacePage.vue`
 
 ## 收退料頁
 
-- 檔案：`frontend/src/pages/InventoryPage.vue`
+- page：`frontend/src/pages/InventoryPage.vue`
+- 子元件：
+  - `frontend/src/components/inventory/InventoryOperationBoard.vue`
+  - `frontend/src/components/inventory/InventoryOverviewPanel.vue`
+  - `frontend/src/components/inventory/BatchImportPanel.vue`
+  - `frontend/src/components/inventory/InventoryExportPanel.vue`
 
-### 主要功能
+### 目前責任分工
 
-- `receipt` / `return` segmented control
-- 操作頁與 overview 頁共用同一支 page
-- 內嵌共用 `BatchImportPanel`
-- 新治具即時建立
-- 相似治具確認 / 替換
-- 庫存總覽
-- 低水位提醒
-- 最近收退料紀錄
-- 收退料總檢視
-- overview 交易 CSV 匯出
-- onboarding 教學模式下的 sandbox 試跑
+- `InventoryPage.vue`
+  - 初始化資料載入
+  - route mode 切換
+  - operation metrics / overview filters / export orchestration
+
+- `InventoryOperationBoard.vue`
+  - 收料 / 退料操作視圖
+  - KPI cards
+  - 嵌入 `BatchImportPanel.vue`
+
+- `InventoryOverviewPanel.vue`
+  - overview 篩選
+  - 交易表格
+  - 匯出入口
+
+- `BatchImportPanel.vue`
+  - 批次貼上解析
+  - 新治具建立
+  - 相似治具確認 / 替換
+  - tutorial sandbox 試跑
+
+- `InventoryExportPanel.vue`
+  - 報表類型 / 匯出範圍選擇
+  - preview
+  - `xlsx` / `txt` 匯出
+  - `identifier` 查詢輸入與相容文案
 
 ### 路由模式
 
 - `/inventory`
   - operation-first
+
 - `/inventory/overview`
   - overview-first
 
@@ -253,33 +335,54 @@
 - overview 匯出 CSV
   - `api.exportTransactionsCsv`
 
+- 報表 preview / 匯出
+  - `api.previewTransactionReportExport`
+  - `api.exportTransactionReport`
+
 - 批次貼上匯入內的新治具建立
   - `api.createFixture`
 
 ### 改收退料頁時去哪裡
 
+- 改 page route mode、data refresh、overview filter state
+  - `frontend/src/pages/InventoryPage.vue`
+
+- 改操作頁 KPI / frame / layout
+  - `frontend/src/components/inventory/InventoryOperationBoard.vue`
+
+- 改 overview 篩選欄位與交易表格
+  - `frontend/src/components/inventory/InventoryOverviewPanel.vue`
+
 - 改批次貼上解析規則 / 相似治具比對 / 匯入預覽表 / tutorial mode
   - `frontend/src/components/inventory/BatchImportPanel.vue`
 
-- 改 `/inventory` 與 `/inventory/overview` 路由切換、總覽區塊、頁內篩選欄位
-  - `frontend/src/pages/InventoryPage.vue`
-
-- 改交易篩選欄位或 payload
-  - `frontend/src/pages/InventoryPage.vue`
-  - `frontend/src/types.ts`
-  - `frontend/src/api.ts`
-
-- 改全域收退料匯出互動
+- 改匯出面板互動 / preview / radio 選擇樣式
   - `frontend/src/components/inventory/InventoryExportPanel.vue`
-  - `frontend/src/api.ts`
-
-- 改 `identifier` / `ownership_type` 顯示文案
-  - `frontend/src/utils/display.ts`
-  - `frontend/src/pages/InventoryPage.vue`
+  - `frontend/src/api/inventoryClient.ts`
 
 ## 資料維護頁
 
-- 檔案：`frontend/src/pages/MasterPage.vue`
+- page：`frontend/src/pages/MasterPage.vue`
+- 子元件：
+  - `frontend/src/components/master/MasterListPanel.vue`
+  - `frontend/src/components/master/MasterDetailPanel.vue`
+
+### 目前責任分工
+
+- `MasterPage.vue`
+  - tab state
+  - 初始化載入
+  - CRUD orchestration
+  - import / export / template download
+  - summary metrics
+
+- `MasterListPanel.vue`
+  - tab 清單
+  - 搜尋 / 篩選
+  - 分頁列表
+
+- `MasterDetailPanel.vue`
+  - fixture / model / station / customer / user detail form
 
 ### 主要功能
 
@@ -292,52 +395,47 @@
 - fixture / model / station CSV 匯入匯出 / 範本下載
 - 從資料維護頁重新啟動新手導覽
 
-### 頁面初始化
+### API 對應
 
-- `api.listFixtures`
-- `api.listModels`
-- `api.listStations`
-- `api.listCustomers`
-- `api.listCustomerUsers`
-- `api.listUsers`
-
-### 各 tab API
+- 頁面初始化
+  - `api.listFixtures`
+  - `api.listModels`
+  - `api.listStations`
+  - `api.listCustomers`
+  - `api.listCustomerUsers`
+  - `api.listUsers`
 
 - fixture tab
-  - 新增：`api.createFixture`
-  - 更新：`api.updateFixture`
-  - 停用：`api.updateFixture`
-  - 匯出：`api.exportFixturesCsv`
-  - 匯入：`api.importFixturesCsv`
-  - 範本：`api.downloadFixtureTemplateCsv`
+  - `api.createFixture`
+  - `api.updateFixture`
+  - `api.exportFixturesCsv`
+  - `api.importFixturesCsv`
+  - `api.downloadFixtureTemplateCsv`
 
 - model tab
-  - 新增：`api.createModel`
-  - 更新：`api.updateModel`
-  - 停用：`api.updateModel`
-  - 匯出：`api.exportModelsCsv`
-  - 匯入：`api.importModelsCsv`
-  - 範本：`api.downloadModelTemplateCsv`
+  - `api.createModel`
+  - `api.updateModel`
+  - `api.exportModelsCsv`
+  - `api.importModelsCsv`
+  - `api.downloadModelTemplateCsv`
 
 - station tab
-  - 新增：`api.createStation`
-  - 更新：`api.updateStation`
-  - 停用：`api.updateStation`
-  - 匯出：`api.exportStationsCsv`
-  - 匯入：`api.importStationsCsv`
-  - 範本：`api.downloadStationTemplateCsv`
+  - `api.createStation`
+  - `api.updateStation`
+  - `api.exportStationsCsv`
+  - `api.importStationsCsv`
+  - `api.downloadStationTemplateCsv`
 
 - customer tab
-  - 新增：`api.createCustomer`
-  - 更新：`api.updateCustomer`
-  - 顯示責任人候選：`api.listCustomerUsers`
-  - 實際指派清單來源：`api.listUsers`
+  - `api.createCustomer`
+  - `api.updateCustomer`
+  - `api.listCustomerUsers`
+  - `api.listUsers`
 
 - user tab
-  - 新增：`api.createUser`
-  - 更新：`api.updateUser`
-  - 停用：`api.updateUser`
-  - 重設密碼：`api.resetUserPassword`
+  - `api.createUser`
+  - `api.updateUser`
+  - `api.resetUserPassword`
 
 ### 權限行為
 
@@ -347,18 +445,44 @@
 
 ### 改資料維護頁時去哪裡
 
-- 改 tab、列表欄位、詳細編輯表單、導覽啟動按鈕
+- 改 page tab orchestration、summary、CSV 流程
   - `frontend/src/pages/MasterPage.vue`
 
-- 改主資料型別
-  - `frontend/src/types.ts`
+- 改列表、搜尋、分頁欄位
+  - `frontend/src/components/master/MasterListPanel.vue`
 
-- 改主資料 API path / payload
-  - `frontend/src/api.ts`
+- 改 detail 編輯表單
+  - `frontend/src/components/master/MasterDetailPanel.vue`
 
 ## 產能頁
 
-- 檔案：`frontend/src/pages/ProductionPage.vue`
+- page：`frontend/src/pages/ProductionPage.vue`
+- 子元件：
+  - `frontend/src/components/production/ProductionHeaderSection.vue`
+  - `frontend/src/components/production/ProductionDetailSection.vue`
+  - `frontend/src/components/production/ProductionCapacityPanel.vue`
+  - `frontend/src/components/production/ProductionBatchImportModal.vue`
+
+### 目前責任分工
+
+- `ProductionPage.vue`
+  - 初始化資料載入
+  - route tab orchestration
+  - mapping / requirement CRUD
+  - CSV import / export
+  - 批次匯入解析與缺資料補建
+
+- `ProductionHeaderSection.vue`
+  - 頁首導覽與統計
+
+- `ProductionDetailSection.vue`
+  - mapping / requirement / query 操作區
+
+- `ProductionCapacityPanel.vue`
+  - station capacity 視覺化
+
+- `ProductionBatchImportModal.vue`
+  - 兩種 production 批次匯入 modal shell
 
 ### 主要功能
 
@@ -380,20 +504,20 @@
   - `api.listFixtureRequirements`
 
 - mapping
-  - 新增：`api.createModelStation`
-  - 更新：`api.updateModelStation`
-  - 刪除：`api.deleteModelStation`
-  - 匯出：`api.exportModelStationsCsv`
-  - 匯入：`api.importModelStationsCsv`
-  - 範本：`api.downloadModelStationTemplateCsv`
+  - `api.createModelStation`
+  - `api.updateModelStation`
+  - `api.deleteModelStation`
+  - `api.exportModelStationsCsv`
+  - `api.importModelStationsCsv`
+  - `api.downloadModelStationTemplateCsv`
 
 - fixture requirement
-  - 新增：`api.createFixtureRequirement`
-  - 更新：`api.updateFixtureRequirement`
-  - 刪除：`api.deleteFixtureRequirement`
-  - 匯出：`api.exportFixtureRequirementsCsv`
-  - 匯入：`api.importFixtureRequirementsCsv`
-  - 範本：`api.downloadFixtureRequirementTemplateCsv`
+  - `api.createFixtureRequirement`
+  - `api.updateFixtureRequirement`
+  - `api.deleteFixtureRequirement`
+  - `api.exportFixtureRequirementsCsv`
+  - `api.importFixtureRequirementsCsv`
+  - `api.downloadFixtureRequirementTemplateCsv`
 
 - capacity
   - `api.getStationCapacity`
@@ -408,24 +532,25 @@
 
 ### 改產能頁時去哪裡
 
-- 改 mapping / requirement 編輯流程
+- 改 route / tab orchestration、批次匯入解析、資料刷新
   - `frontend/src/pages/ProductionPage.vue`
+
+- 改頁首與摘要
+  - `frontend/src/components/production/ProductionHeaderSection.vue`
+
+- 改 mapping / requirement / query 主要操作區
+  - `frontend/src/components/production/ProductionDetailSection.vue`
 
 - 改 capacity 視覺化
   - `frontend/src/components/production/ProductionCapacityPanel.vue`
-  - `frontend/src/pages/ProductionPage.vue`
 
-- 改 model query 欄位
-  - `frontend/src/pages/ProductionPage.vue`
-  - `frontend/src/types.ts`
+- 改 batch modal frame
+  - `frontend/src/components/production/ProductionBatchImportModal.vue`
 
 ## 前端常改支援檔
 
 - `frontend/src/types.ts`
   - 欄位不一致時先看這裡
-
-- `frontend/src/api.ts`
-  - API path / query string / payload / response parsing
 
 - `frontend/src/appState.ts`
   - customer 切換、登入 session、onboarding 共享狀態
@@ -435,6 +560,10 @@
 
 - `frontend/src/toastState.ts`
   - 成功 / 失敗提示
+
+- `frontend/src/styles.css`
+  - 共用 CSS utility
+  - 新元件優先吃這裡的按鈕、panel、modal、table、chip 樣式
 
 - `frontend/src/utils/apiError.ts`
   - 後端 error payload 轉可讀訊息
@@ -447,8 +576,8 @@
 
 ## 現況提醒
 
-- `api.listAuditLogs` 仍存在於 `frontend/src/api.ts`，但目前 `App.vue` 沒有渲染最近異動區塊。
-- shell 目前沒有 desktop compact / mini mode，只有 mobile overlay 開關。
+- audit API 仍保留在 `api.listAuditLogs`，但首頁沒有 audit 摘要區塊。
+- shell 目前沒有 desktop compact / mini sidebar。
 - 搜尋頁目前沒有查詢結果分頁，也沒有可收合篩選區。
 - 教學模式屬於前端 sandbox 流程，不會呼叫額外的 backend tutorial API。
 

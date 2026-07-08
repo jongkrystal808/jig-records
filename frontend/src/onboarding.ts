@@ -14,16 +14,16 @@ export const onboardingSteps: OnboardingStep[] = [
     id: "search-onboarding-entry",
     route: "/search",
     target: "[data-tour='search-onboarding-entry']",
-    title: "需要時可從首頁重播教學",
-    description: "首頁提供固定的新手教學入口。第一次登入會自動啟動，之後也可以從這裡重新播放。",
+    title: "右下角可重播新手教學",
+    description: "第一次登入會自動啟動導覽。之後如果要重新熟悉首頁流程，可以從右下角這個固定入口再播放一次。",
     placement: "bottom"
   },
   {
     id: "search-mode",
     route: "/search",
     target: "[data-tour='search-mode-switch']",
-    title: "首頁先從查詢開始",
-    description: "這是首頁的查詢入口，可以切換治具或機種查詢，是大部分使用者最常用的起點。",
+    title: "首頁先從查詢工作台開始",
+    description: "這裡是首頁最核心的查詢入口，可以切換治具或機種模式，先定位資料再決定後續操作。",
     placement: "bottom"
   },
   {
@@ -95,7 +95,7 @@ export const onboardingSteps: OnboardingStep[] = [
     route: "/search",
     target: "[data-tour='inventory-export-panel']",
     title: "在這裡設定匯出條件",
-    description: "可以選報表類型、日期範圍與篩選條件，再決定要輸出成什麼格式。",
+    description: "先選摘要或明細，再決定要匯出全部資料，或展開自定義條件後依日期、單號、識別碼或舊 Datecode、治具編號縮小範圍。",
     placement: "left"
   },
   {

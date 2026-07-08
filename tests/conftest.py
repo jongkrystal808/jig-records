@@ -20,6 +20,8 @@ def app_client(tmp_path, monkeypatch):
         if module_name == "backend" or module_name.startswith("backend."):
             del sys.modules[module_name]
 
+    bootstrap_module = importlib.import_module("backend.app.bootstrap")
+    bootstrap_module.bootstrap_application()
     app_module = importlib.import_module("backend.app.main")
     with TestClient(app_module.app) as client:
         yield client

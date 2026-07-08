@@ -4,13 +4,13 @@ import { useRouter } from "vue-router";
 
 import { api } from "@/api";
 import { authSession, customers, onboardingActive, onboardingStepIndex, selectedCustomerId } from "@/appState";
+import MasterDetailPanel from "@/components/master/MasterDetailPanel.vue";
+import MasterListPanel from "@/components/master/MasterListPanel.vue";
+import UiSummaryCards from "@/components/UiSummaryCards.vue";
 import { onboardingSteps } from "@/onboarding";
 import { pushToast } from "@/toastState";
 import type { AppUser, Customer, Fixture, MachineModel, Station } from "@/types";
 import { fallbackText } from "@/utils/display";
-import { formatLocalDate } from "@/utils/date";
-import UiStatusPill from "@/components/UiStatusPill.vue";
-import UiFormActions from "@/components/UiFormActions.vue";
 
 type MasterTab = "fixture" | "model" | "station" | "customer" | "user";
 
@@ -50,6 +50,7 @@ const canManageCustomers = computed(() => authSession.value?.role === "admin");
 const selectedCustomerScopeCount = computed(() => customerFormAssignedUserIds.value.length);
 const customerFormAssignedUserIds = ref<number[]>([]);
 const selectedGlobalCustomer = computed(() => customers.value.find((row) => row.id === selectedCustomerId.value) ?? null);
+const canCreateInCurrentTab = computed(() => activeTab.value !== "customer" || canManageCustomers.value);
 
 function normalizeText(value: string | null | undefined): string {
   return (value ?? "").trim();
@@ -349,6 +350,7 @@ const selectedActivatableRow = computed(() => {
 
 const toggleActionLabel = computed(() => (selectedActivatableRow.value?.is_active ?? true ? "停用" : "恢復使用"));
 
+// Keep the page responsible only for counts; layout now lives in UiSummaryCards.
 const summaryCards = computed(() => [
   { label: "治具總數", value: fixtures.value.length, meta: `啟用 ${fixtures.value.filter((row) => row.is_active).length}` },
   { label: "機種總數", value: models.value.length, meta: `啟用 ${models.value.filter((row) => row.is_active).length}` },
@@ -802,6 +804,14 @@ function nextListPage(): void {
   listPage.value = Math.min(listTotalPages.value, listPage.value + 1);
 }
 
+function updateKeyword(value: string): void {
+  keyword.value = value;
+}
+
+function updateStatusFilter(value: "all" | "active" | "inactive"): void {
+  statusFilter.value = value;
+}
+
 watch([activeTab, keyword, statusFilter], () => {
   listPage.value = 1;
 });
@@ -970,13 +980,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="master-shell">
-    <section class="summary-row">
-      <article v-for="card in summaryCards" :key="card.label" class="summary-card">
-        <span>{{ card.label }}</span>
-        <strong>{{ card.value }}</strong>
-        <p>{{ card.meta }}</p>
-      </article>
-    </section>
+    <UiSummaryCards class="summary-row" :cards="summaryCards" :desktop-columns="5" :tablet-columns="2" :mobile-columns="1" />
 
     <section class="toolbar panel">
       <div class="tab-bar" data-tour="master-tabs">
@@ -996,17 +1000,17 @@ onBeforeUnmount(() => {
         <div class="toolbar-side">
           <div class="toolbar-actions">
             <button
-              class="outline-btn toolbar-primary-action demo-tour-btn"
+              class="outline-btn btn-compact toolbar-primary-action demo-tour-btn"
               type="button"
               :disabled="loading"
               @click="startDemoTour"
             >
               {{ selectedGlobalCustomer ? "開始新手導覽" : "先選客戶再導覽" }}
             </button>
-            <button class="outline-btn toolbar-primary-action" type="button" @click="router.push({ name: 'search' })">返回搜尋</button>
-            <button class="outline-btn toolbar-primary-action" type="button" :disabled="loading" @click="exportActiveCsv">匯出 CSV</button>
+            <button class="outline-btn btn-compact toolbar-primary-action" type="button" @click="router.push({ name: 'search' })">返回搜尋</button>
+            <button class="outline-btn btn-compact toolbar-primary-action" type="button" :disabled="loading" @click="exportActiveCsv">匯出 CSV</button>
           <div ref="moreMenuRef" class="more-menu">
-            <button class="outline-btn more-menu-trigger" type="button" :disabled="loading" :aria-expanded="moreMenuOpen" @click.stop="toggleMoreMenu">更多</button>
+            <button class="outline-btn btn-compact more-menu-trigger" type="button" :disabled="loading" :aria-expanded="moreMenuOpen" @click.stop="toggleMoreMenu">更多</button>
             <div v-if="moreMenuOpen" class="more-menu-panel">
               <button class="more-menu-item" type="button" :disabled="loading" @click="downloadTemplate">下載範本</button>
               <button class="more-menu-item" type="button" :disabled="loading" @click="triggerImport">匯入 CSV</button>
@@ -1019,220 +1023,66 @@ onBeforeUnmount(() => {
     </section>
 
     <section class="content-grid">
-      <article class="panel list-panel">
-        <div class="panel-head">
-          <div>
-            <h2>{{ tabTitleMap[activeTab] }}清單</h2>
-            <p>{{ currentRows.length }} 筆資料</p>
-          </div>
-        </div>
+      <MasterListPanel
+        :active-tab="activeTab"
+        :tab-title="tabTitleMap[activeTab]"
+        :current-rows-length="currentRows.length"
+        :keyword="keyword"
+        :search-placeholder="searchPlaceholder"
+        :loading="loading"
+        :status-filter="statusFilter"
+        :can-create="canCreateInCurrentTab"
+        :empty-state-message="emptyStateMessage"
+        :list-page="listPage"
+        :list-total-pages="listTotalPages"
+        :paged-fixture-rows="pagedFixtureRows"
+        :paged-model-rows="pagedModelRows"
+        :paged-station-rows="pagedStationRows"
+        :paged-customer-rows="pagedCustomerRows"
+        :paged-user-rows="pagedUserRows"
+        :selected-fixture-id="selectedFixtureId"
+        :selected-model-id="selectedModelId"
+        :selected-station-id="selectedStationId"
+        :selected-customer-row-id="selectedCustomerRowId"
+        :selected-user-id="selectedUserId"
+        :on-keyword-change="updateKeyword"
+        :on-status-filter-change="updateStatusFilter"
+        :on-start-create="startCreate"
+        :on-select-row="selectRow"
+        :on-previous-page="previousListPage"
+        :on-next-page="nextListPage"
+      />
 
-        <div class="list-toolbar" data-tour="master-list-toolbar">
-          <input v-model="keyword" :placeholder="searchPlaceholder" :disabled="loading" />
-          <select v-if="activeTab !== 'customer'" v-model="statusFilter">
-            <option value="all">狀態：全部</option>
-            <option value="active">狀態：啟用中</option>
-            <option value="inactive">狀態：停用</option>
-          </select>
-          <button class="primary-btn" type="button" :disabled="loading || (activeTab === 'customer' && !canManageCustomers)" @click="startCreate">+ 新增{{ tabTitleMap[activeTab] }}</button>
-        </div>
-
-        <div v-if="loading" class="loading-banner">資料載入中，請稍候...</div>
-
-        <div class="table-scroll" data-tour="master-list-table">
-          <table class="data-table">
-            <thead>
-              <tr v-if="activeTab === 'fixture'"><th>治具編號</th><th>治具名稱</th><th>水位</th><th>產線儲位</th><th>部門儲位</th><th>狀態</th></tr>
-              <tr v-else-if="activeTab === 'model'"><th>機種編號</th><th>機種名稱</th><th>狀態</th></tr>
-              <tr v-else-if="activeTab === 'station'"><th>站點編號</th><th>站點名稱</th><th>狀態</th></tr>
-              <tr v-else-if="activeTab === 'customer'"><th>客戶代碼</th><th>客戶名稱</th></tr>
-              <tr v-else><th>帳號</th><th>Email</th><th>顯示名稱</th><th>角色</th><th>狀態</th></tr>
-            </thead>
-
-            <tbody v-if="activeTab === 'fixture'">
-              <tr v-for="row in pagedFixtureRows" :key="row.id" :class="{ selected: selectedFixtureId === row.id }" @click="selectRow(row.id)">
-                <td>{{ row.code }}</td><td>{{ row.name }}</td><td>{{ row.min_stock_qty }}</td><td>{{ row.line_storage_location || "-" }}</td><td>{{ row.department_storage_location || "-" }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
-              </tr>
-              <tr v-if="!loading && currentRows.length === 0">
-                <td colspan="6" class="empty-cell">{{ emptyStateMessage }}</td>
-              </tr>
-            </tbody>
-            <tbody v-else-if="activeTab === 'model'">
-              <tr v-for="row in pagedModelRows" :key="row.id" :class="{ selected: selectedModelId === row.id }" @click="selectRow(row.id)">
-                <td>{{ row.code }}</td><td>{{ row.name }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
-              </tr>
-              <tr v-if="!loading && currentRows.length === 0">
-                <td colspan="3" class="empty-cell">{{ emptyStateMessage }}</td>
-              </tr>
-            </tbody>
-            <tbody v-else-if="activeTab === 'station'">
-              <tr v-for="row in pagedStationRows" :key="row.id" :class="{ selected: selectedStationId === row.id }" @click="selectRow(row.id)">
-                <td>{{ row.code }}</td><td>{{ row.name }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
-              </tr>
-              <tr v-if="!loading && currentRows.length === 0">
-                <td colspan="3" class="empty-cell">{{ emptyStateMessage }}</td>
-              </tr>
-            </tbody>
-            <tbody v-else-if="activeTab === 'customer'">
-              <tr v-for="row in pagedCustomerRows" :key="row.id" :class="{ selected: selectedCustomerRowId === row.id }" @click="selectRow(row.id)">
-                <td>{{ row.code }}</td><td>{{ row.name }}</td>
-              </tr>
-              <tr v-if="!loading && currentRows.length === 0">
-                <td colspan="2" class="empty-cell">{{ emptyStateMessage }}</td>
-              </tr>
-            </tbody>
-            <tbody v-else>
-                <tr v-for="row in pagedUserRows" :key="row.id" :class="{ selected: selectedUserId === row.id }" @click="selectRow(row.id)">
-                 <td>{{ row.username }}</td><td>{{ fallbackText(row.email) }}</td><td>{{ row.display_name }}</td><td>{{ row.role }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
-               </tr>
-              <tr v-if="!loading && currentRows.length === 0">
-                <td colspan="5" class="empty-cell">{{ emptyStateMessage }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div v-if="currentRows.length > 0" class="list-footer">
-          <span>第 {{ listPage }} / {{ listTotalPages }} 頁，共 {{ currentRows.length }} 筆</span>
-          <div class="pager-actions">
-            <button class="outline-btn small" type="button" :disabled="loading || listPage <= 1" @click="previousListPage">上一頁</button>
-            <button class="outline-btn small" type="button" :disabled="loading || listPage >= listTotalPages" @click="nextListPage">下一頁</button>
-          </div>
-        </div>
-      </article>
-
-      <article class="panel detail-panel" :class="{ 'detail-panel-create': isCreateMode }">
-        <div class="panel-head" :class="{ 'panel-head-create': isCreateMode }">
-          <div>
-            <h2>{{ tabTitleMap[activeTab] }}詳細資料</h2>
-            <p>{{ isCreateMode ? "新增資料" : selectedDetailLabel }}</p>
-          </div>
-          <span v-if="isCreateMode" class="mode-chip mode-chip-create">新增模式</span>
-          <UiStatusPill
-            v-if="selectedStatusBadge"
-            class="status-legend"
-            :label="selectedStatusBadge.label"
-            :tone="selectedStatusBadge.tone"
-          />
-          <div class="action-group detail-head-actions">
-            <button class="outline-btn small" type="button" :disabled="saving" @click="startCreate">新增</button>
-            <button class="ghost-btn small action-divider-btn" type="button" :disabled="saving || isCreateMode" @click="reloadSelection">重載</button>
-          </div>
-        </div>
-
-        <form class="detail-form" data-tour="master-detail-form" @submit.prevent="saveCurrent">
-          <template v-if="activeTab === 'fixture'">
-            <label>
-              <span>治具編號 *</span>
-              <input v-model="fixtureForm.code" required />
-            </label>
-            <label><span>治具名稱 *</span><input v-model="fixtureForm.name" required /></label>
-            <label><span>產線儲位</span><input v-model="fixtureForm.line_storage_location" placeholder="A-01-03" /></label>
-            <label><span>部門儲位</span><input v-model="fixtureForm.department_storage_location" placeholder="RD-SHELF-3" /></label>
-            <label><span>最低水位</span><input v-model.number="fixtureForm.min_stock_qty" type="number" min="0" /></label>
-            <label>
-              <span>負責人</span>
-              <select v-model="fixtureForm.responsible_user_id">
-                <option :value="null">未指定</option>
-                <option v-for="user in customerAssignedUsers.filter((row) => row.is_active)" :key="user.id" :value="user.id">{{ user.display_name }}</option>
-              </select>
-            </label>
-            <label>
-              <span>狀態</span>
-              <select v-model="fixtureForm.is_active">
-                <option :value="true">啟用中</option>
-                <option :value="false">停用</option>
-              </select>
-            </label>
-            <label class="full"><span>備註</span><textarea v-model="fixtureForm.description" rows="4" placeholder="輸入備註內容..." /></label>
-          </template>
-
-          <template v-else-if="activeTab === 'model'">
-            <label><span>機種編號 *</span><input v-model="modelForm.code" required /></label>
-            <label><span>機種名稱 *</span><input v-model="modelForm.name" required /></label>
-            <label class="full">
-              <span>狀態</span>
-              <select v-model="modelForm.is_active">
-                <option :value="true">啟用中</option>
-                <option :value="false">停用</option>
-              </select>
-            </label>
-          </template>
-
-          <template v-else-if="activeTab === 'station'">
-            <label><span>站點編號 *</span><input v-model="stationForm.code" required /></label>
-            <label><span>站點名稱 *</span><input v-model="stationForm.name" required /></label>
-            <label class="full">
-              <span>狀態</span>
-              <select v-model="stationForm.is_active">
-                <option :value="true">啟用中</option>
-                <option :value="false">停用</option>
-              </select>
-            </label>
-          </template>
-
-          <template v-else-if="activeTab === 'customer' && canManageCustomers">
-            <label><span>客戶代碼 *</span><input v-model="customerForm.code" required /></label>
-            <label><span>客戶名稱 *</span><input v-model="customerForm.name" required /></label>
-            <div class="full role-scope-panel">
-              <span>指派使用者</span>
-              <div class="customer-scope-panel">
-                <div class="customer-scope-summary">已選 {{ selectedCustomerScopeCount }} 位使用者</div>
-                <div class="customer-scope-list">
-                  <label v-for="user in users" :key="user.id" class="customer-scope-item">
-                    <input
-                      class="customer-scope-checkbox"
-                      :checked="hasAssignedUser(user.id)"
-                      type="checkbox"
-                      @change="toggleAssignedUser(user.id, ($event.target as HTMLInputElement).checked)"
-                    />
-                    <span class="customer-scope-indicator" :class="{ selected: hasAssignedUser(user.id) }" aria-hidden="true"></span>
-                    <span class="customer-scope-text">
-                      <strong>{{ user.display_name }}</strong>
-                      <small>{{ user.username }}</small>
-                    </span>
-                  </label>
-                </div>
-              </div>
-            </div>
-            <label class="full"><span>建立時間</span><input :value="formatLocalDate(selectedCustomerRow?.created_at)" disabled /></label>
-            <label class="full"><span>更新時間</span><input :value="formatLocalDate(selectedCustomerRow?.updated_at)" disabled /></label>
-          </template>
-
-          <template v-else-if="canManageUsers">
-            <label><span>帳號 *</span><input v-model="userForm.username" :disabled="selectedUserId !== null" required /></label>
-            <label><span>Email</span><input v-model="userForm.email" type="email" placeholder="name@example.com" /></label>
-            <label><span>顯示名稱 *</span><input v-model="userForm.display_name" required /></label>
-            <label><span>角色</span><select v-model="userForm.role"><option value="admin">Admin</option><option value="user">User</option></select></label>
-            <label><span>狀態</span><select v-model="userForm.is_active"><option :value="true">啟用中</option><option :value="false">停用</option></select></label>
-            <label v-if="selectedUserId === null" class="full"><span>登入密碼 *</span><input v-model="userForm.password" type="password" minlength="6" required /></label>
-            <label class="full"><span>建立時間</span><input :value="formatLocalDate(selectedUser?.created_at)" disabled /></label>
-            <label class="full"><span>更新時間</span><input :value="formatLocalDate(selectedUser?.updated_at)" disabled /></label>
-            <label v-if="selectedUserId !== null" class="full">
-              <span>重設密碼</span>
-              <div class="inline-action">
-                <input v-model="userForm.reset_password" type="password" minlength="6" placeholder="輸入新密碼" />
-                <button class="outline-btn" type="button" @click="resetUserPassword">重設密碼</button>
-              </div>
-            </label>
-          </template>
-
-          <UiFormActions
-            class="form-actions-full"
-            data-tour="master-form-actions"
-            :editing="!isCreateMode"
-            :saving="saving"
-            submit-label="儲存"
-            saving-label="儲存中..."
-            cancel-label="取消"
-            :delete-label="toggleActionLabel"
-            :show-delete="activeTab !== 'customer'"
-            :state-text="isCreateMode ? '新增模式' : '編輯模式'"
-            @cancel="startCreate"
-            @delete="toggleCurrentActive"
-          />
-        </form>
-      </article>
+      <MasterDetailPanel
+        :active-tab="activeTab"
+        :tab-title="tabTitleMap[activeTab]"
+        :is-create-mode="isCreateMode"
+        :selected-detail-label="selectedDetailLabel"
+        :selected-status-badge="selectedStatusBadge"
+        :saving="saving"
+        :toggle-action-label="toggleActionLabel"
+        :can-manage-customers="canManageCustomers"
+        :can-manage-users="canManageUsers"
+        :selected-fixture-id="selectedFixtureId"
+        :selected-user-id="selectedUserId"
+        :selected-customer-scope-count="selectedCustomerScopeCount"
+        :selected-customer-row="selectedCustomerRow"
+        :selected-user="selectedUser"
+        :customer-assigned-users="customerAssignedUsers"
+        :users="users"
+        :fixture-form="fixtureForm"
+        :model-form="modelForm"
+        :station-form="stationForm"
+        :customer-form="customerForm"
+        :user-form="userForm"
+        :on-start-create="startCreate"
+        :on-reload-selection="reloadSelection"
+        :on-save-current="saveCurrent"
+        :on-toggle-current-active="toggleCurrentActive"
+        :on-reset-user-password="resetUserPassword"
+        :on-toggle-assigned-user="toggleAssignedUser"
+        :on-has-assigned-user="hasAssignedUser"
+      />
     </section>
   </div>
 </template>
@@ -1248,13 +1098,6 @@ onBeforeUnmount(() => {
   background: #fff;
 }
 
-.summary-row {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.summary-card,
 .panel {
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -1268,29 +1111,6 @@ onBeforeUnmount(() => {
   color: #56657f;
   background: #f8fbff;
   border-top: 1px solid var(--line);
-}
-
-.summary-card {
-  padding: 9px 10px;
-  display: grid;
-  gap: 4px;
-}
-
-.summary-card span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.summary-card strong {
-  color: #22314a;
-  font-size: 20px;
-  line-height: 1.1;
-}
-
-.summary-card p {
-  margin: 0;
-  color: #5d6d89;
-  font-size: 12px;
 }
 
 .panel {
@@ -1713,55 +1533,8 @@ textarea {
   margin-top: 2px;
 }
 
-.primary-btn,
-.outline-btn,
-.danger-btn {
-  border-radius: 10px;
-  font-weight: 700;
-  cursor: pointer;
-  min-height: 30px;
-  font-size: 12px;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, filter 0.15s ease;
-}
-
-.primary-btn {
-  border: 1px solid var(--green);
-  background: linear-gradient(180deg, #4cc36b 0%, #2ea54e 100%);
-  color: #fff;
-  padding: 6px 10px;
-  box-shadow: 0 6px 14px rgba(46, 165, 78, 0.16);
-}
-
-.outline-btn {
-  border: 1px solid var(--line-strong);
-  background: linear-gradient(180deg, #ffffff 0%, #f7f9fd 100%);
-  color: #5b677d;
-  padding: 6px 10px;
-}
-
-.outline-btn.small {
-  padding: 5px 8px;
-  min-height: 28px;
-}
-
-.danger-btn {
-  border: 1px solid #df5a5a;
-  background: linear-gradient(180deg, #ff7a72 0%, #e95d57 100%);
-  color: #fff;
-  padding: 6px 10px;
-  box-shadow: 0 6px 14px rgba(233, 93, 87, 0.14);
-}
-
-.primary-btn:hover,
-.outline-btn:hover,
-.danger-btn:hover,
 .tab-btn:hover {
   transform: translateY(-1px);
-}
-
-.primary-btn:hover {
-  box-shadow: 0 10px 22px rgba(46, 165, 78, 0.24);
-  filter: brightness(1.02);
 }
 
 .outline-btn:hover, 
@@ -1770,22 +1543,6 @@ textarea {
   box-shadow: 0 4px 12px rgba(28, 47, 84, 0.08);
 }
 
-.primary-btn:disabled,
-.outline-btn:disabled,
-.danger-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
-.danger-btn:hover {
-  box-shadow: 0 10px 22px rgba(233, 93, 87, 0.2);
-}
-
-.primary-btn:active,
-.outline-btn:active,
-.danger-btn:active,
 .tab-btn:active {
   transform: translateY(0);
 }
@@ -1832,27 +1589,6 @@ textarea {
   background: #edf3ff;
 }
 
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 64px;
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.status-pill.active {
-  color: var(--green);
-  background: var(--green-soft);
-}
-
-.status-pill.inactive {
-  color: var(--red);
-  background: var(--red-soft);
-}
-
 .status-legend {
   margin-left: auto;
 }
@@ -1878,7 +1614,6 @@ textarea {
 }
 
 @media (max-width: 1500px) {
-  .summary-row,
   .content-grid {
     grid-template-columns: 1fr;
   }
@@ -1905,10 +1640,6 @@ textarea {
   .master-shell {
     padding: 6px;
     gap: 8px;
-  }
-
-  .summary-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .toolbar-actions,
@@ -1969,10 +1700,6 @@ textarea {
 }
 
 @media (max-width: 640px) {
-  .summary-row {
-    grid-template-columns: 1fr;
-  }
-
   .panel {
     padding: 10px;
   }

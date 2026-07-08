@@ -84,5 +84,51 @@ class RuntimeSafetySettingsTests(unittest.TestCase):
             os.environ.update(original)
 
 
+class BootstrapFlowTests(unittest.TestCase):
+    def _load_bootstrap_module(self) -> object:
+        target_modules = [
+            "backend.app.bootstrap",
+            "backend.app.core.config",
+            "backend.app.core.database",
+            "backend.app.core.migrations",
+            "backend.app.services.auth_service",
+        ]
+        for module_name in target_modules:
+            sys.modules.pop(module_name, None)
+        return importlib.import_module("backend.app.bootstrap")
+
+    def test_bootstrap_application_runs_migrations_and_creates_default_admin_once(self) -> None:
+        temp_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        temp_file.close()
+        db_path = Path(temp_file.name)
+        original = os.environ.copy()
+        try:
+            os.environ["DATABASE_URL"] = f"sqlite:///{db_path.as_posix()}"
+            os.environ["AUTH_SECRET_KEY"] = "test-secret-key"
+            os.environ["APP_ENV"] = "development"
+            bootstrap_module = self._load_bootstrap_module()
+
+            bootstrap_module.bootstrap_application()
+            bootstrap_module.bootstrap_application()
+
+            engine = create_engine(f"sqlite:///{db_path}")
+            with engine.begin() as connection:
+                revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                admin_count = connection.execute(
+                    text("SELECT COUNT(*) FROM users WHERE username = 'admin'")
+                ).scalar_one()
+            engine.dispose()
+
+            self.assertEqual(revision, "0010_user_email")
+            self.assertEqual(admin_count, 1)
+        finally:
+            database_module = sys.modules.get("backend.app.core.database")
+            if database_module is not None:
+                database_module.engine.dispose()
+            os.environ.clear()
+            os.environ.update(original)
+            db_path.unlink(missing_ok=True)
+
+
 if __name__ == "__main__":
     unittest.main()
