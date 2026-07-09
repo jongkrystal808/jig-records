@@ -2,11 +2,12 @@
 import { computed, onMounted, ref, watch } from "vue";
 
 import { api } from "@/api";
-import { authSession, onboardingActive, onboardingStepIndex } from "@/appState";
+import { authSession, onboardingActive, onboardingFlowId, onboardingStepIndex } from "@/appState";
 import InlineSpinner from "@/components/common/InlineSpinner.vue";
-import { onboardingSteps } from "@/onboarding";
+import { getOnboardingFlow } from "@/onboarding";
 import { pushToast } from "@/toastState";
 import type { Fixture } from "@/types";
+import { normalizeIdentifierForWrite } from "@/utils/identifier";
 
 type ImportMode = "receipt" | "return";
 type BatchRowStatus = "ready" | "needs-confirm" | "needs-add" | "skipped" | "error";
@@ -61,7 +62,7 @@ const readyRows = computed(() => rows.value.filter((row) => row.status === "read
 const pendingRows = computed(() => rows.value.filter((row) => row.status === "needs-confirm" || row.status === "needs-add"));
 const errorRows = computed(() => rows.value.filter((row) => row.status === "error"));
 const canSubmit = computed(() => readyRows.value.length > 0 && pendingRows.value.length === 0 && errorRows.value.length === 0 && batchTransactionNo.value.trim().length > 0);
-const currentOnboardingStepId = computed(() => onboardingSteps[onboardingStepIndex.value]?.id ?? "");
+const currentOnboardingStepId = computed(() => getOnboardingFlow(onboardingFlowId.value)?.steps[onboardingStepIndex.value]?.id ?? "");
 const mode = computed<ImportMode>({
   get: () => props.mode ?? internalMode.value,
   set: (value) => {
@@ -81,13 +82,6 @@ function normalizeText(value: string): string {
 
 function normalizeCode(value: string): string {
   return normalizeText(value).toUpperCase();
-}
-
-function normalizeIdentifier(value: string): string {
-  const normalized = normalizeText(value);
-  if (!normalized) return "";
-  if (!/^\d+$/.test(normalized)) return normalized;
-  return normalized.padStart(4, "0");
 }
 
 function splitCells(line: string): string[] {
@@ -195,15 +189,9 @@ function buildRow(lineNo: number, codeLine: string, qtyLine: string): BatchImpor
     tokenText = split.token;
   }
 
-  const identifier = normalizeIdentifier(tokenText);
+  const identifier = normalizeIdentifierForWrite(tokenText);
   if (!identifier) {
-    return makeErrorRow(lineNo, raw, "缺少識別碼");
-  }
-  if (!/^\d+$/.test(identifier)) {
-    return makeErrorRow(lineNo, raw, "識別碼必須為數字");
-  }
-  if (identifier.length > 4) {
-    return makeErrorRow(lineNo, raw, "識別碼必須為 4 位數字");
+    return makeErrorRow(lineNo, raw, "缺少 datecode/編號");
   }
 
   const exactFixture = findFixtureByCode(fixtureCodeText);
@@ -492,7 +480,7 @@ onMounted(async () => {
         <span>批次內容</span>
         <textarea
           v-model="batchPasteText"
-          placeholder="支援 fixture-code-0001 / quantity，或 fixture-code[TAB]0001[TAB]quantity"
+          placeholder="格式: 治具ID-datecode/編號 [ENTER] 數量     |    或格式:治具ID[TAB]datecode/編號[TAB]數量"
           @keydown="handleBatchPasteKeydown"
         ></textarea>
       </label>
@@ -521,10 +509,10 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="table-wrap">
+      <div class="table-wrap" data-tour="inventory-preview-table">
         <table class="preview-table">
           <thead>
-            <tr><th>#</th><th>治具</th><th>識別碼</th><th>數量</th><th>狀態</th><th>處理</th></tr>
+            <tr><th>#</th><th>治具</th><th>datecode/編號</th><th>數量</th><th>狀態</th><th>處理</th></tr>
           </thead>
           <tbody>
             <tr v-for="row in rows" :key="`${row.lineNo}-${row.raw}`">

@@ -4,11 +4,13 @@ import argparse
 
 from backend.app.core.config import settings
 from backend.app.core.database import SessionLocal
+from backend.app.core.logging import setup_logging
 from backend.app.core.migrations import upgrade_database
 from backend.app.services.auth_service import AuthService
 
 
 def bootstrap_application(*, run_migrations: bool = True, ensure_default_user: bool = True) -> None:
+    setup_logging()
     settings.validate_runtime_safety()
 
     if run_migrations:

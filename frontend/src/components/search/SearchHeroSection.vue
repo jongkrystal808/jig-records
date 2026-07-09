@@ -106,7 +106,7 @@ watch(
             title="清空搜尋欄"
             @click="handleClear"
           >
-            X
+            ×
           </button>
         </div>
       </label>
@@ -309,10 +309,8 @@ h1 {
 
 .query-clear-btn {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: 50%;
   right: 8px;
-  margin: auto 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -323,9 +321,10 @@ h1 {
   width: 28px;
   height: 28px;
   padding: 0;
-  font-size: 11px;
+  font-size: 15px;
   font-weight: 800;
   line-height: 1;
+  transform: translateY(calc(-56% - 3px));
 }
 
 .smart-hint-panel {

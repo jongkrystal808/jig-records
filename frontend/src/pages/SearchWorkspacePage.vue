@@ -3,28 +3,24 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import { useRouter } from "vue-router";
 
 import { api, fetchFixtureImageObjectUrl } from "@/api";
-import { customers, onboardingActive, onboardingStepIndex, selectedCustomerId } from "@/appState";
+import { authSession, customers, onboardingActive, onboardingPickerOpen, onboardingStepIndex, selectedCustomerId } from "@/appState";
 import InlineSpinner from "@/components/common/InlineSpinner.vue";
 import FixtureInfoPanel from "@/components/search/FixtureInfoPanel.vue";
 import ModelInfoPanel from "@/components/search/ModelInfoPanel.vue";
 import SearchHeroSection from "@/components/search/SearchHeroSection.vue";
 import SearchResultPanel from "@/components/search/SearchResultPanel.vue";
-import { authSession } from "@/appState";
 import { pushToast } from "@/toastState";
 import type {
   AppUser,
-  Fixture,
-  FixtureRequirementListItem,
-  IdentifierStockSummary,
-  MachineModel,
   MaterialTransaction,
-  ModelQuery,
-  Station,
-  StockSummary
+  ModelQueryFixture,
+  SearchFixtureContext,
+  SearchModelContext,
+  SearchResult,
+  StockStatus
 } from "@/types";
 import { formatLocalDate } from "@/utils/date";
 import { formatIdentifierStockTags } from "@/utils/display";
-import { matchesFixtureKeywords, parseFixtureKeywords } from "@/utils/fixtureSearch";
 
 type SearchMode = "fixture" | "model";
 type DetailTab = "info" | "edit";
@@ -43,9 +39,12 @@ type RecentFixtureShortcut = {
   occurredAt: string;
 };
 
-const MAX_RECENT_FIXTURE_SHORTCUTS = 20;
-const MAX_FIXTURE_TRANSACTION_ROWS = 30;
+const SEARCH_PAGE_SIZE = 12;
+const SMART_HINT_LIMIT = 8;
+const RECENT_SHORTCUT_TRANSACTION_LIMIT = 80;
+const FIXTURE_CONTEXT_TRANSACTION_LIMIT = 8;
 const FULL_FIXTURE_TRANSACTION_HISTORY_LIMIT = 2000;
+const MAX_RECENT_FIXTURE_SHORTCUTS = 20;
 
 const FixtureEditForm = defineAsyncComponent({
   loader: () => import("@/components/search/FixtureEditForm.vue"),
@@ -75,20 +74,18 @@ const detailTab = ref<DetailTab>("info");
 const queryDraft = ref("");
 const committedQuery = ref("");
 const loading = ref(false);
-const modelLoading = ref(false);
+const loadingMore = ref(false);
+const detailLoading = ref(false);
 const customerUsers = ref<AppUser[]>([]);
-
-const fixtures = ref<Fixture[]>([]);
-const stockRows = ref<StockSummary[]>([]);
-const transactions = ref<MaterialTransaction[]>([]);
-const identifierStockRows = ref<IdentifierStockSummary[]>([]);
-const models = ref<MachineModel[]>([]);
-const stations = ref<Station[]>([]);
-const fixtureRequirements = ref<FixtureRequirementListItem[]>([]);
-
-const selectedFixtureId = ref<number | null>(null);
-const selectedModelId = ref<number | null>(null);
-const modelQuery = ref<ModelQuery | null>(null);
+const recentTransactions = ref<MaterialTransaction[]>([]);
+const searchResults = ref<SearchResult[]>([]);
+const searchTotal = ref(0);
+const searchPage = ref(1);
+const searchHasMore = ref(false);
+const smartHints = ref<SearchHint[]>([]);
+const selectedResultId = ref<number | null>(null);
+const selectedFixtureContext = ref<SearchFixtureContext | null>(null);
+const selectedModelContext = ref<SearchModelContext | null>(null);
 const selectedFixtureImage = ref("");
 const imageLoadFailed = ref(false);
 const resultPanel = ref<HTMLElement | null>(null);
@@ -99,12 +96,18 @@ const fixtureTransactionHistoryLoading = ref(false);
 const fixtureSectionSelection = ref<string[]>(loadSelection(FIXTURE_SECTION_KEY, defaultFixtureSections));
 const modelSectionSelection = ref<string[]>(loadSelection(MODEL_SECTION_KEY, defaultModelSections));
 
+let hintTimer: ReturnType<typeof setTimeout> | null = null;
+let hintRequestId = 0;
+let detailRequestId = 0;
+let searchRequestId = 0;
+
 function startOnboarding(): void {
   if (!selectedCustomerId.value && customers.value.length > 0) {
     selectedCustomerId.value = customers.value[0].id;
   }
+  onboardingActive.value = false;
   onboardingStepIndex.value = 0;
-  onboardingActive.value = true;
+  onboardingPickerOpen.value = true;
 }
 
 function loadSelection(key: string, fallback: string[]): string[] {
@@ -122,26 +125,7 @@ function formatCount(value: number): string {
   return nf.format(value);
 }
 
-function normalizeSearchText(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function normalizeCodeToken(value: string): string {
-  return normalizeSearchText(value).replace(/[^a-z0-9]/g, "");
-}
-
-function rankCodeMatch(code: string, query: string): number {
-  const normalizedCode = normalizeCodeToken(code);
-  const normalizedQuery = normalizeCodeToken(query);
-  if (!normalizedQuery) return Number.MAX_SAFE_INTEGER;
-  const startsWithScore = normalizedCode.startsWith(normalizedQuery) ? 0 : 1000;
-  const containsIndex = normalizedCode.indexOf(normalizedQuery);
-  const containsScore = containsIndex >= 0 ? containsIndex : 500;
-  const lengthScore = Math.abs(normalizedCode.length - normalizedQuery.length);
-  return startsWithScore + containsScore * 10 + lengthScore;
-}
-
-function stockTone(status: StockSummary["stock_status"] | undefined): "normal" | "warn" | "danger" | "muted" {
+function stockTone(status: StockStatus | undefined): "normal" | "warn" | "danger" | "muted" {
   if (status === "low_stock") return "warn";
   if (status === "out_of_stock") return "danger";
   if (status === "normal") return "normal";
@@ -150,9 +134,12 @@ function stockTone(status: StockSummary["stock_status"] | undefined): "normal" |
 
 const customerId = computed(() => selectedCustomerId.value ?? undefined);
 const canEdit = computed(() => authSession.value?.role !== "guest");
-const hintSearchText = computed(() => queryDraft.value.trim().toLowerCase());
-const resultSearchText = computed(() => committedQuery.value.trim().toLowerCase());
 const hasActiveQuery = computed(() => committedQuery.value.trim().length > 0);
+const panelLoading = computed(() => loading.value || detailLoading.value);
+const selectedFixture = computed(() => selectedFixtureContext.value?.fixture ?? null);
+const selectedFixtureStock = computed(() => selectedFixtureContext.value?.stock ?? null);
+const selectedModel = computed(() => selectedModelContext.value?.model ?? null);
+const resultScrollKey = computed(() => (hasActiveQuery.value && selectedResultId.value ? `${mode.value}-${selectedResultId.value}-${committedQuery.value.trim()}` : ""));
 const visibleFixtureSections = computed(() => {
   const keys = new Set(fixtureSectionSelection.value);
   return {
@@ -176,24 +163,22 @@ const visibleModelSections = computed(() => {
   };
 });
 const shouldShowFixtureCreateForm = computed(
-  () => mode.value === "fixture" && fixtureMatches.value.length === 0 && visibleFixtureSections.value.maintenance && detailTab.value === "edit" && canEdit.value
+  () => mode.value === "fixture" && searchResults.value.length === 0 && visibleFixtureSections.value.maintenance && detailTab.value === "edit" && canEdit.value
 );
 const shouldShowModelCreateForm = computed(
-  () => mode.value === "model" && modelMatches.value.length === 0 && visibleModelSections.value.maintenance && detailTab.value === "edit" && canEdit.value
+  () => mode.value === "model" && searchResults.value.length === 0 && visibleModelSections.value.maintenance && detailTab.value === "edit" && canEdit.value
 );
-
 const fixtureSectionChips = computed(() =>
   [
     { key: "summary", label: "總覽" },
     { key: "image", label: "圖片" },
-    { key: "identifier", label: "識別碼庫存" },
+    { key: "identifier", label: "datecode/編號庫存" },
     { key: "transactions", label: "收退料" },
     { key: "models", label: "相關機種" },
     { key: "stations", label: "站點詳細" },
     canEdit.value ? { key: "maintenance", label: "資料維護" } : null
   ].filter((item): item is { key: string; label: string } => item !== null)
 );
-
 const modelSectionChips = computed(() =>
   [
     { key: "summary", label: "總覽" },
@@ -203,130 +188,36 @@ const modelSectionChips = computed(() =>
     canEdit.value ? { key: "maintenance", label: "資料維護" } : null
   ].filter((item): item is { key: string; label: string } => item !== null)
 );
-
-const fixtureMatches = computed(() =>
-  fixtures.value
-    .filter((row) => {
-      const q = resultSearchText.value;
-      return !q || [row.code, row.name, row.storage_location ?? ""].some((value) => value.toLowerCase().includes(q));
-    })
-    .slice()
-    .sort((a, b) => a.code.localeCompare(b.code))
-    .slice(0, 14)
-);
-
-const modelMatches = computed(() =>
-  models.value
-    .filter((row) => {
-      const q = resultSearchText.value;
-      return !q || [row.code, row.name].some((value) => value.toLowerCase().includes(q));
-    })
-    .slice()
-    .sort((a, b) => a.code.localeCompare(b.code))
-    .slice(0, 14)
-);
-
-const selectedFixture = computed(() => fixtures.value.find((row) => row.id === selectedFixtureId.value) ?? null);
-const selectedFixtureStock = computed(() => stockRows.value.find((row) => row.fixture_id === selectedFixture.value?.id) ?? null);
-const selectedModel = computed(() => models.value.find((row) => row.id === selectedModelId.value) ?? null);
-const fixtureMap = computed(() => new Map(fixtures.value.map((row) => [row.id, row])));
-const modelMap = computed(() => new Map(models.value.map((row) => [row.id, row])));
-const hasConfirmedFixtureResult = computed(() => {
-  const q = committedQuery.value.trim();
-  if (!q || !selectedFixture.value) return false;
-  return selectedFixture.value.code.toLowerCase() === q.toLowerCase() || selectedFixture.value.name.toLowerCase() === q.toLowerCase();
-});
-const hasConfirmedModelResult = computed(() => {
-  const q = committedQuery.value.trim();
-  if (!q || !selectedModel.value) return false;
-  return selectedModel.value.code.toLowerCase() === q.toLowerCase() || selectedModel.value.name.toLowerCase() === q.toLowerCase();
-});
-const resultScrollKey = computed(() => {
-  if (!hasActiveQuery.value) return "";
-  if (mode.value === "fixture") {
-    return fixtureMatches.value.length > 0 && selectedFixtureId.value ? `fixture-${selectedFixtureId.value}-${committedQuery.value.trim()}` : "";
-  }
-  return modelMatches.value.length > 0 && selectedModelId.value ? `model-${selectedModelId.value}-${committedQuery.value.trim()}` : "";
-});
-
-// Keep the page focused on search state and result data; hero/detail shells live in dedicated components.
 const activeSectionKeys = computed(() => (mode.value === "fixture" ? fixtureSectionSelection.value : modelSectionSelection.value));
 const currentSectionChips = computed(() => (mode.value === "fixture" ? fixtureSectionChips.value : modelSectionChips.value));
 const shouldShowEmptyResultState = computed(
-  () => (mode.value === "fixture" ? fixtureMatches.value : modelMatches.value).length === 0 && !shouldShowFixtureCreateForm.value && !shouldShowModelCreateForm.value
+  () => searchResults.value.length === 0 && !shouldShowFixtureCreateForm.value && !shouldShowModelCreateForm.value
 );
-
-const identifierMap = computed(() => {
-  const map = new Map<number, Map<string, number>>();
-  for (const row of identifierStockRows.value) {
-    const perFixture = map.get(row.fixture_id) ?? new Map<string, number>();
-    perFixture.set(row.identifier, row.stock_qty);
-    map.set(row.fixture_id, perFixture);
-  }
-  return map;
-});
-
 const selectedFixtureIdentifierTags = computed(() => {
-  const fixtureId = selectedFixture.value?.id;
-  if (!fixtureId) return [];
-  const entry = identifierMap.value.get(fixtureId);
-  if (!entry) return [];
-  return formatIdentifierStockTags(entry.entries(), formatCount);
+  const rows = selectedFixtureContext.value?.identifier_rows ?? [];
+  return formatIdentifierStockTags(rows.map((row) => [row.identifier, row.stock_qty] as [string, number]), formatCount);
 });
-
-const selectedFixtureIdentifierTotalQty = computed(() => {
-  const fixtureId = selectedFixture.value?.id;
-  if (!fixtureId) return 0;
-  const entry = identifierMap.value.get(fixtureId);
-  if (!entry) return 0;
-  let total = 0;
-  for (const quantity of entry.values()) {
-    total += quantity;
-  }
-  return total;
-});
-
+const selectedFixtureIdentifierTotalQty = computed(() =>
+  (selectedFixtureContext.value?.identifier_rows ?? []).reduce((sum, row) => sum + row.stock_qty, 0)
+);
 const selectedFixtureTransactions = computed(() => {
   if (fixtureTransactionHistoryLoadedForCode.value === selectedFixture.value?.code) {
     return fixtureTransactionHistoryRows.value;
   }
-  return transactions.value.filter((tx) => tx.items.some((item) => item.fixture_id === selectedFixture.value?.id)).slice(0, MAX_FIXTURE_TRANSACTION_ROWS);
+  return selectedFixtureContext.value?.transactions ?? [];
 });
-
-const selectedFixtureRequirementRows = computed(() =>
-  fixtureRequirements.value
-    .filter((row) => row.fixture_id === selectedFixture.value?.id)
-    .slice()
-    .sort((a, b) => a.model_code.localeCompare(b.model_code) || a.station_code.localeCompare(b.station_code))
-);
-
-const selectedFixtureStationRows = computed(() =>
-  selectedFixtureRequirementRows.value.map((row) => ({
-    model_code: row.model_code,
-    station_code: row.station_code,
-    station_name: stations.value.find((item) => item.id === row.station_id)?.name ?? "-",
-    required_qty: row.required_qty
-  }))
-);
-
-const selectedFixtureModels = computed(() => {
-  const ids = new Set(selectedFixtureRequirementRows.value.map((row) => row.model_id));
-  return models.value.filter((row) => ids.has(row.id)).slice().sort((a, b) => a.code.localeCompare(b.code));
-});
-
+const selectedFixtureModels = computed(() => selectedFixtureContext.value?.related_models ?? []);
+const selectedFixtureStationRows = computed(() => selectedFixtureContext.value?.station_rows ?? []);
 const selectedModelFixtures = computed(() =>
-  (modelQuery.value?.fixtures ?? []).map((row) => ({
-    ...row,
-    identifierTags: formatIdentifierStockTags(identifierMap.value.get(row.fixture_id)?.entries() ?? [], formatCount)
+  (selectedModelContext.value?.query.fixtures ?? []).map((row) => ({
+    ...(row as ModelQueryFixture),
+    identifierTags: [] as string[]
   }))
 );
-
-// Keep recent fixture shortcuts query-free so operators can jump back to the latest receiving/returning targets quickly.
-// The hero previews 5 by default, but we keep a larger recent pool here so the UI can offer a "show more" action.
 const recentFixtureShortcuts = computed<RecentFixtureShortcut[]>(() => {
   const seen = new Set<string>();
   const shortcuts: RecentFixtureShortcut[] = [];
-  const sortedTransactions = transactions.value
+  const sortedTransactions = recentTransactions.value
     .slice()
     .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
 
@@ -350,114 +241,200 @@ const recentFixtureShortcuts = computed<RecentFixtureShortcut[]>(() => {
   return shortcuts;
 });
 
-const smartHints = computed(() => {
-  const q = hintSearchText.value;
-  if (!q) return [];
-  if (mode.value === "fixture" && hasConfirmedFixtureResult.value && committedQuery.value.trim() === queryDraft.value.trim()) return [];
-  if (mode.value === "model" && hasConfirmedModelResult.value && committedQuery.value.trim() === queryDraft.value.trim()) return [];
-
-  if (mode.value === "fixture") {
-    return fixtures.value
-      .filter((row) => normalizeCodeToken(row.code).includes(normalizeCodeToken(q)))
-      .slice()
-      .sort((a, b) => {
-        const scoreDiff = rankCodeMatch(a.code, q) - rankCodeMatch(b.code, q);
-        if (scoreDiff !== 0) return scoreDiff;
-        return a.code.localeCompare(b.code);
-      })
-      .slice(0, 10)
-      .map((row): SearchHint => ({
-        key: `fixture-direct-${row.id}`,
-        mode: "fixture",
-        entityId: row.id,
-        title: row.code,
-        subtitle: row.name,
-        badge: "治具"
-      }));
+function clearSelectedFixtureImage(): void {
+  if (selectedFixtureImage.value) {
+    URL.revokeObjectURL(selectedFixtureImage.value);
+    selectedFixtureImage.value = "";
   }
-
-  return models.value
-    .filter((row) => normalizeCodeToken(row.code).includes(normalizeCodeToken(q)))
-    .slice()
-    .sort((a, b) => {
-      const scoreDiff = rankCodeMatch(a.code, q) - rankCodeMatch(b.code, q);
-      if (scoreDiff !== 0) return scoreDiff;
-      return a.code.localeCompare(b.code);
-    })
-    .slice(0, 10)
-    .map((row): SearchHint => ({
-        key: `model-direct-${row.id}`,
-        mode: "model",
-        entityId: row.id,
-        title: row.code,
-        subtitle: row.name,
-        badge: "機種"
-    }));
-});
-
-function applySmartHint(hint: SearchHint): void {
-  mode.value = hint.mode;
-  queryDraft.value = hint.title;
-  committedQuery.value = hint.title;
-  if (hint.mode === "fixture") {
-    selectedFixtureId.value = hint.entityId;
-    detailTab.value = "info";
-    return;
-  }
-  selectedModelId.value = hint.entityId;
-  detailTab.value = "info";
 }
 
-function applyRecentFixtureShortcut(fixtureCode: string): void {
-  mode.value = "fixture";
-  queryDraft.value = fixtureCode;
-  committedQuery.value = fixtureCode;
-  detailTab.value = "info";
-  const matchedFixture = fixtures.value.find((row) => row.code === fixtureCode);
-  selectedFixtureId.value = matchedFixture?.id ?? null;
-}
-
-async function loadSelectedFixtureTransactionHistory(): Promise<void> {
-  const fixture = selectedFixture.value;
-  if (!fixture || !customerId.value || fixtureTransactionHistoryLoading.value) {
+async function refreshSelectedFixtureImage(): Promise<void> {
+  clearSelectedFixtureImage();
+  imageLoadFailed.value = false;
+  if (!selectedFixture.value) {
     return;
   }
-  if (fixtureTransactionHistoryLoadedForCode.value === fixture.code) {
-    return;
-  }
-
-  fixtureTransactionHistoryLoading.value = true;
   try {
-    fixtureTransactionHistoryRows.value = await api.listTransactions(FULL_FIXTURE_TRANSACTION_HISTORY_LIMIT, customerId.value, {
-      fixture_code: fixture.code
-    });
-    fixtureTransactionHistoryLoadedForCode.value = fixture.code;
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "載入治具歷史收退料記錄失敗。", "error");
-  } finally {
-    fixtureTransactionHistoryLoading.value = false;
+    selectedFixtureImage.value = await fetchFixtureImageObjectUrl(selectedFixture.value.code);
+  } catch {
+    imageLoadFailed.value = true;
   }
 }
 
-function syncSelection(): void {
-  if (mode.value === "fixture") {
-    selectedFixtureId.value = fixtureMatches.value.find((row) => row.id === selectedFixtureId.value)?.id ?? fixtureMatches.value[0]?.id ?? null;
+async function loadCustomerScopedShellData(): Promise<void> {
+  if (!customerId.value) {
+    customerUsers.value = [];
+    recentTransactions.value = [];
     return;
   }
-  selectedModelId.value = modelMatches.value.find((row) => row.id === selectedModelId.value)?.id ?? modelMatches.value[0]?.id ?? null;
+  try {
+    const [assignedUsers, txRows] = await Promise.all([
+      api.listCustomerUsers(customerId.value),
+      api.listTransactions(RECENT_SHORTCUT_TRANSACTION_LIMIT, customerId.value)
+    ]);
+    customerUsers.value = assignedUsers;
+    recentTransactions.value = txRows;
+  } catch (err) {
+    pushToast(err instanceof Error ? err.message : "載入查詢頁輔助資料失敗", "error");
+  }
+}
+
+async function loadSelectedContext(): Promise<void> {
+  if (!customerId.value || !selectedResultId.value) {
+    selectedFixtureContext.value = null;
+    selectedModelContext.value = null;
+    clearSelectedFixtureImage();
+    return;
+  }
+  const requestId = ++detailRequestId;
+  detailLoading.value = true;
+  try {
+    if (mode.value === "fixture") {
+      const context = await api.getFixtureSearchContext(selectedResultId.value, customerId.value, FIXTURE_CONTEXT_TRANSACTION_LIMIT);
+      if (requestId !== detailRequestId) return;
+      selectedFixtureContext.value = context;
+      selectedModelContext.value = null;
+      fixtureTransactionHistoryRows.value = [];
+      fixtureTransactionHistoryLoadedForCode.value = null;
+      fixtureTransactionHistoryLoading.value = false;
+      await refreshSelectedFixtureImage();
+      return;
+    }
+
+    const context = await api.getModelSearchContext(selectedResultId.value, customerId.value);
+    if (requestId !== detailRequestId) return;
+    selectedModelContext.value = context;
+    selectedFixtureContext.value = null;
+    clearSelectedFixtureImage();
+  } catch (err) {
+    if (requestId !== detailRequestId) return;
+    selectedFixtureContext.value = null;
+    selectedModelContext.value = null;
+    pushToast(err instanceof Error ? err.message : "載入查詢結果詳細資料失敗。", "error");
+  } finally {
+    if (requestId === detailRequestId) {
+      detailLoading.value = false;
+    }
+  }
+}
+
+async function runSearch(options: { append?: boolean; preferredId?: number | null } = {}): Promise<void> {
+  const q = committedQuery.value.trim();
+  if (!q || !customerId.value) {
+    searchResults.value = [];
+    searchTotal.value = 0;
+    searchPage.value = 1;
+    searchHasMore.value = false;
+    selectedResultId.value = null;
+    selectedFixtureContext.value = null;
+    selectedModelContext.value = null;
+    return;
+  }
+
+  const append = options.append === true;
+  const targetPage = append ? searchPage.value + 1 : 1;
+  const requestId = ++searchRequestId;
+  if (append) {
+    loadingMore.value = true;
+  } else {
+    loading.value = true;
+  }
+  try {
+    const page = await api.globalSearch({
+      q,
+      customerId: customerId.value,
+      entityType: mode.value,
+      page: targetPage,
+      pageSize: SEARCH_PAGE_SIZE
+    });
+    if (requestId !== searchRequestId) return;
+    searchResults.value = append ? [...searchResults.value, ...page.items] : page.items;
+    searchPage.value = page.page;
+    searchTotal.value = page.total;
+    searchHasMore.value = page.has_more;
+
+    const preferredId = options.preferredId ?? selectedResultId.value;
+    const nextSelectedId = searchResults.value.find((row) => row.reference_id === preferredId)?.reference_id ?? searchResults.value[0]?.reference_id ?? null;
+    if (selectedResultId.value !== nextSelectedId) {
+      selectedResultId.value = nextSelectedId;
+    } else if (!append && nextSelectedId !== null) {
+      await loadSelectedContext();
+    }
+  } catch (err) {
+    if (requestId !== searchRequestId) return;
+    pushToast(err instanceof Error ? err.message : "搜尋失敗", "error");
+  } finally {
+    if (requestId === searchRequestId) {
+      loading.value = false;
+      loadingMore.value = false;
+    }
+  }
+}
+
+function scheduleSmartHints(): void {
+  if (hintTimer) {
+    clearTimeout(hintTimer);
+  }
+  const q = queryDraft.value.trim();
+  if (!q || !customerId.value) {
+    smartHints.value = [];
+    return;
+  }
+  hintTimer = setTimeout(async () => {
+    const requestId = ++hintRequestId;
+    try {
+      const page = await api.globalSearch({
+        q,
+        customerId: customerId.value,
+        entityType: mode.value,
+        page: 1,
+        pageSize: SMART_HINT_LIMIT
+      });
+      if (requestId !== hintRequestId) return;
+      smartHints.value = page.items.map((item) => ({
+        key: `${item.entity_type}-${item.reference_id}`,
+        mode: item.entity_type === "model" ? "model" : "fixture",
+        entityId: item.reference_id,
+        title: item.title,
+        subtitle: item.subtitle ?? "",
+        badge: item.entity_type === "model" ? "機種" : "治具"
+      }));
+    } catch {
+      if (requestId !== hintRequestId) return;
+      smartHints.value = [];
+    }
+  }, 180);
 }
 
 function submitSearch(): void {
-  const nextQuery = queryDraft.value.trim();
-  committedQuery.value = nextQuery;
+  committedQuery.value = queryDraft.value.trim();
   detailTab.value = "info";
-  syncSelection();
+  void runSearch();
 }
 
 function clearSearch(): void {
   queryDraft.value = "";
   committedQuery.value = "";
   detailTab.value = "info";
+  searchResults.value = [];
+  searchTotal.value = 0;
+  searchPage.value = 1;
+  searchHasMore.value = false;
+  smartHints.value = [];
+  selectedResultId.value = null;
+  selectedFixtureContext.value = null;
+  selectedModelContext.value = null;
+  fixtureTransactionHistoryRows.value = [];
+  fixtureTransactionHistoryLoadedForCode.value = null;
+  fixtureTransactionHistoryLoading.value = false;
+  clearSelectedFixtureImage();
+}
+
+async function loadMoreResults(): Promise<void> {
+  if (!searchHasMore.value || loadingMore.value) {
+    return;
+  }
+  await runSearch({ append: true });
 }
 
 function toggleSection(targetMode: SearchMode, key: string): void {
@@ -485,68 +462,41 @@ function persistSelections(): void {
   localStorage.setItem(DETAIL_TAB_KEY, detailTab.value);
 }
 
-function clearSelectedFixtureImage(): void {
-  if (selectedFixtureImage.value) {
-    URL.revokeObjectURL(selectedFixtureImage.value);
-    selectedFixtureImage.value = "";
-  }
+function applySmartHint(hint: SearchHint): void {
+  mode.value = hint.mode;
+  queryDraft.value = hint.title;
+  committedQuery.value = hint.title;
+  detailTab.value = "info";
+  void runSearch({ preferredId: hint.entityId });
 }
 
-async function refreshSelectedFixtureImage(): Promise<void> {
-  clearSelectedFixtureImage();
-  imageLoadFailed.value = false;
-  if (!selectedFixture.value) {
+function applyRecentFixtureShortcut(fixtureCode: string): void {
+  mode.value = "fixture";
+  queryDraft.value = fixtureCode;
+  committedQuery.value = fixtureCode;
+  detailTab.value = "info";
+  void runSearch();
+}
+
+async function loadSelectedFixtureTransactionHistory(): Promise<void> {
+  const fixture = selectedFixture.value;
+  if (!fixture || !customerId.value || fixtureTransactionHistoryLoading.value) {
     return;
   }
-  try {
-    selectedFixtureImage.value = await fetchFixtureImageObjectUrl(selectedFixture.value.code);
-  } catch {
-    imageLoadFailed.value = true;
-  }
-}
-
-async function loadWorkspace(): Promise<void> {
-  loading.value = true;
-  try {
-    const [fixtureRows, stock, txRows, identifierRows, modelRows, stationRows, requirementRows, assignedUsers] = await Promise.all([
-      api.listFixtures(customerId.value),
-      api.listStock(customerId.value),
-      api.listTransactions(200, customerId.value),
-      api.listIdentifierStockSummary(customerId.value),
-      api.listModels(customerId.value),
-      api.listStations(customerId.value),
-      api.listFixtureRequirements(customerId.value),
-      customerId.value ? api.listCustomerUsers(customerId.value) : Promise.resolve([])
-    ]);
-    fixtures.value = fixtureRows;
-    stockRows.value = stock;
-    transactions.value = txRows;
-    identifierStockRows.value = identifierRows;
-    models.value = modelRows;
-    stations.value = stationRows;
-    fixtureRequirements.value = requirementRows;
-    customerUsers.value = assignedUsers;
-    syncSelection();
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "載入查詢頁失敗", "error");
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function refreshModelQuery(): Promise<void> {
-  if (!selectedModelId.value) {
-    modelQuery.value = null;
+  if (fixtureTransactionHistoryLoadedForCode.value === fixture.code) {
     return;
   }
-  modelLoading.value = true;
+
+  fixtureTransactionHistoryLoading.value = true;
   try {
-    modelQuery.value = await api.getModelQuery(selectedModelId.value, undefined, customerId.value);
+    fixtureTransactionHistoryRows.value = await api.listTransactions(FULL_FIXTURE_TRANSACTION_HISTORY_LIMIT, customerId.value, {
+      fixture_code: fixture.code
+    });
+    fixtureTransactionHistoryLoadedForCode.value = fixture.code;
   } catch (err) {
-    modelQuery.value = null;
-    pushToast(err instanceof Error ? err.message : "載入機種資料失敗", "error");
+    pushToast(err instanceof Error ? err.message : "載入治具歷史收退料記錄失敗。", "error");
   } finally {
-    modelLoading.value = false;
+    fixtureTransactionHistoryLoading.value = false;
   }
 }
 
@@ -572,18 +522,14 @@ function goToProduction(): void {
 }
 
 async function handleFixtureSaved(fixtureId: number): Promise<void> {
-  await loadWorkspace();
-  selectedFixtureId.value = fixtureId;
   detailTab.value = "info";
-  await refreshSelectedFixtureImage();
+  await runSearch({ preferredId: fixtureId });
   pushToast("治具資料已更新。", "success");
 }
 
 async function handleModelSaved(modelId: number): Promise<void> {
-  await loadWorkspace();
-  selectedModelId.value = modelId;
   detailTab.value = "info";
-  await refreshModelQuery();
+  await runSearch({ preferredId: modelId });
   pushToast("機種資料已更新。", "success");
 }
 
@@ -596,8 +542,7 @@ function scrollToResultPanel(): void {
   });
 }
 
-watch(mode, () => {
-  syncSelection();
+watch(mode, async () => {
   if (mode.value === "fixture" && !visibleFixtureSections.value.maintenance && detailTab.value === "edit") {
     detailTab.value = "info";
   }
@@ -605,33 +550,39 @@ watch(mode, () => {
     detailTab.value = "info";
   }
   persistSelections();
+  scheduleSmartHints();
+  if (hasActiveQuery.value) {
+    await runSearch();
+  }
 });
 
 watch([fixtureSectionSelection, modelSectionSelection, detailTab], persistSelections, { deep: true });
-watch(resultSearchText, syncSelection);
-watch(queryDraft, (value) => {
-  if (value.trim().length === 0 && committedQuery.value.length > 0) {
+watch(queryDraft, () => {
+  if (queryDraft.value.trim().length === 0 && committedQuery.value.length > 0) {
     committedQuery.value = "";
   }
+  scheduleSmartHints();
+});
+watch(customerId, async () => {
+  await loadCustomerScopedShellData();
+  scheduleSmartHints();
+  if (hasActiveQuery.value) {
+    await runSearch();
+    return;
+  }
+  clearSearch();
+});
+watch(selectedResultId, async () => {
+  fixtureTransactionHistoryRows.value = [];
+  fixtureTransactionHistoryLoadedForCode.value = null;
+  fixtureTransactionHistoryLoading.value = false;
+  await loadSelectedContext();
 });
 watch(resultScrollKey, (key, previous) => {
   if (!key || key === previous) {
     return;
   }
   scrollToResultPanel();
-});
-watch(selectedFixtureId, () => {
-  fixtureTransactionHistoryRows.value = [];
-  fixtureTransactionHistoryLoadedForCode.value = null;
-  fixtureTransactionHistoryLoading.value = false;
-  void refreshSelectedFixtureImage();
-});
-watch(selectedModelId, async () => {
-  await refreshModelQuery();
-});
-watch(selectedCustomerId, async () => {
-  await loadWorkspace();
-  await Promise.all([refreshModelQuery(), refreshSelectedFixtureImage()]);
 });
 
 onMounted(async () => {
@@ -644,11 +595,14 @@ onMounted(async () => {
     detailTab.value = savedDetailTab;
   }
 
-  await loadWorkspace();
-  await Promise.all([refreshModelQuery(), refreshSelectedFixtureImage()]);
+  await loadCustomerScopedShellData();
+  scheduleSmartHints();
 });
 
 onBeforeUnmount(() => {
+  if (hintTimer) {
+    clearTimeout(hintTimer);
+  }
   clearSelectedFixtureImage();
 });
 </script>
@@ -678,65 +632,101 @@ onBeforeUnmount(() => {
         :can-edit="canEdit"
         :show-maintenance-tab="mode === 'fixture' ? visibleFixtureSections.maintenance : visibleModelSections.maintenance"
         :detail-tab="detailTab"
-        :loading="loading"
+        :loading="panelLoading"
         :empty="shouldShowEmptyResultState"
         :mode="mode"
         @update:detail-tab="detailTab = $event"
         @create="goCreateFromNoResult"
       >
-        <template v-if="mode === 'fixture'">
-          <FixtureInfoPanel
-            v-if="(detailTab === 'info' || !visibleFixtureSections.maintenance) && !shouldShowFixtureCreateForm"
-            :fixture="selectedFixture"
-            :stock="selectedFixtureStock"
-            :image-url="selectedFixtureImage"
-            :image-load-failed="imageLoadFailed"
-            :identifier-tags="selectedFixtureIdentifierTags"
-            :identifier-total-qty="selectedFixtureIdentifierTotalQty"
-            :related-models="selectedFixtureModels"
-            :station-rows="selectedFixtureStationRows"
-            :transactions="selectedFixtureTransactions"
-            :transaction-history-loaded="fixtureTransactionHistoryLoadedForCode === selectedFixture?.code"
-            :transaction-history-loading="fixtureTransactionHistoryLoading"
-            :visible-sections="visibleFixtureSections"
-            :format-count="formatCount"
-            :format-date="formatLocalDate"
-            :stock-tone="stockTone"
-            @load-transaction-history="loadSelectedFixtureTransactionHistory"
-          />
-          <FixtureEditForm
-            v-else
-            :customer-id="customerId"
-            :fixture="selectedFixture"
-            :assigned-users="customerUsers"
-            :initial-code="queryDraft.trim().toUpperCase()"
-            @saved="handleFixtureSaved"
-            @cancel="detailTab = 'info'"
-          />
-        </template>
+        <div class="search-results-layout">
+          <aside class="result-list-card">
+            <div class="result-list-head">
+              <strong>搜尋結果</strong>
+              <span>{{ searchTotal }} 筆</span>
+            </div>
+            <div class="result-list-body">
+              <button
+                v-for="row in searchResults"
+                :key="`${row.entity_type}-${row.reference_id}`"
+                class="result-row"
+                :class="{ active: row.reference_id === selectedResultId }"
+                type="button"
+                @click="selectedResultId = row.reference_id"
+              >
+                <div class="result-row-head">
+                  <strong>{{ row.title }}</strong>
+                  <span class="result-type">{{ row.entity_type === "fixture" ? "治具" : row.entity_type === "model" ? "機種" : "站點" }}</span>
+                </div>
+                <span class="result-row-subtitle">{{ row.subtitle || "-" }}</span>
+                <div v-if="row.entity_type === 'fixture'" class="result-row-meta">
+                  <span>庫存 {{ formatCount(row.stock_qty ?? 0) }}</span>
+                  <span>{{ row.location_code || "-" }}</span>
+                </div>
+                <div class="result-row-foot">
+                  <span class="result-row-status" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用" : "停用" }}</span>
+                </div>
+              </button>
+            </div>
+            <div v-if="searchHasMore" class="result-list-actions">
+              <button class="outline-btn" type="button" :disabled="loadingMore" @click="loadMoreResults">
+                {{ loadingMore ? "載入中..." : "載入更多" }}
+              </button>
+            </div>
+          </aside>
 
-        <template v-else>
-          <div v-if="modelLoading && detailTab === 'info' && !shouldShowModelCreateForm" class="loading-panel">
-            <InlineSpinner label="載入機種資料..." />
+          <div class="detail-column">
+            <template v-if="mode === 'fixture'">
+              <FixtureInfoPanel
+                v-if="(detailTab === 'info' || !visibleFixtureSections.maintenance) && !shouldShowFixtureCreateForm"
+                :fixture="selectedFixture"
+                :stock="selectedFixtureStock"
+                :image-url="selectedFixtureImage"
+                :image-load-failed="imageLoadFailed"
+                :identifier-tags="selectedFixtureIdentifierTags"
+                :identifier-total-qty="selectedFixtureIdentifierTotalQty"
+                :related-models="selectedFixtureModels"
+                :station-rows="selectedFixtureStationRows"
+                :transactions="selectedFixtureTransactions"
+                :transaction-history-loaded="fixtureTransactionHistoryLoadedForCode === selectedFixture?.code"
+                :transaction-history-loading="fixtureTransactionHistoryLoading"
+                :visible-sections="visibleFixtureSections"
+                :format-count="formatCount"
+                :format-date="formatLocalDate"
+                :stock-tone="stockTone"
+                @load-transaction-history="loadSelectedFixtureTransactionHistory"
+              />
+              <FixtureEditForm
+                v-else
+                :customer-id="customerId"
+                :fixture="selectedFixture"
+                :assigned-users="customerUsers"
+                :initial-code="queryDraft.trim().toUpperCase()"
+                @saved="handleFixtureSaved"
+                @cancel="detailTab = 'info'"
+              />
+            </template>
+
+            <template v-else>
+              <ModelInfoPanel
+                v-if="(detailTab === 'info' || !visibleModelSections.maintenance) && !shouldShowModelCreateForm"
+                :model="selectedModel"
+                :query-data="selectedModelContext?.query ?? null"
+                :fixtures="selectedModelFixtures"
+                :visible-sections="visibleModelSections"
+                :format-count="formatCount"
+                :go-to-production="goToProduction"
+              />
+              <ModelEditForm
+                v-else
+                :customer-id="customerId"
+                :model="selectedModel"
+                :initial-code="queryDraft.trim().toUpperCase()"
+                @saved="handleModelSaved"
+                @cancel="detailTab = 'info'"
+              />
+            </template>
           </div>
-          <ModelInfoPanel
-            v-else-if="(detailTab === 'info' || !visibleModelSections.maintenance) && !shouldShowModelCreateForm"
-            :model="selectedModel"
-            :query-data="modelQuery"
-            :fixtures="selectedModelFixtures"
-            :visible-sections="visibleModelSections"
-            :format-count="formatCount"
-            :go-to-production="goToProduction"
-          />
-          <ModelEditForm
-            v-else
-            :customer-id="customerId"
-            :model="selectedModel"
-            :initial-code="queryDraft.trim().toUpperCase()"
-            @saved="handleModelSaved"
-            @cancel="detailTab = 'info'"
-          />
-        </template>
+        </div>
       </SearchResultPanel>
     </section>
   </div>
@@ -766,30 +756,111 @@ onBeforeUnmount(() => {
   scroll-margin-top: 96px;
 }
 
-.content-grid.idle {
-  width: min(760px, 100%);
-  justify-self: center;
+.search-results-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
 }
 
-.collapsed-state {
+.result-list-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, color-mix(in srgb, var(--blue-soft) 34%, white) 100%);
+  box-shadow: var(--shadow);
+  position: sticky;
+  top: 12px;
+}
+
+.result-list-head,
+.result-row-head,
+.result-row-foot,
+.result-list-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.result-list-head strong,
+.result-row-head strong {
+  color: #22314a;
+}
+
+.result-list-head span,
+.result-row-subtitle,
+.result-row-meta,
+.result-type,
+.result-row-status {
+  color: #5d6d89;
+  font-size: 12px;
+}
+
+.result-list-body {
   display: grid;
   gap: 8px;
-  padding: 28px 20px;
-  border: 1px dashed var(--line-strong);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.78);
-  color: #5d6d89;
-  text-align: center;
 }
 
-.collapsed-state strong {
-  color: #22314a;
-  font-size: 15px;
+.result-row {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--blue) 14%, var(--line));
+  border-radius: 14px;
+  background: #fff;
+  text-align: left;
 }
 
-@media (max-width: 960px) {
-  .content-grid {
+.result-row.active {
+  border-color: color-mix(in srgb, var(--blue) 34%, var(--line));
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
+.result-row-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.result-type,
+.result-row-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--blue-soft) 72%, white);
+}
+
+.result-row-status.inactive {
+  background: color-mix(in srgb, #d7dee9 88%, white);
+}
+
+.detail-column {
+  min-width: 0;
+}
+
+.outline-btn {
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7f9fd 100%);
+  color: #5b677d;
+  padding: 8px 14px;
+  min-height: 36px;
+  font-weight: 700;
+}
+
+@media (max-width: 1080px) {
+  .search-results-layout {
     grid-template-columns: 1fr;
+  }
+
+  .result-list-card {
+    position: static;
+    top: auto;
   }
 }
 </style>

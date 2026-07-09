@@ -25,8 +25,9 @@
 
 - `frontend/src/App.vue`
   - 全域 shell 協調器
-  - 只保留 session、route、onboarding、topbar stats refresh、global modal open state
+  - 只保留 session、route、onboarding、release notice、topbar stats refresh、global modal open state
   - 不再直接承接整塊登入頁、topbar、drawer、toast template
+  - 協調 onboarding 分類選單與 guided tour 播放
 
 - `frontend/src/components/app/AppAuthScreen.vue`
   - 登入畫面
@@ -44,6 +45,9 @@
   - 全域 `收 / 退料` modal
   - 全域 `收退料資訊匯出` modal
 
+- `frontend/src/components/app/AppReleaseNoticeModal.vue`
+  - 版本公告 modal
+
 - `frontend/src/components/app/AppToastStack.vue`
   - 全域 toast 顯示
 
@@ -51,10 +55,19 @@
   - 全域登入 session
   - customer 選擇
   - onboarding 狀態
+  - onboarding 分類選擇狀態
 
 - `frontend/src/onboarding.ts`
-  - 新手導覽步驟定義
+  - 新手導覽 flow 定義
+  - 依頁面 / tab 分類的教學內容
   - 每一步對應 route / `data-tour` target / 文案 / 方向
+
+- `frontend/src/components/common/OnboardingFlowPicker.vue`
+  - 新手教學分類選單
+
+- `frontend/src/releaseNotice.ts`
+  - 版本公告內容
+  - `versionId` / 顯示標題 / 摘要 / highlight 文案
 
 - `frontend/src/toastState.ts`
   - 全域 toast 狀態
@@ -103,6 +116,7 @@
   - 全域導覽浮層
   - spotlight 目標高亮
   - route-aware step 流程
+  - 依實際卡片高度定位，避免固定高度造成偏移
 
 - `frontend/src/components/common/InlineSpinner.vue`
   - 小型 inline loading indicator
@@ -131,6 +145,12 @@
 - `frontend/src/utils/display.ts`
   - fallback text / ownership label / stock status label 等顯示工具
 
+- `frontend/src/utils/identifier.ts`
+  - 前端 `identifier` 共用規則
+  - 短純數字補零
+  - legacy 值原樣保留
+  - 保留 query helper，避免 UI 端再次手寫同語意判斷
+
 ## 全域流程 API 對應
 
 ### `frontend/src/App.vue`
@@ -156,6 +176,10 @@
   - `AppGlobalModals.vue`
   - 內部共用 `InventoryExportPanel.vue`
 
+- 版本公告 modal
+  - `AppReleaseNoticeModal.vue`
+  - 文案定義在 `releaseNotice.ts`
+
 ### 改全域畫面時去哪裡
 
 - 改 session 恢復、route 轉向、onboarding 狀態、topbar refresh orchestration
@@ -172,6 +196,11 @@
 
 - 改全域收退料 / 匯出 modal
   - `frontend/src/components/app/AppGlobalModals.vue`
+
+- 改版本公告顯示條件 / 文案
+  - `frontend/src/App.vue`
+  - `frontend/src/components/app/AppReleaseNoticeModal.vue`
+  - `frontend/src/releaseNotice.ts`
 
 - 改全域 toast UI
   - `frontend/src/components/app/AppToastStack.vue`
@@ -192,10 +221,14 @@
 
 - `SearchWorkspacePage.vue`
   - mode / query state
-  - 初始化資料載入
+  - paginated global search state
+  - load more / selected result state
   - smart hint 排序
   - 最近收 / 退料治具快捷入口資料整理
-  - fixture / model result 組裝
+  - fixture / model result 組裝與排序承接
+  - fixture / model context lazy fetch
+  - fixture 完整交易歷史的額外延遲載入
+  - 開啟 onboarding 分類選單
 
 - `SearchHeroSection.vue`
   - 查詢首頁 hero shell
@@ -221,7 +254,7 @@
 - fixture detail
 - model detail
 - fixture 圖片預覽
-- 識別碼庫存摘要
+- datecode/編號庫存摘要
 - transaction context
 - 相近編號提示排序
 - 區塊 chip 顯示切換與 localStorage 記憶
@@ -252,7 +285,7 @@
 
 ### 改查詢頁時去哪裡
 
-- 改查詢 state、smart hint 排序、快捷入口資料來源、section persistence
+- 改查詢 state、load more、smart hint 排序、快捷入口資料來源、selected context 載入、section persistence
   - `frontend/src/pages/SearchWorkspacePage.vue`
 
 - 改首頁 hero、提示卡、快捷入口、onboarding 按鈕
@@ -260,6 +293,10 @@
 
 - 改查詢結果外殼與版面
   - `frontend/src/components/search/SearchResultPanel.vue`
+
+- 改查詢 API contract 或 context 載入方法
+  - `frontend/src/api/searchClient.ts`
+  - `frontend/src/types.ts`
 
 - 改治具 / 機種 detail
   - `frontend/src/components/search/FixtureInfoPanel.vue`
@@ -297,15 +334,19 @@
 
 - `BatchImportPanel.vue`
   - 批次貼上解析
+  - 貼上欄支援手動輸入 `Tab` 分隔資料
   - 新治具建立
   - 相似治具確認 / 替換
   - tutorial sandbox 試跑
+  - 寫入前 `identifier` 正規化改走 `frontend/src/utils/identifier.ts`
+  - 前端對使用者顯示 `datecode/編號` 文案
 
 - `InventoryExportPanel.vue`
   - 報表類型 / 匯出範圍選擇
   - preview
   - `xlsx` / `txt` 匯出
   - `identifier` 查詢輸入與相容文案
+  - UI 顯示名稱改為 `datecode/編號`
 
 ### 路由模式
 
@@ -353,7 +394,7 @@
 - 改 overview 篩選欄位與交易表格
   - `frontend/src/components/inventory/InventoryOverviewPanel.vue`
 
-- 改批次貼上解析規則 / 相似治具比對 / 匯入預覽表 / tutorial mode
+- 改批次貼上解析規則 / `Tab` 鍵輸入行為 / 相似治具比對 / 匯入預覽表 / tutorial mode
   - `frontend/src/components/inventory/BatchImportPanel.vue`
 
 - 改匯出面板互動 / preview / radio 選擇樣式
@@ -556,7 +597,10 @@
   - customer 切換、登入 session、onboarding 共享狀態
 
 - `frontend/src/onboarding.ts`
-  - 導覽步驟定義與跨頁流程
+  - 導覽 flow 定義與跨頁流程
+
+- `frontend/src/components/common/OnboardingFlowPicker.vue`
+  - 教學分類選單
 
 - `frontend/src/toastState.ts`
   - 成功 / 失敗提示
@@ -574,12 +618,20 @@
 - `frontend/src/utils/display.ts`
   - fallback 與狀態文字映射
 
+- `frontend/src/utils/identifier.ts`
+  - 前端 `identifier` 正規化 / 查詢 helper
+
+- `frontend/src/utils/identifier.test.ts`
+  - 前端 `identifier` helper 單元測試
+
 ## 現況提醒
 
 - audit API 仍保留在 `api.listAuditLogs`，但首頁沒有 audit 摘要區塊。
 - shell 目前沒有 desktop compact / mini sidebar。
-- 搜尋頁目前沒有查詢結果分頁，也沒有可收合篩選區。
+- 搜尋頁主結果已改為 `page_size` 邊界 + `load more`；fixture / model context 不再首屏全量預載。
+- 搜尋頁目前仍沒有可收合的篩選區。
 - 教學模式屬於前端 sandbox 流程，不會呼叫額外的 backend tutorial API。
+- 如果要改前端 `identifier` 規則，優先改 `frontend/src/utils/identifier.ts` 與 `frontend/src/utils/identifier.test.ts`，不要回到元件內重寫 `padStart(4)`。
 
 ## 不要改的前端檔案
 

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import { api } from "@/api";
-import { globalFixtureKeyword, onboardingSandboxMode, selectedCustomerId } from "@/appState";
+import { authSession, globalFixtureKeyword, onboardingSandboxMode, selectedCustomerId } from "@/appState";
 import InventoryOperationBoard from "@/components/inventory/InventoryOperationBoard.vue";
 import InventoryOverviewPanel from "@/components/inventory/InventoryOverviewPanel.vue";
 import { pushToast } from "@/toastState";
@@ -13,6 +13,7 @@ import { matchesFixtureKeywords, parseFixtureKeywords } from "@/utils/fixtureSea
 import { ownershipLabel } from "@/utils/display";
 
 const route = useRoute();
+const router = useRouter();
 
 const fixtures = ref<Fixture[]>([]);
 const stockRows = ref<StockSummary[]>([]);
@@ -36,6 +37,7 @@ function createOverviewFilters() {
 const overviewFilters = ref(createOverviewFilters());
 
 const pageMode = computed(() => (route.path.endsWith("/overview") ? "overview" : "operation"));
+const canOperateInventory = computed(() => authSession.value?.role !== "guest");
 const today = computed(() => formatDateKey(new Date()));
 const globalFixtureKeywords = computed(() => parseFixtureKeywords(globalFixtureKeyword.value));
 
@@ -216,12 +218,25 @@ function updateOverviewFilters(value: typeof overviewFilters.value): void {
 }
 
 onMounted(async () => {
+  if (!canOperateInventory.value && pageMode.value === "operation") {
+    await router.replace("/inventory/overview");
+    return;
+  }
   await loadData();
 });
 
 watch(selectedCustomerId, async () => {
   await loadData();
 });
+
+watch(
+  () => [canOperateInventory.value, pageMode.value] as const,
+  async ([canOperate, mode]) => {
+    if (!canOperate && mode === "operation") {
+      await router.replace("/inventory/overview");
+    }
+  }
+);
 
 watch(pageMode, async (value) => {
   if (value === "overview" && overviewTransactions.value.length === 0) {

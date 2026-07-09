@@ -157,6 +157,33 @@ class InventoryRepository:
             stmt = stmt.where(Fixture.customer_id == customer_id)
         return [dict(row._mapping) for row in self.db.execute(stmt).all()]
 
+    def get_stock_summary_row(self, fixture_id: int, customer_id: int | None = None) -> dict | None:
+        stock_status_expr = case(
+            (Fixture.is_active.is_(False), "normal"),
+            (FixtureStockSummary.stock_status.is_not(None), FixtureStockSummary.stock_status),
+            else_="normal",
+        )
+        stmt = (
+            select(
+                Fixture.id.label("fixture_id"),
+                Fixture.code.label("fixture_code"),
+                Fixture.name.label("fixture_name"),
+                case((FixtureStockSummary.stock_qty.is_not(None), FixtureStockSummary.stock_qty), else_=0).label("stock_qty"),
+                case((FixtureStockLevel.min_stock_qty.is_not(None), FixtureStockLevel.min_stock_qty), else_=0).label(
+                    "min_stock_qty"
+                ),
+                stock_status_expr.label("stock_status"),
+                FixtureStockSummary.last_transaction_at.label("last_transaction_at"),
+            )
+            .outerjoin(FixtureStockSummary, FixtureStockSummary.fixture_id == Fixture.id)
+            .outerjoin(FixtureStockLevel, FixtureStockLevel.fixture_id == Fixture.id)
+            .where(Fixture.id == fixture_id)
+        )
+        if customer_id is not None:
+            stmt = stmt.where(Fixture.customer_id == customer_id)
+        row = self.db.execute(stmt).first()
+        return None if row is None else dict(row._mapping)
+
     def list_stock_alert_rows(self, customer_id: int | None = None) -> list[dict]:
         stock_status_expr = case(
             (Fixture.is_active.is_(False), "normal"),
@@ -183,7 +210,7 @@ class InventoryRepository:
             stmt = stmt.where(Fixture.customer_id == customer_id)
         return [dict(row._mapping) for row in self.db.execute(stmt).all()]
 
-    def list_identifier_stock_summary_rows(self, customer_id: int | None = None) -> list[dict]:
+    def list_identifier_stock_summary_rows(self, customer_id: int | None = None, fixture_id: int | None = None) -> list[dict]:
         stock_qty_expr = (
             func.coalesce(
                 func.sum(
@@ -213,6 +240,8 @@ class InventoryRepository:
         )
         if customer_id is not None:
             stmt = stmt.where(MaterialTransaction.customer_id == customer_id, Fixture.customer_id == customer_id)
+        if fixture_id is not None:
+            stmt = stmt.where(MaterialTransactionItem.fixture_id == fixture_id)
         return [dict(row._mapping) for row in self.db.execute(stmt).all()]
 
     def list_transactions(

@@ -18,7 +18,7 @@
 
 - 改全域 shell 協調
   - `frontend/src/App.vue`
-  - 只保留 session、route、onboarding、global refresh orchestration
+  - 只保留 session、route、onboarding、release notice、global refresh orchestration
 
 - 改登入畫面
   - `frontend/src/components/app/AppAuthScreen.vue`
@@ -32,6 +32,11 @@
 - 改全域收退料 / 匯出 modal
   - `frontend/src/components/app/AppGlobalModals.vue`
 
+- 改版本公告 modal / 文案
+  - `frontend/src/components/app/AppReleaseNoticeModal.vue`
+  - `frontend/src/releaseNotice.ts`
+  - 開關協調在 `frontend/src/App.vue`
+
 - 改全域 toast
   - `frontend/src/components/app/AppToastStack.vue`
   - 狀態在 `frontend/src/toastState.ts`
@@ -42,6 +47,8 @@
   - `frontend/src/components/search/SearchResultPanel.vue`
   - `frontend/src/components/search/FixtureInfoPanel.vue`
   - `frontend/src/components/search/ModelInfoPanel.vue`
+  - 查詢 contract / lazy context：`frontend/src/api/searchClient.ts`
+  - 查詢型別：`frontend/src/types.ts`
 
 - 改查詢頁最近收 / 退料治具快捷入口
   - 資料整理：`frontend/src/pages/SearchWorkspacePage.vue`
@@ -56,6 +63,7 @@
   - inventory：`frontend/src/components/inventory/BatchImportPanel.vue`
   - production：`frontend/src/components/production/ProductionBatchImportModal.vue`
   - production page orchestration：`frontend/src/pages/ProductionPage.vue`
+  - inventory 的手動 `Tab` 鍵輸入行為也在 `BatchImportPanel.vue`
 
 - 改收退料報表匯出
   - `frontend/src/components/inventory/InventoryExportPanel.vue`
@@ -84,9 +92,11 @@
 - 改新手導覽步驟 / 流程
   - `frontend/src/onboarding.ts`
   - `frontend/src/components/common/GuidedTour.vue`
+  - `frontend/src/components/common/OnboardingFlowPicker.vue`
 
 - 改共用顯示 / 日期 / error parsing
   - `frontend/src/utils/display.ts`
+  - `frontend/src/utils/identifier.ts`
   - `frontend/src/utils/date.ts`
   - `frontend/src/utils/apiError.ts`
 
@@ -100,6 +110,7 @@
   - launcher：`main.py`
   - bootstrap：`backend/app/bootstrap.py`
   - FastAPI app：`backend/app/main.py`
+  - migration gate / offline compat：`backend/app/core/migrations.py`、`backend/app/tools/migration_check.py`
 
 - 改登入 / 使用者 API
   - `backend/app/routers/auth.py`
@@ -176,10 +187,30 @@
   - `backend/app/services/inventory_service.py`
 
 - 改 `identifier`
+  - 前端共用規則：`frontend/src/utils/identifier.ts`
+  - 前端規則測試：`frontend/src/utils/identifier.test.ts`
   - 前端顯示與查詢輸入：`frontend/src/pages/InventoryPage.vue`、`frontend/src/components/inventory/InventoryExportPanel.vue`
   - 前端顯示文字：`frontend/src/utils/display.ts`
-  - 後端寫入規格：`backend/app/schemas/inventory.py`
-  - 後端查詢相容：`backend/app/services/inventory_service.py`、`backend/app/repositories/inventory_repository.py`
+  - 後端共用規則：`backend/app/utils/identifier_rules.py`
+  - schema 套用點：`backend/app/schemas/inventory.py`
+  - service / repository 查詢鏈：`backend/app/services/inventory_service.py`、`backend/app/repositories/inventory_repository.py`
+  - 規則單元測試：`backend/tests/test_identifier_rules.py`
+  - UI 可改叫 `datecode/編號`，但不要修改內部 `identifier` 欄位名
+
+- 改搜尋排序 / 分頁 / lazy context
+  - router：`backend/app/routers/search.py`
+  - service：`backend/app/services/search_service.py`
+  - repository：`backend/app/repositories/search_repository.py`
+  - schema：`backend/app/schemas/search.py`
+  - migration / index：`backend/alembic/versions/0011_search_indexes.py`
+
+- 改 migration compatibility / schema patch 退場
+  - runtime gate：`backend/app/core/migrations.py`
+  - logging bootstrap：`backend/app/core/logging.py`
+  - historical backfill：`backend/app/core/schema_patch.py`
+  - offline check tool：`backend/app/tools/migration_check.py`
+  - operator runbook：`MIGRATION_GATE_RUNBOOK.md`
+  - environment inventory：`MIGRATION_ENVIRONMENT_INVENTORY.md`
 
 ## 編輯原則
 

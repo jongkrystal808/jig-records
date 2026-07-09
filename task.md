@@ -64,13 +64,15 @@
 - 目前 shell 仍沒有桌面版 mini sidebar；手機版則維持漢堡選單 / overlay 導覽。
 - `SearchWorkspacePage` 已新增固定的新手教學入口，首次登入也會自動啟動導覽。
 - `SearchWorkspacePage` 的智慧提示已收斂為「相近編號」排序提示，不再混用 direct / related / identifier 類型提示。
-- `MasterPage` 已有前端分頁；`SearchWorkspacePage` 目前仍沒有查詢結果分頁。
+- `MasterPage` 已有前端分頁；`SearchWorkspacePage` 也已改為 bounded search contract + `load more`。
 - `SearchWorkspacePage` 目前仍沒有可收合的篩選區。
+- `SearchWorkspacePage` 的 fixture / model context 已改為選取後延遲載入，不再首屏全量預載全部 search domain 資料。
 - `npm run build` 目前可通過。
 - `.venv\\Scripts\\python.exe -m pytest -q` 目前為 `33 passed`。
-- 目前 `identifier` 已分成兩套規則：
-  - 寫入規則：只接受 1-4 位數字，寫入前左補零為 4 碼。
-  - 查詢/匯出篩選規則：需相容舊資料庫；輸入 1-4 位數字時，同時匹配 `1 / 01 / 001 / 0001` 類零補齊舊資料；輸入超過 4 碼或含非數字時，視為 legacy `identifier / datecode` 原值查詢。
+- 目前 `identifier` 已收斂為單一規則：
+  - 純數字且長度 `1-4`：寫入前左補零為 4 碼，查詢時同時匹配 `1 / 01 / 001 / 0001` 類零補齊舊資料。
+  - 其餘值：視為 legacy `identifier / datecode`，寫入與查詢都以原值處理。
+- 這套規則已集中到 `backend/app/utils/identifier_rules.py`，並有獨立單元測試覆蓋。
 - `RequestValidationError` payload 已修正為 JSON-safe 序列化，欄位驗證失敗會穩定回傳 `422`。
 - `auth token` 目前以受信任內網為前提，`sessionStorage + Bearer token` 方案暫不列為本輪必要整改。
 - `main.py` 與 Docker image 預設啟動路徑已改為明確 bootstrap launcher；`docker-compose` 的 `api` service 會顯式關閉重複 bootstrap，維持由獨立 `bootstrap` service 先初始化。
@@ -171,8 +173,8 @@
 
 - 收退料頁不再提供單筆表單，統一由批次貼上匯入處理
 - 每筆貼上資料都必須包含 `治具編號 + 識別碼 + 數量`
-- `identifier` 採後端現行規則：只接受 1-4 位數字，寫入前左補零為 4 碼
-- `identifier` 的查詢 / 匯出篩選需相容舊資料：輸入 1-4 位數字時，需同時匹配舊資料裡不同零補齊寬度；輸入超過 4 碼或含非數字時，則以 legacy `identifier / datecode` 原值查詢
+- `identifier` 採單一共用規則：只有純數字且長度 `1-4` 會左補零為 4 碼；其餘值都以 legacy 原值保留
+- `identifier` 的查詢 / 匯出篩選與寫入共用同一份判斷：短純數字做零補齊相容匹配，其餘值做原值查詢
 - 所有收退料明細都必填 `ownership_type`
 
 ### 11) 儲位與圖片整合
@@ -320,6 +322,118 @@
 - [x] 負責人分頁已移除
 
 ## Update Log
+
+### 2026-07-09
+
+- 已將 migration/schema patch 技術債的退場策略正式收斂成三段式：
+  - `Phase 1`：保留 compat 邏輯與觀測
+  - `Phase 2`：runtime 改為 fail-loud gate，不再靜默修補
+  - `Phase 3`：確認所有環境都ผ่าน gate 後，移除 `schema_patch.py` 與 legacy revision normalization
+- runtime migration gate 現在要求資料庫 revision 至少達到 `0011_search_indexes`；低於 gate 的環境不再由 startup 自動修正，而是直接拒絕啟動。
+- 已新增離線檢查入口：`python -m backend.app.tools.migration_check`
+  - 可列出目前 revision、`alembic_version` 狀態、legacy alias / 短欄位 / 無 version table 等問題
+  - 可在人工確認後加上 `--apply-compat-fixes`，顯式套用舊版 `alembic_version` 相容修補
+- runtime gate 現在會固定輸出 structured log event：`migration_runtime_gate`
+  - `outcome=passed`
+  - `outcome=blocked`
+  - `outcome=compat_fixes_applied`
+- 已補上 backend logging bootstrap：`backend/app/core/logging.py`
+  - standalone CLI 現在會把 `backend.app` 的 `INFO` log 接到 stdout
+  - app runtime 若已有既有 handler，則不覆蓋，只把 `backend.app` logger 拉到 `INFO`
+- 已新增環境盤點文件：
+  - `MIGRATION_GATE_RUNBOOK.md`
+  - `MIGRATION_ENVIRONMENT_INVENTORY.md`
+- 已確認目前已知環境分流：
+  - 測試機：`docker`
+  - 正式機：`systemd`
+  - 兩者需作為獨立 environment entries 追蹤，不共用 revision 與 gate log 狀態
+- `schema_patch.py` 現在文件定位已收斂為 `0002_schema_backfill` 的歷史 backfill 依賴，不再視為 runtime startup 的保底機制。
+- 已補上 migration gate 單元測試，覆蓋：
+  - fresh DB 無 `alembic_version` 仍可通過 runtime gate
+  - legacy alias revision 會被 fail-loud 擋下
+  - 有 app tables 但沒有 `alembic_version` 的 legacy schema 會被 fail-loud 擋下
+- 目前仍未完成的前置條件：
+  - 尚未在 repo 內填入所有已知部署環境的 inventory 實際資料
+  - 尚未累積 `N` 次連續 `passed` 的 deploy 證據
+  - 因此還不能宣告 `schema_patch.py` 已達可刪除條件
+- 已重新驗證：
+  - `backend/tests/test_migrations.py`
+
+- 已在真實 Docker 測試部署驗證 logging 修復與 gate 事件落地：
+  - `docker compose exec -T api python -m backend.app.tools.migration_check` -> `status: runtime migration gate passed`
+  - `docker logs fixture_m_lite_api 2>&1 | grep migration_runtime_gate` 可直接撈到 JSON event
+  - 事件內容為：
+    - `source=app_startup`
+    - `outcome=passed`
+- 已將這次實測結果寫回 `MIGRATION_ENVIRONMENT_INVENTORY.md`
+  - `test-docker-01`
+  - `Manual Baseline Count = 0`
+  - `Deploy Triggered Passed Count = 1`
+
+- 已將搜尋頁主查詢改成 page-based contract：`GET /api/v2/search/global` 現在支援 `entity_type`、`page`、`page_size`，回傳 `items / total / page / page_size / has_more`。
+- 已將搜尋頁前端改成 `load more` 模式，不再在首頁一次預載完整 fixture / model / station / transaction context。
+- 已新增 `GET /api/v2/search/fixtures/{fixture_id}/context` 與 `GET /api/v2/search/models/{model_id}/context`，治具 / 機種 detail 現在改成選取後延遲載入。
+- 已把搜尋結果排序 contract 收斂到 `backend/app/repositories/search_repository.py`，目前採 active first + exact/prefix/contains ranking。
+- 已補上搜尋流量相關索引 migration：`backend/alembic/versions/0011_search_indexes.py`，覆蓋 `fixtures.storage_location`、`machine_models.name`、`stations.name`、`material_transactions.occurred_at`。
+- 已補上搜尋分頁與 lazy context 的 API 測試，並驗證：
+  - `tests/test_inventory_and_production.py`
+  - `backend/tests/test_services.py`
+  - `frontend/npm run build`
+
+- 已新增前端共用 `identifier` helper：`frontend/src/utils/identifier.ts`。
+- helper 目前提供：
+  - `isStrictIdentifier`
+  - `normalizeIdentifierForWrite`
+  - `resolveIdentifierQuery`
+- `frontend/src/components/inventory/BatchImportPanel.vue` 已改走這份 helper，不再在元件內自行維護短純數字補零規則。
+- 已新增 `frontend/src/utils/identifier.test.ts`，獨立覆蓋：
+  - 短純數字補零
+  - legacy 值原樣保留
+  - 空字串回傳空值
+  - query helper 的短碼展開與 legacy 原值匹配
+- 已重新驗證：
+  - `frontend/npm run test -- src/utils/identifier.test.ts`
+  - `frontend/npm run build`
+
+- 已將 `identifier` 寫入 / 查詢規則正式抽出為獨立 utility：`backend/app/utils/identifier_rules.py`。
+- utility 目前提供：
+  - `is_strict_identifier`
+  - `normalize_identifier_for_write`
+  - `resolve_identifier_query`
+- `backend/app/schemas/inventory.py` 與 `backend/app/services/inventory_service.py` 現在都改走這份共用規則，不再各自維護一段 `identifier` 判斷。
+- 已新增 `backend/tests/test_identifier_rules.py`，獨立覆蓋：
+  - 短純數字補零
+  - 長純數字 legacy 保留
+  - 含非數字 legacy 保留
+  - 空值驗證
+  - 查詢時短純數字的零補齊展開
+  - 查詢時 legacy 值的原值精確匹配
+- 已重新驗證：
+  - `backend/tests/test_identifier_rules.py`
+  - `backend/tests/test_services.py`
+  - `tests/test_inventory_and_production.py`
+  - `frontend/npm run build`
+
+- 已將前端新手導覽從單一路徑改為可分類選擇的 flow，使用者現在可依頁面 / tab 自行選擇要看的教學，不必重播整套長導覽。
+- 已新增 `frontend/src/components/common/OnboardingFlowPicker.vue`，並由 `App.vue` 協調分類選單與實際 `GuidedTour` 的切換。
+- 已補強收退料與產能頁教學文案，明確說明：
+  - 收退料批次貼上支援的格式
+  - 收料遇到未建治具時的 `needs-confirm / needs-add` 處理方式
+  - 產能頁先做 `Model-Station Mapping`，再做 `Fixture Requirement` 的操作順序
+- 已為 `ProductionDetailSection.vue` 補上 onboarding 用的 `data-tour` anchor，讓 mapping / requirement 表單與列表可被精準對位。
+- 已修正導覽偏移問題：
+  - `GuidedTour.vue` 改為依實際卡片高度定位，不再使用固定高度估算
+  - 收退料教學 target 改為限定抓 modal 內的 `data-tour` 節點，避免和 `/inventory` 頁內的同名 target 撞到
+  - `OnboardingFlowPicker.vue` 改為真正置中顯示
+- 已將 `frontend/src` 內所有使用者可見的 `識別碼` 文案安全替換為 `datecode/編號`，但未更動任何 `identifier` 程式契約、API 參數、型別或資料庫欄位。
+- 已重新驗證 `frontend\\npm run build` 通過。
+
+### 2026-07-08
+
+- 已修正 `frontend/src/components/inventory/BatchImportPanel.vue` 的批次內容輸入行為：在收退料批次貼上欄位按 `Tab` 時，現在會插入真正的 tab 字元，不再直接跳出欄位，便於手動輸入 `fixture-code[TAB]identifier[TAB]quantity` 格式。
+- 已修正 `frontend/src/releaseNotice.ts` 物件結構錯誤，補回 `summary` 並清掉壞掉的 `title/highlights` 語法，版本公告設定重新回到合法的 `ReleaseNotice` 型別。
+- 已重新驗證 `frontend\\npm run build` 通過。
+- 已同步更新 `ARCHITECTURE.md`、`ARCHITECTURE_LANDING.md`、`frontend-map.md`、`backend-map.md`、`map.md`，補上版本公告定位與收退料批次貼上 `Tab` 行為說明。
 
 ### 2026-07-07
 

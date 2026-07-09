@@ -97,9 +97,42 @@ export interface SearchResult {
   title: string;
   subtitle: string | null;
   reference_id: number;
+  is_active: boolean;
   stock_qty?: number | null;
   stock_status?: StockStatus | null;
   location_code?: string | null;
+}
+
+export interface SearchResultPage {
+  items: SearchResult[];
+  page: number;
+  page_size: number;
+  total: number;
+  has_more: boolean;
+}
+
+export interface SearchFixtureStationRow {
+  model_id: number;
+  model_code: string;
+  model_name: string;
+  station_id: number;
+  station_code: string;
+  station_name: string;
+  required_qty: number;
+}
+
+export interface SearchFixtureContext {
+  fixture: Fixture;
+  stock: StockSummary | null;
+  identifier_rows: IdentifierStockSummary[];
+  related_models: MachineModel[];
+  station_rows: SearchFixtureStationRow[];
+  transactions: MaterialTransaction[];
+}
+
+export interface SearchModelContext {
+  model: MachineModel;
+  query: ModelQuery;
 }
 
 export interface MaterialTransaction {

@@ -3,11 +3,10 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 
 import { api } from "@/api";
-import { authSession, customers, onboardingActive, onboardingStepIndex, selectedCustomerId } from "@/appState";
+import { authSession, customers, onboardingActive, onboardingPickerOpen, onboardingStepIndex, selectedCustomerId } from "@/appState";
 import MasterDetailPanel from "@/components/master/MasterDetailPanel.vue";
 import MasterListPanel from "@/components/master/MasterListPanel.vue";
 import UiSummaryCards from "@/components/UiSummaryCards.vue";
-import { onboardingSteps } from "@/onboarding";
 import { pushToast } from "@/toastState";
 import type { AppUser, Customer, Fixture, MachineModel, Station } from "@/types";
 import { fallbackText } from "@/utils/display";
@@ -367,9 +366,9 @@ async function startDemoTour(): Promise<void> {
   if (!confirmDiscardChanges("開始導覽會從首頁重新開始，並使用目前客戶的資料做教學流程。要繼續嗎？")) {
     return;
   }
+  onboardingActive.value = false;
   onboardingStepIndex.value = 0;
-  onboardingActive.value = true;
-  await router.push({ path: onboardingSteps[0].route, query: { tour: "1" } });
+  onboardingPickerOpen.value = true;
 }
 
 async function loadData(showLoading = true): Promise<void> {

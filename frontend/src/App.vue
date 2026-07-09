@@ -7,6 +7,8 @@ import {
   authSession,
   customers,
   onboardingActive,
+  onboardingFlowId,
+  onboardingPickerOpen,
   onboardingSandboxMode,
   onboardingStepIndex,
   resetSession,
@@ -19,11 +21,13 @@ import AppReleaseNoticeModal from "@/components/app/AppReleaseNoticeModal.vue";
 import AppToastStack from "@/components/app/AppToastStack.vue";
 import AppTopbar from "@/components/app/AppTopbar.vue";
 import GuidedTour from "@/components/common/GuidedTour.vue";
-import { onboardingSteps } from "@/onboarding";
+import OnboardingFlowPicker from "@/components/common/OnboardingFlowPicker.vue";
+import { getOnboardingFlow, onboardingFlows } from "@/onboarding";
 import { currentReleaseNotice } from "@/releaseNotice";
 import { dismissToast, pushToast, toasts } from "@/toastState";
 import type { MaterialTransaction } from "@/types";
 import { formatLocalDateKey as formatDateKey } from "@/utils/date";
+import type { OnboardingFlowId } from "@/onboarding";
 
 const SESSION_KEY = "jig-record-session";
 const CUSTOMER_KEY = "jig-record-customer-id";
@@ -49,8 +53,33 @@ const pendingOnboardingAfterReleaseNotice = ref(false);
 const currentCustomerId = computed(() => selectedCustomerId.value ?? undefined);
 const selectedCustomer = computed(() => customers.value.find((row) => row.id === selectedCustomerId.value) ?? null);
 const canEnterMaster = computed(() => authSession.value?.role !== "guest");
+const canOperateInventory = computed(() => authSession.value?.role !== "guest");
 const today = computed(() => formatDateKey(new Date()));
-const currentOnboardingStep = computed(() => onboardingSteps[onboardingStepIndex.value] ?? null);
+const currentOnboardingFlow = computed(() => getOnboardingFlow(onboardingFlowId.value));
+const currentOnboardingSteps = computed(() => currentOnboardingFlow.value?.steps ?? []);
+const currentOnboardingStep = computed(() => currentOnboardingSteps.value[onboardingStepIndex.value] ?? null);
+const onboardingFlowCards = computed(() =>
+  onboardingFlows.map((flow) => {
+    let disabled = false;
+    let disabledReason = "";
+    if (flow.requiresInventoryAccess && !canOperateInventory.value) {
+      disabled = true;
+      disabledReason = "訪客不可操作收退料";
+    } else if (flow.requiresMasterAccess && !canEnterMaster.value) {
+      disabled = true;
+      disabledReason = "訪客不可進入資料維護";
+    }
+    return {
+      id: flow.id,
+      sectionLabel: flow.sectionLabel,
+      label: flow.label,
+      summary: flow.summary,
+      stepCount: flow.steps.length,
+      disabled,
+      disabledReason
+    };
+  })
+);
 const dateTimeFormatter = new Intl.DateTimeFormat("zh-TW", {
   month: "2-digit",
   day: "2-digit",
@@ -116,10 +145,11 @@ async function runFirstLoginOnboarding(): Promise<void> {
     return;
   }
   selectedCustomerId.value = onboardingCustomerId;
-  onboardingStepIndex.value = 0;
-  onboardingActive.value = true;
+  onboardingPickerOpen.value = true;
   sessionStorage.setItem(ONBOARDING_KEY, "1");
-  await router.push({ path: onboardingSteps[0].route, query: { tour: "1" } });
+  if (route.path !== "/search") {
+    await router.push({ path: "/search" });
+  }
 }
 
 function resolveReleaseNoticeAudienceKey(): string | null {
@@ -165,7 +195,9 @@ function closeReleaseNotice(): void {
 }
 
 function stopOnboarding(): void {
+  onboardingPickerOpen.value = false;
   onboardingActive.value = false;
+  onboardingFlowId.value = null;
   onboardingSandboxMode.value = false;
   batchModalOpen.value = false;
   exportModalOpen.value = false;
@@ -184,10 +216,10 @@ async function syncOnboardingRoute(): Promise<void> {
     moreMenuOpen.value = false;
     return;
   }
-  onboardingSandboxMode.value = step.id === "inventory-sandbox";
-  batchModalOpen.value = step.id.startsWith("inventory-");
-  exportModalOpen.value = step.id.startsWith("export-");
-  moreMenuOpen.value = ["menu-trigger", "overview-entry", "master-entry", "production-entry"].includes(step.id);
+  onboardingSandboxMode.value = step.sandboxMode ?? false;
+  batchModalOpen.value = step.openBatchModal ?? false;
+  exportModalOpen.value = step.openExportModal ?? false;
+  moreMenuOpen.value = step.openMoreMenu ?? false;
   if (route.path !== step.route) {
     await router.push({ path: step.route, query: { ...route.query, tour: "1" } });
     return;
@@ -198,7 +230,7 @@ async function syncOnboardingRoute(): Promise<void> {
 }
 
 async function nextOnboardingStep(): Promise<void> {
-  if (onboardingStepIndex.value >= onboardingSteps.length - 1) {
+  if (onboardingStepIndex.value >= currentOnboardingSteps.value.length - 1) {
     stopOnboarding();
     if (route.query.tour === "1") {
       await router.replace({ path: route.path, query: {} });
@@ -215,6 +247,32 @@ async function prevOnboardingStep(): Promise<void> {
   }
   onboardingStepIndex.value -= 1;
   await syncOnboardingRoute();
+}
+
+async function startOnboardingFlow(flowId: OnboardingFlowId): Promise<void> {
+  const flow = getOnboardingFlow(flowId);
+  if (!flow) {
+    return;
+  }
+  if (flow.requiresInventoryAccess && !canOperateInventory.value) {
+    pushToast("訪客模式不可操作收退料，請改看其他教學分類。", "warning");
+    return;
+  }
+  if (flow.requiresMasterAccess && !canEnterMaster.value) {
+    pushToast("訪客模式不可進入資料維護。", "warning");
+    return;
+  }
+  const onboardingCustomerId = resolveOnboardingCustomerId();
+  if (onboardingCustomerId === null) {
+    pushToast("目前沒有可用客戶，無法啟動教學。", "warning");
+    return;
+  }
+  selectedCustomerId.value = onboardingCustomerId;
+  onboardingPickerOpen.value = false;
+  onboardingFlowId.value = flow.id;
+  onboardingStepIndex.value = 0;
+  onboardingActive.value = true;
+  await router.push({ path: flow.steps[0].route, query: { tour: "1" } });
 }
 
 async function loadTopbarStats(): Promise<void> {
@@ -348,10 +406,14 @@ function openMenuRoute(path: string, disabled: boolean): void {
 function openLowStockPage(): void {
   moreMenuOpen.value = false;
   mobileMenuOpen.value = false;
-  void router.push("/inventory");
+  void router.push(canOperateInventory.value ? "/inventory" : "/inventory/overview");
 }
 
 function openBatchImport(): void {
+  if (!canOperateInventory.value) {
+    pushToast("訪客模式不可進行治具收/退料。", "warning");
+    return;
+  }
   moreMenuOpen.value = false;
   mobileMenuOpen.value = false;
   batchModalOpen.value = true;
@@ -394,6 +456,9 @@ watch(
   () => {
     moreMenuOpen.value = false;
     mobileMenuOpen.value = false;
+    if (onboardingActive.value) {
+      void syncOnboardingRoute();
+    }
   }
 );
 
@@ -443,14 +508,21 @@ onBeforeUnmount(() => {
       <template v-else>
         <GuidedTour
           :open="onboardingActive"
-          :steps="onboardingSteps"
+          :steps="currentOnboardingSteps"
           :current-index="onboardingStepIndex"
           @close="stopOnboarding"
           @next="nextOnboardingStep"
           @prev="prevOnboardingStep"
         />
+        <OnboardingFlowPicker
+          :open="onboardingPickerOpen"
+          :flows="onboardingFlowCards"
+          @close="onboardingPickerOpen = false"
+          @select="startOnboardingFlow"
+        />
         <AppTopbar
           :auth-display-name="authSession.display_name"
+          :can-operate-inventory="canOperateInventory"
           :selected-customer-code="selectedCustomer?.code || ''"
           :customers="customers"
           :selected-customer-id="selectedCustomerId"
@@ -477,6 +549,7 @@ onBeforeUnmount(() => {
         <AppMobileDrawer
           :open="mobileMenuOpen"
           :auth-display-name="authSession.display_name"
+          :can-operate-inventory="canOperateInventory"
           :selected-customer-code="selectedCustomer?.code || ''"
           :customers="customers"
           :selected-customer-id="selectedCustomerId"

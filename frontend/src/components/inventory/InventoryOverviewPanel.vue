@@ -81,8 +81,8 @@ function updateFilter<Key extends keyof typeof props.filters>(key: Key, value: (
         <input :value="filters.transaction_no" placeholder="RCV-20260526-000001" @input="updateFilter('transaction_no', ($event.target as HTMLInputElement).value)" />
       </label>
       <label>
-        <span>識別碼</span>
-        <input :value="filters.tracking_code" placeholder="輸入識別碼或舊 Datecode" @input="updateFilter('tracking_code', ($event.target as HTMLInputElement).value)" />
+        <span>datecode/編號</span>
+        <input :value="filters.tracking_code" placeholder="輸入 datecode/編號 或舊 Datecode" @input="updateFilter('tracking_code', ($event.target as HTMLInputElement).value)" />
       </label>
       <label>
         <span>操作人員</span>
@@ -104,7 +104,7 @@ function updateFilter<Key extends keyof typeof props.filters>(key: Key, value: (
             <th>單號</th>
             <th>治具編號</th>
             <th>來源</th>
-            <th>識別碼</th>
+            <th>datecode/編號</th>
             <th>數量</th>
             <th>操作人員</th>
             <th>日期</th>

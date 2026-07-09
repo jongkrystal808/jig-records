@@ -62,16 +62,39 @@
 
 - `backend/app/core/migrations.py`
   - Alembic upgrade 執行
-  - version table 相容檢查
-  - legacy revision normalization
+  - runtime migration gate 檢查
+  - fail-loud compatibility report 組裝
+  - explicit offline compat fix helper
+  - structured gate outcome logging: `passed` / `blocked` / `compat_fixes_applied`
+
+- `backend/app/core/logging.py`
+  - backend app logger 初始化
+  - standalone CLI 補 stdout handler
+  - 有既有 handler 時只把 `backend.app` logger 拉到 `INFO`
 
 - `backend/app/core/schema_patch.py`
   - legacy DB runtime patch 保底
-  - 現在只保留相容用途，不是主 migration 機制
+  - 現在只保留 `0002_schema_backfill` 的歷史 backfill 依賴，不是 runtime startup patch 機制
+
+- `backend/app/tools/migration_check.py`
+  - 離線 migration compatibility 檢查入口
+  - 可顯式套用 `alembic_version` 相容修補
+  - 給 fail-loud startup 錯誤訊息作為人工處理入口
+
+- `MIGRATION_GATE_RUNBOOK.md`
+  - 環境掃描、部署前確認、部署後 log 驗證流程
+
+- `MIGRATION_ENVIRONMENT_INVENTORY.md`
+  - 各部署環境 revision / gate 狀態 / deploy 次數台帳模板
 
 - `backend/app/core/errors.py`
   - FastAPI error handler 註冊
   - `RequestValidationError` payload 序列化保底
+
+- `backend/app/utils/identifier_rules.py`
+  - `identifier` 寫入正規化與查詢解析的單一規則來源
+  - 只有純數字且 `1-4` 碼會左補零並展開短碼相容查詢
+  - 其餘值一律視為 legacy 原值放行 / 原值精確查詢
 
 ## Router / Service / Repository / Model 對應
 
@@ -99,6 +122,7 @@
 - 密碼雜湊為 PBKDF2，並相容舊 sha256 資料
 - `allowed_customer_ids` 仍會出現在 user API payload，但實際 customer 指派入口已移到 customer tab
 - onboarding / guided tour 沒有獨立後端 API，完全由前端 shell 控制
+- 前端 onboarding 目前已拆成多個可選 flow；backend 仍不需要新增 tutorial router
 
 #### 前端入口
 
@@ -200,12 +224,17 @@
 #### 行為重點
 
 - 交易明細正式使用單一 `identifier`
-- 寫入規格是 `1-4` 位數字，寫入前左補零
-- 查詢規格相容舊資料
-  - `1-4` 位數字會同時匹配不同 padding 寬度的 legacy 值
-  - 非 `1-4` 位數字輸入會當 legacy identifier/datecode 原值查詢
+- `identifier` 寫入與查詢共用 `backend/app/utils/identifier_rules.py`
+- 純數字且 `1-4` 碼寫入前會左補零為 `4` 碼
+- 純數字且長度大於 `4` 碼會視為 legacy 值原樣寫入
+- 含非數字的值也視為 legacy 值原樣寫入
+- 查詢 / 匯出篩選相容舊資料
+  - `1-4` 碼純數字會同時匹配不同 padding 寬度的 legacy 值
+  - 其餘輸入值會以原值精確查詢
 - `ownership_type` 在 transaction item 層
 - 批次貼上匯入前端仍走 `/receipts` / `/returns`
+- 前端批次貼上欄允許直接插入 literal `Tab`，組成 `fixture-code<TAB>identifier<TAB>quantity` 後再由前端解析並送到 `/receipts` / `/returns`
+- 前端顯示文案可將 `identifier` 呈現為 `datecode/編號`，但 backend API / schema / DB 欄位名仍維持 `identifier`
 - CSV 匯入走 `/inventory/transactions/import`
 - overview 查詢支援 `transaction_type` / `date_from` / `date_to` / `fixture_code` / `transaction_no` / `identifier` / `created_by`
 - 報表匯出支援 `summary|detail` 與 `xlsx|txt`
@@ -224,13 +253,16 @@
 
 - `frontend/src/components/inventory/BatchImportPanel.vue`
   - 批次貼上匯入
+  - 手動 `Tab` 分隔輸入
   - 新治具即時建立
+  - 前端寫入前 `identifier` 正規化改走 `frontend/src/utils/identifier.ts`
   - 教學模式試跑
 
 - `frontend/src/components/inventory/InventoryExportPanel.vue`
   - 報表 preview
   - `xlsx` / `txt` 匯出
   - `identifier` 相容查詢輸入
+  - 對使用者顯示為 `datecode/編號`
 
 - `frontend/src/components/app/AppTopbar.vue`
   - 今日收料 / 今日退料 / 低水位統計
@@ -244,6 +276,7 @@
   - fixture context
   - identifier stock context
   - 最近收 / 退料治具快捷入口的資料來源
+  - onboarding 分類入口
 
 ### Production
 
@@ -301,25 +334,33 @@
 
 - Router：`backend/app/routers/search.py`
 - Service：`backend/app/services/search_service.py`
-- Repository：`backend/app/repositories/master_repository.py` / `inventory_repository.py` / `production_repository.py` 協同使用
+- Repository：`backend/app/repositories/search_repository.py` 主查詢，並協同 `master_repository.py` / `inventory_repository.py` / `production_repository.py`
 - Schema：`backend/app/schemas/search.py`
 
 #### API
 
 - `GET /search/global`
+- `GET /search/fixtures/{fixture_id}/context`
+- `GET /search/models/{model_id}/context`
 
 #### 行為重點
 
-- query 支援 fixture code / name、model、station、storage location、identifier transaction context
+- `GET /search/global` 支援 `entity_type`、`page`、`page_size`
+- global search response 是有上限的 page contract：`items / total / page / page_size / has_more`
+- query 支援 fixture code / name、model、station、storage location
+- 排序規則集中在 `search_repository.py`，目前是 active first + exact/prefix/contains ranking
 - fixture 側 related models 直接來自 `fixture_requirements.model_id`
 - 不再從 station 反推 model
+- fixture / model detail context 改走獨立 lazy endpoint
+- fixture 完整交易歷史不是 `/search/global` 的 payload，而是前端選取後再額外查 inventory transaction API
 - 搜尋頁的「相近編號」提示排序與「最近收 / 退料治具快捷入口」屬於前端行為，不是 search API contract
 
 #### 前端入口
 
 - `frontend/src/pages/SearchWorkspacePage.vue`
   - 雙模式查詢：治具 / 機種
-  - fixture detail / model detail
+  - load more 主結果分頁
+  - fixture detail / model detail lazy 載入
   - fixture 圖片與 transaction context
 
 ### Audit
@@ -578,4 +619,15 @@
 
 - `InventoryService` 依賴 `openpyxl` 輸出 `xlsx` 報表；若環境沒安裝，backend import 與 pytest 會失敗。
 - onboarding / guided tour 完全是前端功能，不要在 backend 補假的 tutorial router。
+- UI 文案若改成 `datecode/編號`，也不要回頭更名 backend 的 `identifier` 欄位契約。
+- 查詢排序 contract 在 `backend/app/repositories/search_repository.py`；若要改搜尋結果優先順序，先改這裡與對應測試，不要只在前端重排。
+- 搜尋頁效能目前依賴 `0011_search_indexes` 提供的名稱 / 儲位 / 交易時間索引。
+- 如果要改 `identifier` 規則，優先改 `backend/app/utils/identifier_rules.py` 與 `backend/tests/test_identifier_rules.py`，不要把規則重新散回 schema / service。
+- 若前端也需要改同語意規則，優先同步 `frontend/src/utils/identifier.ts` 與 `frontend/src/utils/identifier.test.ts`，不要回到元件內重寫 `padStart(4)`。
 - `App.vue` 目前沒有渲染 audit 摘要區塊，因此 `/audit/logs` 雖保留，但不是首頁主流程的一部分。
+- migration/schema patch 的退場方向是三段式：
+  - 先保留觀測與離線 compat 工具
+  - 再用 runtime fail-loud gate 阻止低於 `0011_search_indexes` 的環境自動啟動
+  - 最後再移除 `schema_patch.py` 與 legacy revision normalization
+- 目前 repo 只補到 structured startup log 與離線掃描工具；所有已知環境的 inventory 盤點與 `N` 次連續通過統計仍需由運維流程補齊。
+- Docker 測試環境已完成一次真實驗證：`fixture_m_lite_api` 的 `docker logs` 可直接看到 `migration_runtime_gate`，且 `source=app_startup`、`outcome=passed`。

@@ -6,11 +6,15 @@ from sqlalchemy import text
 from backend.app.core.config import settings
 from backend.app.core.database import SessionLocal
 from backend.app.core.errors import register_error_handlers
+from backend.app.core.logging import setup_logging
+from backend.app.core.migrations import verify_runtime_migration_gate
 from backend.app.routers import api_router
 
 
 def create_app() -> FastAPI:
+    setup_logging()
     settings.validate_runtime_safety()
+    verify_runtime_migration_gate(source="app_startup")
     app = FastAPI(title=settings.app_name, version=settings.app_version)
     register_error_handlers(app)
 

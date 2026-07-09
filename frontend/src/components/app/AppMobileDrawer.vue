@@ -10,6 +10,7 @@ type MenuEntry = {
 const props = defineProps<{
   open: boolean;
   authDisplayName: string;
+  canOperateInventory: boolean;
   selectedCustomerCode: string;
   customers: Customer[];
   selectedCustomerId: number | null;
@@ -67,7 +68,7 @@ function handleOpenExport(): void {
           <option v-for="customer in customers" :key="customer.id" :value="customer.id">{{ customer.code }} - {{ customer.name }}</option>
         </select>
       </label>
-      <button class="primary-btn receipt-btn mobile-receipt-btn" type="button" @click="handleOpenBatch">治具收/退料</button>
+      <button v-if="canOperateInventory" class="primary-btn receipt-btn mobile-receipt-btn" type="button" @click="handleOpenBatch">治具收/退料</button>
       <button class="primary-btn receipt-btn mobile-receipt-btn" type="button" @click="handleOpenExport">收退料資訊匯出</button>
       <button
         v-for="entry in menuEntries"

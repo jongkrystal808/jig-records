@@ -128,7 +128,7 @@ function stockWaterLevelPercent(row: StockSummary): number {
             <thead>
               <tr>
                 <th>治具</th>
-                <th>識別碼</th>
+                <th>datecode/編號</th>
                 <th>數量</th>
                 <th>單號</th>
               </tr>

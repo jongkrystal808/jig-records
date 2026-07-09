@@ -113,20 +113,20 @@ watch(
 
       <section v-if="visibleSections.identifier" class="ui-panel-card">
         <div class="ui-section-head">
-          <h3>識別碼庫存</h3>
+          <h3>datecode/編號庫存</h3>
           <span class="section-meta">總數 {{ formatCount(identifierTotalQty) }} pcs</span>
         </div>
         <div v-if="identifierTags.length > 0" class="ui-chip-list">
           <span v-for="tag in identifierTags" :key="tag" class="ui-chip">{{ tag }}</span>
         </div>
-        <div v-else class="ui-empty-text">目前沒有識別碼庫存摘要</div>
+        <div v-else class="ui-empty-text">目前沒有 datecode/編號庫存摘要</div>
       </section>
 
       <section v-if="visibleSections.transactions" class="ui-panel-card">
         <div class="ui-section-head"><h3>收退料記錄</h3><span class="section-meta">{{ transactions.length }} 筆</span></div>
         <table v-if="transactions.length > 0" class="ui-info-table">
           <thead>
-            <tr><th>類型</th><th>日期</th><th>單號</th><th>識別碼</th><th>數量</th></tr>
+            <tr><th>類型</th><th>日期</th><th>單號</th><th>datecode/編號</th><th>數量</th></tr>
           </thead>
           <tbody>
             <tr v-for="tx in visibleTransactions" :key="tx.id">

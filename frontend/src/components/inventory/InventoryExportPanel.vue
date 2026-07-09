@@ -33,7 +33,7 @@ const identifier = ref("");
 const selectedColumns = computed(() =>
   reportType.value === "summary"
     ? ["治具編號", "收料數", "退料數", "總數"]
-    : ["日期", "單號", "治具編號", "識別碼", "數量"]
+    : ["日期", "單號", "治具編號", "datecode/編號", "數量"]
 );
 const usingCustomScope = computed(() => scopeMode.value === "custom");
 
@@ -146,7 +146,7 @@ async function exportReport(): Promise<void> {
           <input v-model="transactionNo" placeholder="25123456" spellcheck="false" />
         </label>
         <label class="field">
-          <span>識別碼 / 舊 Datecode</span>
+          <span>datecode/編號 / 舊 Datecode</span>
           <input v-model="identifier" placeholder="例如 0001 或 2024W12" spellcheck="false" />
         </label>
         <label class="field">

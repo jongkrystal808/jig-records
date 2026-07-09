@@ -106,14 +106,29 @@ Current shared-component direction:
 
 ```text
 components/
+├─ app/
+│  ├─ AppTopbar.vue
+│  ├─ AppMobileDrawer.vue
+│  ├─ AppGlobalModals.vue
+│  └─ AppReleaseNoticeModal.vue
+├─ inventory/
+│  ├─ BatchImportPanel.vue
+│  ├─ InventoryOperationBoard.vue
+│  └─ InventoryOverviewPanel.vue
+├─ master/
+│  ├─ MasterListPanel.vue
+│  └─ MasterDetailPanel.vue
+├─ production/
+│  ├─ ProductionHeaderSection.vue
+│  ├─ ProductionDetailSection.vue
+│  └─ ProductionBatchImportModal.vue
 ├─ search/
 │  ├─ FixtureInfoPanel.vue
 │  ├─ ModelInfoPanel.vue
 │  ├─ FixtureEditForm.vue
-│  └─ ModelEditForm.vue
-├─ inventory/
-│  ├─ BatchImportPanel.vue
-│  └─ InventoryExportPanel.vue
+│  ├─ ModelEditForm.vue
+│  ├─ SearchHeroSection.vue
+│  └─ SearchResultPanel.vue
 └─ common/
    ├─ GuidedTour.vue
    └─ InlineSpinner.vue
@@ -134,6 +149,8 @@ Application shell notes:
 - mobile layout keeps a persistent hamburger trigger plus current customer name, with non-essential controls collapsed into the menu
 - the root shell now owns the first-login onboarding flow and reuses `data-tour` anchors rendered across multiple pages
 - onboarding state is stored in lightweight reactive app state and uses route-aware step syncing
+- onboarding is now grouped into selectable flows so users can choose a page- or tab-specific tutorial instead of replaying one long linear tour
+- the root shell also owns a versioned release-notice modal, with copy defined in `frontend/src/releaseNotice.ts` and dismissal persisted per audience in `localStorage`
 
 ---
 
@@ -224,6 +241,8 @@ Current layout direction for inventory entry points:
 - the global modal intentionally excludes stock overview, low-stock panel, and recent-transaction panels
 - after a successful modal submission, the input is cleared but the modal stays open for consecutive batches
 - tutorial mode can run the batch-import UI without writing official inventory transactions, for onboarding use only
+- the batch-import textarea captures `Tab` and inserts a literal tab character so users can type spreadsheet-style rows manually when clipboard paste is unavailable
+- onboarding selectors that target inventory controls inside the global modal must be scoped under the modal container, because some `data-tour` names are reused in the full `/inventory` page layout
 
 Batch paste import accepts rows in either of these practical formats:
 
@@ -241,10 +260,23 @@ All imported rows are normalized into:
 - `identifier`
 - `quantity`
 
+Identifier rule:
+
+- only pure-numeric `identifier` values with length `1-4` trigger strict normalization and are left-padded to 4 digits before write
+- numeric values longer than 4 digits are treated as legacy values and stored as-is
+- non-pure-numeric values are treated as legacy values and stored as-is
+- transaction query / export filters reuse the same rule through a shared backend utility, so write-time normalization and query-time matching stay aligned
+
 The frontend no longer asks users to pick or maintain:
 
 - `manage_type`
 - separate legacy identifier categories
+
+Display wording rule:
+
+- UI copy may present `identifier` as `datecode/編號`
+- API, schema, and database contracts still stay on `identifier`
+- frontend write-side normalization is centralized in `frontend/src/utils/identifier.ts`, so batch-import parsing does not duplicate the short-numeric padding rule
 
 When the pasted fixture code does not exist:
 
@@ -330,7 +362,9 @@ Includes:
 - Global search
 - Fixture search
 - Model search
+- Paginated search result contract with `page` / `page_size`
 - Search workspace for fixture/model drill-down
+- Deferred fixture / model context loading after result selection
 - Embedded fixture/model maintenance panels inside search results
 - Search-to-production handoff for model-focused capacity work
 
@@ -526,6 +560,7 @@ Storage note:
 
 - The database contract is now centered on a single `identifier` column.
 - The frontend and API surface use the same `identifier` field end to end.
+- backend normalization and query expansion for `identifier` are centralized in `backend/app/utils/identifier_rules.py`
 
 ---
 
@@ -644,10 +679,18 @@ Search result cards should display:
 
 Search behavior updates:
 
+- Global search is now page-based and returns `items / total / page / page_size / has_more`
+- Search result ordering is backend-defined so all clients share the same ranking contract
+- Fixture results rank active fixtures first, then exact code, code prefix, exact name, name prefix, and broader contains matches
+- Model and station results follow the same exact-match-first pattern
+- Search workspace now uses `load more` instead of preloading the full fixture / model universe
+- Fixture / model detail context is loaded on demand after result selection
+- Fixture full transaction history remains an extra user-triggered fetch, instead of part of the first search response
 - Fixture-side related-model display is derived from `fixture_requirements.model_id`
 - The search workspace no longer back-infers models from stations
 - Fixture detail drill-down now shows `model + station + required_qty`
 - Model detail drill-down is limited to the selected model and selected station context where applicable
+- Search and inventory labels now expose the identifier concept to end users as `datecode/編號` without changing the internal field contract
 
 ---
 
@@ -725,6 +768,8 @@ flowchart LR
 /api/v2/production/capacity
 
 /api/v2/search/global
+/api/v2/search/fixtures/{fixture_id}/context
+/api/v2/search/models/{model_id}/context
 /api/v2/audit/logs
 ```
 
@@ -741,6 +786,13 @@ Master/Auth API notes:
 - `POST /api/v2/auth/guest` returns a guest-mode session payload
 - `GET /api/v2/master/customers` returns only accessible customers for the current session
 - `GET /api/v2/master/customers/{customer_id}/users` returns the responsible-user candidate set for that customer
+
+Search API notes:
+
+- `GET /api/v2/search/global` supports `entity_type`, `page`, and `page_size`
+- `GET /api/v2/search/global` is the only list-style search response and should stay bounded
+- `GET /api/v2/search/fixtures/{fixture_id}/context` is the fixture-side lazy drill-down endpoint
+- `GET /api/v2/search/models/{model_id}/context` is the model-side lazy drill-down endpoint
 
 ---
 
@@ -759,12 +811,19 @@ Recent schema evolution:
 - Alembic revision `0007_user_customer_scope` formalizes per-user customer visibility in `user_customers`
 - Alembic revision `0008_fixture_responsible_user` adds `fixtures.responsible_user_id`
 - Alembic revision `0009_remove_owners_and_scope_fixture_code` removes `owners` and changes fixture uniqueness to `(customer_id, code)`
+- Alembic revision `0011_search_indexes` adds search-facing indexes for `fixtures.storage_location`, `machine_models.name`, `stations.name`, and `material_transactions.occurred_at`
 
 Compatibility behavior:
 
-- runtime migration preflight expands `alembic_version.version_num` for MySQL/MariaDB if needed
-- legacy revision id `0004_model_station_fixture_requirements` is normalized to `0004_model_station_scope`
-- startup migration support is designed to recover partially upgraded environments
+- runtime startup no longer performs silent compatibility patching for legacy Alembic metadata
+- runtime startup now enforces a fail-loud gate at `0011_search_indexes`
+- if a deployment is below that gate, startup refuses to continue and requires an explicit offline migration check
+- the offline compatibility entry point is `python -m backend.app.tools.migration_check`
+- runtime gate outcomes are now emitted as structured log events with `passed` / `blocked` / `compat_fixes_applied`
+- this logging path has been validated in the real Docker test deployment: `fixture_m_lite_api` now emits `migration_runtime_gate` with `source=app_startup` and `outcome=passed`
+- legacy revision id `0004_model_station_fixture_requirements` can still be normalized, but only through the explicit offline compatibility tool
+- `schema_patch.py` remains a historical backfill dependency for `0002_schema_backfill`; its retirement path should follow: telemetry -> fail-loud gate -> removal
+- gate retirement is still blocked on environment inventory and `N` consecutive clean deploy records; the operator runbook lives in `MIGRATION_GATE_RUNBOOK.md`
 
 Data migration caveat:
 

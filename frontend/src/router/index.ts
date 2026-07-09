@@ -23,6 +23,9 @@ router.beforeEach((to) => {
   if (to.path.startsWith("/master") && authSession.value?.role === "guest") {
     return { path: "/search" };
   }
+  if (to.path === "/inventory" && authSession.value?.role === "guest") {
+    return { path: "/inventory/overview" };
+  }
   return true;
 });
 

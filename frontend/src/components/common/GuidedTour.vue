@@ -23,6 +23,7 @@ const emit = defineEmits<{
 
 const spotlightRect = ref<DOMRect | null>(null);
 const cardStyle = ref<Record<string, string>>({});
+const tourCardRef = ref<HTMLElement | null>(null);
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryCount = 0;
 
@@ -76,22 +77,23 @@ function updateLayout(): void {
   spotlightRect.value = rect;
 
   const cardWidth = Math.min(320, window.innerWidth - 32);
+  const cardHeight = tourCardRef.value?.offsetHeight ?? 196;
   const gap = 16;
   const placement = currentStep.value.placement ?? "bottom";
   let top = rect.bottom + gap;
   let left = rect.left + rect.width / 2 - cardWidth / 2;
 
   if (placement === "top") {
-    top = rect.top - 196;
+    top = rect.top - cardHeight - gap;
   } else if (placement === "left") {
-    top = rect.top + rect.height / 2 - 90;
+    top = rect.top + rect.height / 2 - cardHeight / 2;
     left = rect.left - cardWidth - gap;
   } else if (placement === "right") {
-    top = rect.top + rect.height / 2 - 90;
+    top = rect.top + rect.height / 2 - cardHeight / 2;
     left = rect.right + gap;
   }
 
-  top = clamp(top, 16, window.innerHeight - 196);
+  top = clamp(top, 16, window.innerHeight - cardHeight - 16);
   left = clamp(left, 16, window.innerWidth - cardWidth - 16);
 
   cardStyle.value = {
@@ -138,7 +140,7 @@ onBeforeUnmount(() => {
         width: `${spotlightRect.width + 16}px`,
         height: `${spotlightRect.height + 16}px`
       }"></div>
-      <aside class="tour-card" :style="cardStyle">
+      <aside ref="tourCardRef" class="tour-card" :style="cardStyle">
         <div class="tour-step-count">步驟 {{ currentIndex + 1 }} / {{ steps.length }}</div>
         <h3>{{ currentStep.title }}</h3>
         <p>{{ currentStep.description }}</p>

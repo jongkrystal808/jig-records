@@ -40,9 +40,13 @@ This file maps `AGENT.md` direction to the current implementation state.
 - Receipt / return APIs are implemented
 - stock summary / stock alerts / transaction query are implemented
 - unified `identifier` inventory model is implemented
+- write/query identifier normalization is centralized in a shared backend utility
+- frontend batch parsing also uses a shared `identifier` utility so UI-side write normalization stays aligned
+- frontend-visible wording can display that same field as `datecode/編號` without changing the contract
 - transaction CSV export / import / template flow is implemented
 - transaction report export (`xlsx` / `txt`) and preview flow are implemented
 - shared frontend batch paste import flow is implemented
+- shared frontend batch paste import flow supports literal `Tab` insertion in the textarea for manual spreadsheet-style entry
 - on-the-fly fixture creation from inventory batch flow is implemented
 - onboarding tutorial mode can exercise the batch flow without writing official transactions
 
@@ -61,8 +65,12 @@ This file maps `AGENT.md` direction to the current implementation state.
 
 - search workspace is implemented
 - fixture / model dual-mode search UI is implemented
+- search workspace now uses paginated global search plus `load more`
+- fixture / model context is loaded on demand after result selection
 - fixture image preview and transaction context are implemented
 - first-login onboarding and replayable guided tour are implemented in the frontend shell
+- onboarding is now split into selectable tutorial categories instead of one flat sequence
+- versioned release notice modal is implemented in the frontend shell
 - audit log API is implemented
 - recent audit summary API remains available, but is not currently rendered in the app shell
 
@@ -71,8 +79,11 @@ This file maps `AGENT.md` direction to the current implementation state.
 - Alembic is the primary schema evolution path
 - startup migration preflight is implemented
 - legacy revision normalization is implemented
-- runtime schema patch remains only as compatibility fallback
-- current migration chain extends through `0009_remove_owners_and_scope_fixture_code`
+- runtime startup now uses a fail-loud migration gate instead of silent compatibility patching
+- legacy compat handling is still available through `python -m backend.app.tools.migration_check`
+- runtime gate outcomes are emitted as structured log events for operator review
+- runtime schema patch remains only as a historical backfill dependency, not a startup fallback
+- current migration chain extends through `0011_search_indexes`
 
 ## Current Finalized Decisions
 
@@ -93,6 +104,7 @@ This file maps `AGENT.md` direction to the current implementation state.
 - today receipt / return / low-stock summary live in the top bar
 - top bar exposes global `收/退料` and `收退料資訊匯出` actions
 - onboarding flow is orchestrated by `App.vue` and `frontend/src/onboarding.ts`
+- onboarding flow selection is rendered by a dedicated picker modal in the frontend shell
 
 ### Permission model
 

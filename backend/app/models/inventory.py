@@ -24,7 +24,7 @@ class MaterialTransaction(Base, TimestampMixin):
     customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="RESTRICT"), nullable=False, index=True)
     transaction_type: Mapped[str] = mapped_column(transaction_type_enum, nullable=False)
     transaction_no: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
-    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
     note: Mapped[str | None] = mapped_column(String(255), nullable=True)
 

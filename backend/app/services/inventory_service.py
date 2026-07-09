@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.repositories.inventory_repository import InventoryRepository
 from backend.app.schemas.common import CsvImportPayload
-from backend.app.schemas.inventory import StockTransactionCreate, normalize_transaction_identifier
+from backend.app.schemas.inventory import StockTransactionCreate
 from backend.app.services.production_service import ProductionService
 from backend.app.utils.csv_tools import parse_csv_bytes, render_csv_text
+from backend.app.utils.identifier_rules import resolve_identifier_query
 
 
 class InventoryService:
@@ -29,17 +30,6 @@ class InventoryService:
         source = value or datetime.now(tz=timezone.utc)
         tzinfo = source.tzinfo or timezone.utc
         return datetime.combine(source.date(), time.min, tzinfo=tzinfo)
-
-    @staticmethod
-    def _resolve_identifier_query(value: str | None) -> tuple[list[str] | None, str | None]:
-        token = (value or "").strip()
-        if not token:
-            return None, None
-        if token.isdigit() and len(token) <= 4:
-            significant = token.lstrip("0") or "0"
-            exact_matches = list(dict.fromkeys(significant.zfill(width) for width in range(len(significant), 5)))
-            return exact_matches, None
-        return None, token
 
     def _apply_transaction(self, payload: StockTransactionCreate, transaction_type: str, *, commit: bool = True) -> None:
         occurred_at = self._normalize_occurred_at(payload.occurred_at)
@@ -137,7 +127,7 @@ class InventoryService:
         identifier: str | None = None,
         created_by: str | None = None,
     ):
-        identifier_exact_matches, identifier_contains = self._resolve_identifier_query(identifier)
+        identifier_exact_matches, identifier_contains = resolve_identifier_query(identifier)
         return self.repo.list_transactions(
             limit,
             customer_id=customer_id,
@@ -164,7 +154,7 @@ class InventoryService:
         identifier: str | None = None,
         created_by: str | None = None,
     ) -> tuple[list[str], list[dict]]:
-        identifier_exact_matches, identifier_contains = self._resolve_identifier_query(identifier)
+        identifier_exact_matches, identifier_contains = resolve_identifier_query(identifier)
         item_rows = self.repo.list_transaction_item_rows(
             customer_id=customer_id,
             transaction_type=transaction_type,
@@ -238,7 +228,7 @@ class InventoryService:
             identifier=identifier,
             created_by=created_by,
         )
-        identifier_exact_matches, identifier_contains = self._resolve_identifier_query(identifier)
+        identifier_exact_matches, identifier_contains = resolve_identifier_query(identifier)
         item_rows = self.repo.list_transaction_item_rows(
             customer_id=customer_id,
             transaction_type=transaction_type,

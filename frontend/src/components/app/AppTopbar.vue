@@ -28,6 +28,7 @@ type AlertEntry = {
 
 const props = defineProps<{
   authDisplayName: string;
+  canOperateInventory: boolean;
   selectedCustomerCode: string;
   customers: Customer[];
   selectedCustomerId: number | null;
@@ -77,7 +78,15 @@ function handleCustomerChange(event: Event): void {
     </div>
 
     <div class="topbar-primary-action">
-      <button class="primary-btn action-btn receipt-btn desktop-receipt-btn" data-tour="inventory-entry-trigger" type="button" @click="emit('openBatch')">治具收/退料</button>
+      <button
+        v-if="canOperateInventory"
+        class="primary-btn action-btn receipt-btn desktop-receipt-btn"
+        data-tour="inventory-entry-trigger"
+        type="button"
+        @click="emit('openBatch')"
+      >
+        治具收/退料
+      </button>
       <button class="primary-btn action-btn receipt-btn desktop-receipt-btn" data-tour="inventory-export-entry-trigger" type="button" @click="emit('openExport')">收退料資訊匯出</button>
     </div>
 

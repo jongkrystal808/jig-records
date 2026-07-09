@@ -82,7 +82,7 @@ function handleRequirementFileChange(event: Event): void {
 
 <template>
   <section class="single-panel-layout">
-    <article v-if="detailMode === 'mapping'" class="panel detail-panel">
+    <article v-if="detailMode === 'mapping'" class="panel detail-panel" data-tour="production-mapping-panel">
       <UiSectionHeader class="section-head" title="Model-Station Mapping">
         <template #actions>
           <div class="toolbar-actions">
@@ -94,7 +94,7 @@ function handleRequirementFileChange(event: Event): void {
           </div>
         </template>
       </UiSectionHeader>
-      <form class="inline-form three" @submit.prevent="onSaveMapping">
+      <form class="inline-form three" data-tour="production-mapping-form" @submit.prevent="onSaveMapping">
         <div class="autocomplete-field">
           <input
             :value="mappingModelCodeInput"
@@ -147,7 +147,7 @@ function handleRequirementFileChange(event: Event): void {
         <h3>目前機種：{{ selectedModelCode || "-" }}</h3>
         <span>{{ selectedModelStationRows.length }} 筆站點</span>
       </div>
-      <table class="mapping-table">
+      <table class="mapping-table" data-tour="production-mapping-list">
         <thead>
           <tr>
             <th>站點</th>
@@ -171,7 +171,7 @@ function handleRequirementFileChange(event: Event): void {
       </table>
     </article>
 
-    <article v-else class="panel detail-panel">
+    <article v-else class="panel detail-panel" data-tour="production-requirement-panel">
       <UiSectionHeader class="section-head" title="Fixture Requirement">
         <template #actions>
           <div class="toolbar-actions">
@@ -190,7 +190,7 @@ function handleRequirementFileChange(event: Event): void {
         </div>
         <button class="primary-btn dependency-callout-btn" type="button" @click="onOpenMappingPage">前往 Mapping</button>
       </div>
-      <form class="inline-form four" @submit.prevent="onSaveRequirement">
+      <form class="inline-form four" data-tour="production-requirement-form" @submit.prevent="onSaveRequirement">
         <div class="autocomplete-field">
           <input
             :value="requirementStationCodeInput"
@@ -244,7 +244,7 @@ function handleRequirementFileChange(event: Event): void {
         <h3>目前站點：{{ selectedStationCode || "-" }}</h3>
         <span>{{ selectedStationRequirementRows.length }} 筆治具</span>
       </div>
-      <table class="mapping-table">
+      <table class="mapping-table" data-tour="production-requirement-list">
         <thead>
           <tr>
             <th>站點</th>

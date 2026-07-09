@@ -171,6 +171,15 @@ class MasterService:
             for fixture in fixtures
         ]
 
+    def get_fixture_detail(self, fixture_id: int, customer_id: int | None = None):
+        fixture = self.repo.get_fixture(fixture_id)
+        if fixture is None:
+            raise ValueError(f"fixture {fixture_id} not found")
+        if customer_id is not None and fixture.customer_id != customer_id:
+            raise ValueError(f"fixture {fixture_id} not found")
+        level = self.repo.get_stock_level(fixture.id)
+        return self._serialize_fixture(fixture, 0 if level is None else level.min_stock_qty)
+
     def update_fixture(self, fixture_id: int, payload: FixtureUpdate, actor: SessionContext | None = None):
         fixture = self.repo.get_fixture(fixture_id)
         if fixture is None:
@@ -243,6 +252,12 @@ class MasterService:
 
     def list_models(self, customer_id: int | None = None):
         return self.repo.list_models(customer_id=customer_id)
+
+    def get_model_detail(self, model_id: int, customer_id: int | None = None):
+        model = self.repo.get_model(model_id, customer_id=customer_id)
+        if model is None:
+            raise ValueError(f"model {model_id} not found")
+        return model
 
     def update_model(self, model_id: int, payload: MachineModelUpdate, actor: SessionContext | None = None):
         customer = self.repo.get_customer(payload.customer_id)

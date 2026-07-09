@@ -545,22 +545,39 @@ class InventoryServiceTests(ServiceTestCase):
         self.assertIsNotNone(transaction)
         self.assertEqual(transaction.transaction_no, "12005436")
 
-    def test_identifier_longer_than_four_digits_is_rejected(self) -> None:
+    def test_legacy_numeric_identifier_longer_than_four_digits_is_preserved(self) -> None:
         bundle = self.seed_customer_bundle()
+        payload = StockTransactionCreate(
+            customer_id=bundle["customer"].id,
+            created_by="Tester",
+            items=[
+                {
+                    "fixture_id": bundle["fixture_a"].id,
+                    "ownership_type": "self_purchased",
+                    "identifier": "12345",
+                    "quantity": 1,
+                }
+            ],
+        )
 
-        with self.assertRaises(ValueError):
-            StockTransactionCreate(
-                customer_id=bundle["customer"].id,
-                created_by="Tester",
-                items=[
-                    {
-                        "fixture_id": bundle["fixture_a"].id,
-                        "ownership_type": "self_purchased",
-                        "identifier": "12345",
-                        "quantity": 1,
-                    }
-                ],
-            )
+        self.assertEqual(payload.items[0].identifier, "12345")
+
+    def test_legacy_alphanumeric_identifier_is_preserved(self) -> None:
+        bundle = self.seed_customer_bundle()
+        payload = StockTransactionCreate(
+            customer_id=bundle["customer"].id,
+            created_by="Tester",
+            items=[
+                {
+                    "fixture_id": bundle["fixture_a"].id,
+                    "ownership_type": "self_purchased",
+                    "identifier": "2024W12",
+                    "quantity": 1,
+                }
+            ],
+        )
+
+        self.assertEqual(payload.items[0].identifier, "2024W12")
 
     def test_transaction_queries_match_numeric_identifier_across_legacy_padding_formats(self) -> None:
         bundle = self.seed_customer_bundle()
@@ -642,6 +659,54 @@ class InventoryServiceTests(ServiceTestCase):
         self.assertEqual(rows[0]["治具編號"], "FX-A")
         self.assertEqual(rows[0]["識別碼"], "2024W12")
         self.assertEqual(rows[0]["收料數"], 3)
+
+    def test_transaction_queries_match_legacy_identifier_by_exact_value(self) -> None:
+        bundle = self.seed_customer_bundle()
+
+        first_tx = self.inventory_service.repo.create_transaction(
+            customer_id=bundle["customer"].id,
+            transaction_type="receipt",
+            occurred_at=datetime(2026, 6, 8, 8, 30, tzinfo=timezone.utc),
+            created_by="Legacy Loader",
+            transaction_no="RCV-LEGACY-12345",
+            note=None,
+        )
+        self.inventory_service.repo.add_transaction_item(
+            transaction_id=first_tx.id,
+            fixture_id=bundle["fixture_a"].id,
+            ownership_type="self_purchased",
+            identifier="12345",
+            quantity=1,
+            note=None,
+        )
+        second_tx = self.inventory_service.repo.create_transaction(
+            customer_id=bundle["customer"].id,
+            transaction_type="receipt",
+            occurred_at=datetime(2026, 6, 8, 9, 30, tzinfo=timezone.utc),
+            created_by="Legacy Loader",
+            transaction_no="RCV-LEGACY-123456",
+            note=None,
+        )
+        self.inventory_service.repo.add_transaction_item(
+            transaction_id=second_tx.id,
+            fixture_id=bundle["fixture_a"].id,
+            ownership_type="self_purchased",
+            identifier="123456",
+            quantity=1,
+            note=None,
+        )
+        self.db.commit()
+
+        transactions = self.inventory_service.list_transactions(
+            20,
+            customer_id=bundle["customer"].id,
+            identifier="12345",
+        )
+
+        self.assertEqual(
+            {tx["transaction_no"] for tx in transactions},
+            {"RCV-LEGACY-12345"},
+        )
 
     def test_import_transactions_csv_rolls_back_on_invalid_row(self) -> None:
         bundle = self.seed_customer_bundle()

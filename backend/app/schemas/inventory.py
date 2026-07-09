@@ -4,17 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from backend.app.schemas.common import ORMModel
-
-
-def normalize_transaction_identifier(value: str | None) -> str:
-    normalized = (value or "").strip()
-    if not normalized:
-        raise ValueError("identifier is required")
-    if not normalized.isdigit():
-        raise ValueError("identifier must be numeric")
-    if len(normalized) > 4:
-        raise ValueError("identifier must be 4 digits or fewer")
-    return normalized.zfill(4)
+from backend.app.utils.identifier_rules import normalize_identifier_for_write
 
 
 class StockTransactionItemInput(BaseModel):
@@ -26,7 +16,7 @@ class StockTransactionItemInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_identifier(self):
-        self.identifier = normalize_transaction_identifier(self.identifier)
+        self.identifier = normalize_identifier_for_write(self.identifier)
         return self
 
 

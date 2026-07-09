@@ -214,6 +214,31 @@ class ProductionRepository:
             )
         return [dict(row._mapping) for row in self.db.execute(stmt).all()]
 
+    def list_requirement_rows_by_fixture(self, fixture_id: int, customer_id: int | None = None) -> list[dict]:
+        stmt = (
+            select(
+                FixtureRequirement.model_id.label("model_id"),
+                MachineModel.code.label("model_code"),
+                MachineModel.name.label("model_name"),
+                FixtureRequirement.station_id.label("station_id"),
+                Station.code.label("station_code"),
+                Station.name.label("station_name"),
+                FixtureRequirement.required_qty.label("required_qty"),
+            )
+            .join(MachineModel, MachineModel.id == FixtureRequirement.model_id)
+            .join(Station, Station.id == FixtureRequirement.station_id)
+            .join(Fixture, Fixture.id == FixtureRequirement.fixture_id)
+            .where(FixtureRequirement.fixture_id == fixture_id)
+            .order_by(MachineModel.code, Station.code)
+        )
+        if customer_id is not None:
+            stmt = stmt.where(
+                MachineModel.customer_id == customer_id,
+                Station.customer_id == customer_id,
+                Fixture.customer_id == customer_id,
+            )
+        return [dict(row._mapping) for row in self.db.execute(stmt).all()]
+
     def list_affected_station_ids_by_fixture(self, fixture_id: int, customer_id: int | None = None) -> list[int]:
         stmt = select(FixtureRequirement.station_id).where(FixtureRequirement.fixture_id == fixture_id).distinct()
         if customer_id is not None:
