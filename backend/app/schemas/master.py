@@ -72,6 +72,31 @@ class FixtureRead(TimestampedResponse):
     is_active: bool
 
 
+class FixtureQualityRowRead(BaseModel):
+    fixture_id: int
+    fixture_code: str
+    fixture_name: str | None
+    storage_location: str | None
+    min_stock_qty: int
+    stock_qty: int
+    identifier_stock_qty: int
+    related_model_count: int
+    has_image: bool
+    issue_codes: list[str] = Field(default_factory=list)
+
+
+class FixtureQualityReportRead(BaseModel):
+    total_fixture_count: int
+    problematic_fixture_count: int
+    missing_name_count: int
+    missing_storage_location_count: int
+    missing_image_count: int
+    missing_min_stock_qty_count: int
+    missing_model_relation_count: int
+    stock_mismatch_count: int
+    rows: list[FixtureQualityRowRead] = Field(default_factory=list)
+
+
 class MachineModelCreate(BaseModel):
     customer_id: int
     code: str = Field(min_length=1, max_length=60)

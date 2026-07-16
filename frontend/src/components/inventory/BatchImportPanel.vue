@@ -2,11 +2,13 @@
 import { computed, onMounted, ref, watch } from "vue";
 
 import { api } from "@/api";
+import { ApiRequestError } from "@/api/core";
 import { authSession, onboardingActive, onboardingFlowId, onboardingStepIndex } from "@/appState";
 import InlineSpinner from "@/components/common/InlineSpinner.vue";
 import { getOnboardingFlow } from "@/onboarding";
 import { pushToast } from "@/toastState";
-import type { Fixture } from "@/types";
+import type { Fixture, IdentifierStockSummary, StockSummary } from "@/types";
+import { buildInventoryPreviewStats } from "@/utils/inventoryBatchPreview";
 import { normalizeIdentifierForWrite } from "@/utils/identifier";
 
 type ImportMode = "receipt" | "return";
@@ -24,6 +26,7 @@ type BatchImportRow = {
   suggestedFixtureCode: string;
   status: BatchRowStatus;
   message: string | null;
+  errorSource: "parse" | "inventory" | null;
 };
 
 const props = withDefaults(defineProps<{
@@ -53,6 +56,8 @@ const internalMode = ref<ImportMode>(props.initialMode);
 const loading = ref(false);
 const saving = ref(false);
 const fixtures = ref<Fixture[]>([]);
+const stockRows = ref<StockSummary[]>([]);
+const identifierStockRows = ref<IdentifierStockSummary[]>([]);
 const batchPasteText = ref("");
 const batchTransactionNo = ref("");
 const batchNote = ref("");
@@ -74,6 +79,18 @@ const mode = computed<ImportMode>({
 });
 const tutorialBannerText = computed(() =>
   mode.value === "receipt" ? "教學模式：本次會模擬收料，不會寫入正式資料。" : "教學模式：本次會模擬退料，不會寫入正式資料。"
+);
+const previewStats = computed(() =>
+  buildInventoryPreviewStats(
+    rows.value.map((row) => ({
+      resolvedFixtureId: row.resolvedFixtureId,
+      inputToken: row.inputToken,
+      quantity: mode.value === "receipt" ? row.quantity : -row.quantity
+    })),
+    identifierStockRows.value,
+    fixtures.value,
+    stockRows.value
+  )
 );
 
 function normalizeText(value: string): string {
@@ -161,7 +178,8 @@ function makeErrorRow(lineNo: number, raw: string, message: string): BatchImport
     suggestedFixtureId: null,
     suggestedFixtureCode: "",
     status: "error",
-    message
+    message,
+    errorSource: "parse"
   };
 }
 
@@ -207,7 +225,8 @@ function buildRow(lineNo: number, codeLine: string, qtyLine: string): BatchImpor
       suggestedFixtureId: null,
       suggestedFixtureCode: "",
       status: "ready",
-      message: null
+      message: null,
+      errorSource: null
     };
   }
 
@@ -224,7 +243,8 @@ function buildRow(lineNo: number, codeLine: string, qtyLine: string): BatchImpor
       suggestedFixtureId: similarFixture.id,
       suggestedFixtureCode: similarFixture.code,
       status: "needs-confirm",
-      message: `可能是 ${similarFixture.code}，請確認`
+      message: `可能是 ${similarFixture.code}，請確認`,
+      errorSource: null
     };
   }
 
@@ -239,8 +259,71 @@ function buildRow(lineNo: number, codeLine: string, qtyLine: string): BatchImpor
     suggestedFixtureId: null,
     suggestedFixtureCode: "",
     status: "needs-add",
-    message: `找不到治具 ${fixtureCodeText}`
+    message: `找不到治具 ${fixtureCodeText}`,
+    errorSource: null
   };
+}
+
+function buildInventoryKey(fixtureId: number, identifier: string): string {
+  return `${fixtureId}::${identifier}`;
+}
+
+function validateRowsForCurrentMode(sourceRows: BatchImportRow[]): BatchImportRow[] {
+  const clonedRows = sourceRows.map((row) => ({ ...row }));
+  if (mode.value !== "return") {
+    return clonedRows.map((row) =>
+      row.errorSource === "inventory"
+        ? {
+            ...row,
+            status: "ready",
+            message: null,
+            errorSource: null
+          }
+        : row
+    );
+  }
+
+  const availableQtyByKey = new Map(identifierStockRows.value.map((row) => [buildInventoryKey(row.fixture_id, row.identifier), row.stock_qty]));
+  const requestedQtyByKey = new Map<string, number>();
+
+  return clonedRows.map((row) => {
+    if (row.status === "skipped" || row.status === "needs-add" || row.status === "needs-confirm" || row.errorSource === "parse") {
+      return row;
+    }
+    if (!row.resolvedFixtureId || !row.inputToken) {
+      return row;
+    }
+
+    const key = buildInventoryKey(row.resolvedFixtureId, row.inputToken);
+    const availableQty = availableQtyByKey.get(key) ?? 0;
+    const requestedQty = (requestedQtyByKey.get(key) ?? 0) + row.quantity;
+    requestedQtyByKey.set(key, requestedQty);
+
+    if (availableQty <= 0) {
+      return {
+        ...row,
+        status: "error",
+        message: `退料無庫存：${row.resolvedFixtureCode} / ${row.inputToken}`,
+        errorSource: "inventory"
+      };
+    }
+
+    if (requestedQty > availableQty) {
+      return {
+        ...row,
+        status: "error",
+        message: `退料超出庫存：${row.resolvedFixtureCode} / ${row.inputToken} 可退 ${availableQty} pcs，本次解析合計 ${requestedQty} pcs`,
+        errorSource: "inventory"
+      };
+    }
+
+    return {
+      ...row,
+      status: "ready",
+      message: null,
+      errorSource: null
+    };
+  });
 }
 
 function parseRows(text: string): BatchImportRow[] {
@@ -271,20 +354,35 @@ function parseRows(text: string): BatchImportRow[] {
 async function loadFixtures(): Promise<void> {
   if (!props.customerId) {
     fixtures.value = [];
+    stockRows.value = [];
+    identifierStockRows.value = [];
     rows.value = [];
     return;
   }
   loading.value = true;
   try {
-    fixtures.value = await api.listFixtures(props.customerId);
-    rows.value = parseRows(batchPasteText.value);
+    const [fixtureRows, stockSummaryRows, identifierRows] = await Promise.all([
+      api.listFixtures(props.customerId),
+      api.listStock(props.customerId),
+      api.listIdentifierStockSummary(props.customerId)
+    ]);
+    fixtures.value = fixtureRows;
+    stockRows.value = stockSummaryRows;
+    identifierStockRows.value = identifierRows;
+    rows.value = validateRowsForCurrentMode(parseRows(batchPasteText.value));
+  } catch (err) {
+    fixtures.value = [];
+    stockRows.value = [];
+    identifierStockRows.value = [];
+    rows.value = [];
+    pushToast(err instanceof Error ? err.message : "載入批次匯入資料失敗", "error");
   } finally {
     loading.value = false;
   }
 }
 
 function refreshPreview(): void {
-  rows.value = parseRows(batchPasteText.value);
+  rows.value = validateRowsForCurrentMode(parseRows(batchPasteText.value));
 }
 
 function clearPanel(): void {
@@ -320,7 +418,9 @@ function acceptSimilar(row: BatchImportRow): void {
   row.suggestedFixtureId = null;
   row.suggestedFixtureCode = "";
   row.status = "ready";
-  row.message = "已接受相似治具";
+  row.message = null;
+  row.errorSource = null;
+  rows.value = validateRowsForCurrentMode(rows.value);
 }
 
 function rejectSimilar(row: BatchImportRow): void {
@@ -328,11 +428,14 @@ function rejectSimilar(row: BatchImportRow): void {
   row.suggestedFixtureCode = "";
   row.status = "needs-add";
   row.message = `找不到治具 ${row.inputFixtureCode}`;
+  row.errorSource = null;
 }
 
 function skipRow(row: BatchImportRow): void {
   row.status = "skipped";
   row.message = "已略過，不會送出";
+  row.errorSource = null;
+  rows.value = validateRowsForCurrentMode(rows.value);
 }
 
 async function createMissingFixture(row: BatchImportRow): Promise<void> {
@@ -349,7 +452,9 @@ async function createMissingFixture(row: BatchImportRow): Promise<void> {
   row.resolvedFixtureId = created.id;
   row.resolvedFixtureCode = created.code;
   row.status = "ready";
-  row.message = "已建立新治具";
+  row.message = null;
+  row.errorSource = null;
+  rows.value = validateRowsForCurrentMode(rows.value);
 }
 
 function fillTutorialSample(): void {
@@ -390,14 +495,33 @@ async function submit(): Promise<void> {
       }))
     };
 
-    if (mode.value === "receipt") {
-      await api.createReceipt(payload);
-    } else {
-      await api.createReturn(payload);
+    const sendTransaction = async (confirmDuplicate = false) => {
+      if (mode.value === "receipt") {
+        await api.createReceiptWithOptions(payload, { confirmDuplicate });
+        return;
+      }
+      await api.createReturnWithOptions(payload, { confirmDuplicate });
+    };
+
+    try {
+      await sendTransaction(false);
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.status === 409) {
+        const confirmed = window.confirm(err.message);
+        if (!confirmed) {
+          return;
+        }
+        await sendTransaction(true);
+      } else {
+        throw err;
+      }
     }
     clearPanel();
     emit("success");
     await loadFixtures();
+  } catch (err) {
+    await loadFixtures();
+    pushToast(err instanceof Error ? err.message : mode.value === "receipt" ? "收料送出失敗" : "退料送出失敗", "error");
   } finally {
     saving.value = false;
   }
@@ -408,6 +532,10 @@ watch(() => props.customerId, async () => {
 });
 
 watch(batchPasteText, () => {
+  refreshPreview();
+});
+
+watch(mode, () => {
   refreshPreview();
 });
 
@@ -512,14 +640,16 @@ onMounted(async () => {
       <div class="table-wrap" data-tour="inventory-preview-table">
         <table class="preview-table">
           <thead>
-            <tr><th>#</th><th>治具</th><th>datecode/編號</th><th>數量</th><th>狀態</th><th>處理</th></tr>
+            <tr><th>#</th><th>治具</th><th>datecode/編號</th><th>數量</th><th>目前庫存</th><th>交易後庫存</th><th>狀態</th><th>處理</th></tr>
           </thead>
           <tbody>
             <tr v-for="row in rows" :key="`${row.lineNo}-${row.raw}`">
               <td>{{ row.lineNo }}</td>
               <td>{{ row.resolvedFixtureCode || row.suggestedFixtureCode || row.inputFixtureCode || "-" }}</td>
               <td>{{ row.inputToken || "-" }}</td>
-              <td>{{ row.quantity || "-" }}</td>
+              <td>{{ mode === "receipt" ? row.quantity : `-${row.quantity}` }}</td>
+              <td>{{ previewStats[row.lineNo - 1]?.currentIdentifierStockQty ?? "-" }}</td>
+              <td>{{ previewStats[row.lineNo - 1]?.nextIdentifierStockQty ?? "-" }}</td>
               <td>
                 <span class="status-pill batch-state" :class="row.status">{{ row.status }}</span>
                 <div v-if="row.message" class="row-note">{{ row.message }}</div>
@@ -548,7 +678,7 @@ onMounted(async () => {
               </td>
             </tr>
             <tr v-if="rows.length === 0">
-              <td colspan="6" class="empty-cell">貼上資料後會自動解析預覽</td>
+              <td colspan="8" class="empty-cell">貼上資料後會自動解析預覽</td>
             </tr>
           </tbody>
         </table>

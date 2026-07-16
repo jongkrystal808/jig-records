@@ -101,6 +101,107 @@ def test_inventory_capacity_and_search_flow(app_client):
     assert payload["total"] >= 1
 
 
+def test_fixture_reenable_recomputes_low_stock_alert(app_client):
+    token = _login(app_client)
+    headers = {"Authorization": f"Bearer {token}"}
+    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+
+    fixture = app_client.post(
+        "/api/v2/master/fixtures",
+        json={
+            "customer_id": customer_id,
+            "code": "ALERT-001",
+            "name": "Alert Fixture",
+            "storage_location": "RACK-ALERT",
+            "min_stock_qty": 0,
+        },
+        headers=headers,
+    )
+    assert fixture.status_code == 201
+    fixture_id = fixture.json()["id"]
+
+    receipt = app_client.post(
+        "/api/v2/inventory/receipts",
+        json={
+            "customer_id": customer_id,
+            "created_by": "System Admin",
+            "items": [
+                {
+                    "fixture_id": fixture_id,
+                    "ownership_type": "self_purchased",
+                    "identifier": "9001",
+                    "quantity": 1,
+                }
+            ],
+        },
+        headers=headers,
+    )
+    assert receipt.status_code == 204
+
+    disable_fixture = app_client.put(
+        f"/api/v2/master/fixtures/{fixture_id}",
+        json={
+            "customer_id": customer_id,
+            "code": "ALERT-001",
+            "name": "Alert Fixture",
+            "storage_location": "RACK-ALERT",
+            "min_stock_qty": 2,
+            "description": None,
+            "is_active": False,
+        },
+        headers=headers,
+    )
+    assert disable_fixture.status_code == 200
+
+    inactive_alerts = app_client.get(
+        "/api/v2/inventory/alerts",
+        params={"customer_id": customer_id},
+        headers=headers,
+    )
+    assert inactive_alerts.status_code == 200
+    assert inactive_alerts.json() == []
+
+    enable_fixture = app_client.put(
+        f"/api/v2/master/fixtures/{fixture_id}",
+        json={
+            "customer_id": customer_id,
+            "code": "ALERT-001",
+            "name": "Alert Fixture",
+            "storage_location": "RACK-ALERT",
+            "min_stock_qty": 2,
+            "description": None,
+            "is_active": True,
+        },
+        headers=headers,
+    )
+    assert enable_fixture.status_code == 200
+
+    alerts = app_client.get(
+        "/api/v2/inventory/alerts",
+        params={"customer_id": customer_id},
+        headers=headers,
+    )
+    assert alerts.status_code == 200
+    assert alerts.json() == [
+        {
+            "fixture_id": fixture_id,
+            "fixture_code": "ALERT-001",
+            "fixture_name": "Alert Fixture",
+            "stock_qty": 1,
+            "min_stock_qty": 2,
+            "stock_status": "low_stock",
+        }
+    ]
+
+    search = app_client.get(
+        "/api/v2/search/global",
+        params={"q": "ALERT-001", "customer_id": customer_id, "entity_type": "fixture"},
+        headers=headers,
+    )
+    assert search.status_code == 200
+    assert search.json()["items"][0]["stock_status"] == "low_stock"
+
+
 def test_search_global_paginates_and_prioritizes_active_exact_matches(app_client):
     token = _login(app_client)
     headers = {"Authorization": f"Bearer {token}"}
@@ -171,6 +272,52 @@ def test_search_global_paginates_and_prioritizes_active_exact_matches(app_client
     assert payload_two["has_more"] is False
     assert payload_two["items"][0]["title"] == "S-002"
     assert payload_two["items"][0]["is_active"] is False
+
+
+def test_search_global_matches_fixture_and_model_codes_without_separators(app_client):
+    token = _login(app_client)
+    headers = {"Authorization": f"Bearer {token}"}
+    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+
+    fixture = app_client.post(
+        "/api/v2/master/fixtures",
+        json={
+            "customer_id": customer_id,
+            "code": "FX-100-A",
+            "name": "Separator Fixture",
+            "storage_location": "RACK-C",
+            "min_stock_qty": 1,
+        },
+        headers=headers,
+    )
+    assert fixture.status_code == 201
+
+    model = app_client.post(
+        "/api/v2/master/models",
+        json={"customer_id": customer_id, "code": "MD-200-X", "name": "Separator Model"},
+        headers=headers,
+    )
+    assert model.status_code == 201
+
+    fixture_search = app_client.get(
+        "/api/v2/search/global",
+        params={"q": "FX100A", "customer_id": customer_id, "entity_type": "fixture"},
+        headers=headers,
+    )
+    assert fixture_search.status_code == 200
+    fixture_payload = fixture_search.json()
+    assert fixture_payload["total"] >= 1
+    assert fixture_payload["items"][0]["title"] == "FX-100-A"
+
+    model_search = app_client.get(
+        "/api/v2/search/global",
+        params={"q": "MD200X", "customer_id": customer_id, "entity_type": "model"},
+        headers=headers,
+    )
+    assert model_search.status_code == 200
+    model_payload = model_search.json()
+    assert model_payload["total"] >= 1
+    assert model_payload["items"][0]["title"] == "MD-200-X"
 
 
 def test_search_fixture_context_loads_detail_on_demand(app_client):
@@ -253,6 +400,105 @@ def test_search_fixture_context_loads_detail_on_demand(app_client):
     assert payload["related_models"][0]["code"] == "CTX-M"
     assert payload["station_rows"][0]["station_code"] == "CTX-ST"
     assert payload["transactions"][0]["items"][0]["identifier"] == "0007"
+
+
+def test_search_fixture_context_filters_shared_transaction_items_to_selected_fixture(app_client):
+    token = _login(app_client)
+    headers = {"Authorization": f"Bearer {token}"}
+    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+
+    fixture_a = app_client.post(
+        "/api/v2/master/fixtures",
+        json={
+            "customer_id": customer_id,
+            "code": "CTX-SHARE-A",
+            "name": "Context Shared A",
+            "storage_location": "CTX-SA",
+            "min_stock_qty": 1,
+        },
+        headers=headers,
+    )
+    assert fixture_a.status_code == 201
+    fixture_a_id = fixture_a.json()["id"]
+
+    fixture_b = app_client.post(
+        "/api/v2/master/fixtures",
+        json={
+            "customer_id": customer_id,
+            "code": "CTX-SHARE-B",
+            "name": "Context Shared B",
+            "storage_location": "CTX-SB",
+            "min_stock_qty": 1,
+        },
+        headers=headers,
+    )
+    assert fixture_b.status_code == 201
+    fixture_b_id = fixture_b.json()["id"]
+
+    receipt = app_client.post(
+        "/api/v2/inventory/receipts",
+        json={
+            "customer_id": customer_id,
+            "created_by": "System Admin",
+            "transaction_no": "CTX-SHARED-20260713",
+            "items": [
+                {
+                    "fixture_id": fixture_a_id,
+                    "ownership_type": "self_purchased",
+                    "identifier": "2604",
+                    "quantity": 24,
+                },
+                {
+                    "fixture_id": fixture_b_id,
+                    "ownership_type": "self_purchased",
+                    "identifier": "2605",
+                    "quantity": 1,
+                },
+            ],
+        },
+        headers=headers,
+    )
+    assert receipt.status_code == 204
+
+    context_a = app_client.get(
+        f"/api/v2/search/fixtures/{fixture_a_id}/context",
+        params={"customer_id": customer_id, "recent_transaction_limit": 8},
+        headers=headers,
+    )
+    assert context_a.status_code == 200
+    payload_a = context_a.json()
+    assert payload_a["transactions"][0]["transaction_no"] == "CTX-SHARED-20260713"
+    assert payload_a["transactions"][0]["items"] == [
+        {
+            "fixture_id": fixture_a_id,
+            "fixture_code": "CTX-SHARE-A",
+            "fixture_name": "Context Shared A",
+            "ownership_type": "self_purchased",
+            "identifier": "2604",
+            "quantity": 24,
+            "note": None,
+        }
+    ]
+
+    context_b = app_client.get(
+        f"/api/v2/search/fixtures/{fixture_b_id}/context",
+        params={"customer_id": customer_id, "recent_transaction_limit": 8},
+        headers=headers,
+    )
+    assert context_b.status_code == 200
+    payload_b = context_b.json()
+    assert payload_b["transactions"][0]["transaction_no"] == "CTX-SHARED-20260713"
+    assert payload_b["transactions"][0]["items"] == [
+        {
+            "fixture_id": fixture_b_id,
+            "fixture_code": "CTX-SHARE-B",
+            "fixture_name": "Context Shared B",
+            "ownership_type": "self_purchased",
+            "identifier": "2605",
+            "quantity": 1,
+            "note": None,
+        }
+    ]
 
 
 def test_inventory_accepts_legacy_numeric_identifier_longer_than_four_digits(app_client):
@@ -391,3 +637,148 @@ def test_csv_import_flow(app_client):
     )
     assert response.status_code == 200
     assert response.json()["imported_count"] == 1
+
+
+def test_admin_can_reverse_transaction_case_and_rebuild_stock(app_client):
+    token = _login(app_client)
+    headers = {"Authorization": f"Bearer {token}"}
+    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+
+    fixture = app_client.post(
+        "/api/v2/master/fixtures",
+        json={
+            "customer_id": customer_id,
+            "code": "REV-001",
+            "name": "Reverse Fixture",
+            "storage_location": "REV-A",
+            "min_stock_qty": 1,
+        },
+        headers=headers,
+    )
+    assert fixture.status_code == 201
+    fixture_id = fixture.json()["id"]
+
+    receipt = app_client.post(
+        "/api/v2/inventory/receipts",
+        json={
+            "customer_id": customer_id,
+            "created_by": "System Admin",
+            "transaction_no": "REV-TX-001",
+            "items": [
+                {
+                    "fixture_id": fixture_id,
+                    "ownership_type": "self_purchased",
+                    "identifier": "2607",
+                    "quantity": 8,
+                }
+            ],
+        },
+        headers=headers,
+    )
+    assert receipt.status_code == 204
+
+    transactions = app_client.get(
+        "/api/v2/inventory/transactions",
+        params={"customer_id": customer_id, "transaction_no": "REV-TX-001"},
+        headers=headers,
+    )
+    assert transactions.status_code == 200
+    transaction_id = transactions.json()[0]["id"]
+
+    reversed_tx = app_client.delete(
+        f"/api/v2/inventory/admin/transactions/{transaction_id}",
+        params={"customer_id": customer_id},
+        headers=headers,
+    )
+    assert reversed_tx.status_code == 200
+    assert reversed_tx.json()["transaction_no"] == "REV-TX-001"
+    assert reversed_tx.json()["item_count"] == 1
+    assert reversed_tx.json()["total_quantity"] == 8
+
+    stock = app_client.get(
+        "/api/v2/inventory/stock",
+        params={"customer_id": customer_id},
+        headers=headers,
+    )
+    assert stock.status_code == 200
+    stock_row = next(row for row in stock.json() if row["fixture_id"] == fixture_id)
+    assert stock_row["stock_qty"] == 0
+    assert stock_row["stock_status"] == "out_of_stock"
+
+    remaining = app_client.get(
+        "/api/v2/inventory/transactions",
+        params={"customer_id": customer_id, "transaction_no": "REV-TX-001"},
+        headers=headers,
+    )
+    assert remaining.status_code == 200
+    assert remaining.json() == []
+
+
+def test_admin_recalculate_inventory_state_repairs_summary_after_manual_change(app_client):
+    from backend.app.core.database import SessionLocal
+    from backend.app.models.inventory import FixtureStockSummary
+
+    token = _login(app_client)
+    headers = {"Authorization": f"Bearer {token}"}
+    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+
+    fixture = app_client.post(
+        "/api/v2/master/fixtures",
+        json={
+            "customer_id": customer_id,
+            "code": "RECALC-001",
+            "name": "Recalc Fixture",
+            "storage_location": "RC-A",
+            "min_stock_qty": 3,
+        },
+        headers=headers,
+    )
+    assert fixture.status_code == 201
+    fixture_id = fixture.json()["id"]
+
+    receipt = app_client.post(
+        "/api/v2/inventory/receipts",
+        json={
+            "customer_id": customer_id,
+            "created_by": "System Admin",
+            "items": [
+                {
+                    "fixture_id": fixture_id,
+                    "ownership_type": "self_purchased",
+                    "identifier": "2608",
+                    "quantity": 5,
+                }
+            ],
+        },
+        headers=headers,
+    )
+    assert receipt.status_code == 204
+
+    db = SessionLocal()
+    try:
+        summary = db.get(FixtureStockSummary, fixture_id)
+        assert summary is not None
+        summary.stock_qty = 99
+        summary.stock_status = "normal"
+        db.commit()
+    finally:
+        db.close()
+
+    recalc = app_client.post(
+        "/api/v2/inventory/admin/recalculate",
+        params={"customer_id": customer_id},
+        headers=headers,
+    )
+    assert recalc.status_code == 200
+    assert recalc.json()["fixture_count"] >= 1
+    assert recalc.json()["transaction_count"] >= 1
+
+    stock = app_client.get(
+        "/api/v2/inventory/stock",
+        params={"customer_id": customer_id},
+        headers=headers,
+    )
+    assert stock.status_code == 200
+    stock_row = next(row for row in stock.json() if row["fixture_id"] == fixture_id)
+    assert stock_row["stock_qty"] == 5
+    assert stock_row["stock_status"] == "normal"

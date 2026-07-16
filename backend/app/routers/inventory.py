@@ -7,8 +7,16 @@ from sqlalchemy.orm import Session
 from backend.app.core.auth import SessionContext, require_permission, resolve_customer_scope
 from backend.app.core.database import get_db
 from backend.app.schemas.common import CsvImportPayload, ImportResultRead
-from backend.app.schemas.inventory import IdentifierStockSummaryRead, StockAlertRead, StockSummaryRead, StockTransactionCreate, StockTransactionRead
-from backend.app.services.inventory_service import InventoryService
+from backend.app.schemas.inventory import (
+    IdentifierStockSummaryRead,
+    InventoryRecalculateRead,
+    StockAlertRead,
+    StockSummaryRead,
+    StockTransactionCreate,
+    StockTransactionRead,
+    TransactionReverseRead,
+)
+from backend.app.services.inventory_service import DuplicateTransactionError, InventoryService
 
 router = APIRouter(prefix="/inventory", tags=["inventory"], dependencies=[Depends(require_permission("read"))])
 
@@ -16,13 +24,16 @@ router = APIRouter(prefix="/inventory", tags=["inventory"], dependencies=[Depend
 @router.post("/receipts", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("write"))])
 def create_receipt(
     payload: StockTransactionCreate,
+    confirm_duplicate: bool = Query(default=False),
     session: SessionContext = Depends(require_permission("write")),
     db: Session = Depends(get_db),
 ):
     resolve_customer_scope(session, db, payload.customer_id, allow_empty=False)
     service = InventoryService(db)
     try:
-        service.receipt(payload)
+        service.receipt(payload, allow_duplicate=confirm_duplicate)
+    except DuplicateTransactionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -30,13 +41,16 @@ def create_receipt(
 @router.post("/returns", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("write"))])
 def create_return(
     payload: StockTransactionCreate,
+    confirm_duplicate: bool = Query(default=False),
     session: SessionContext = Depends(require_permission("write")),
     db: Session = Depends(get_db),
 ):
     resolve_customer_scope(session, db, payload.customer_id, allow_empty=False)
     service = InventoryService(db)
     try:
-        service.return_material(payload)
+        service.return_material(payload, allow_duplicate=confirm_duplicate)
+    except DuplicateTransactionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -242,4 +256,42 @@ def import_transactions(
         return {"imported_count": service.import_transactions_csv(customer_id, operator_name, payload)}
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/admin/transactions/{transaction_id}",
+    response_model=TransactionReverseRead,
+    dependencies=[Depends(require_permission("manage"))],
+)
+def reverse_transaction(
+    transaction_id: int,
+    customer_id: int | None = Query(default=None),
+    session: SessionContext = Depends(require_permission("manage")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    service = InventoryService(db)
+    try:
+        return service.reverse_transaction(transaction_id, customer_id=customer_id, actor=session)
+    except ValueError as exc:
+        message = str(exc)
+        status_code = status.HTTP_404_NOT_FOUND if message.endswith("not found") else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=status_code, detail=message) from exc
+
+
+@router.post(
+    "/admin/recalculate",
+    response_model=InventoryRecalculateRead,
+    dependencies=[Depends(require_permission("manage"))],
+)
+def recalculate_inventory_state(
+    customer_id: int | None = Query(default=None),
+    session: SessionContext = Depends(require_permission("manage")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    service = InventoryService(db)
+    result = service.recalculate_inventory_state(customer_id=customer_id)
+    db.commit()
+    return result
 

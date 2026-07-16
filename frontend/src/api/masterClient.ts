@@ -1,4 +1,4 @@
-import type { AppUser, Customer, Fixture, MachineModel, Station } from "@/types";
+import type { AppUser, Customer, Fixture, FixtureQualityReport, MachineModel, Station } from "@/types";
 
 import { request, requestText, setOptionalParam } from "@/api/core";
 
@@ -20,6 +20,9 @@ export const masterApi = {
     setOptionalParam(params, "customer_id", customerId);
     const suffix = params.size ? `?${params.toString()}` : "";
     return request<Fixture[]>(`/master/fixtures${suffix}`);
+  },
+  getFixtureQualityReport(customerId: number) {
+    return request<FixtureQualityReport>(`/master/fixtures/quality?customer_id=${customerId}`);
   },
   exportFixturesCsv(customerId: number) {
     return requestText(`/master/fixtures/export?customer_id=${customerId}`);

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 import os
 import sys
@@ -10,13 +11,16 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, text
 
+from backend.app.core.audit_logging import register_audit_middleware
 from backend.app.core.migrations import (
     _normalize_alembic_revisions,
     _prepare_alembic_version_table,
     apply_runtime_compatibility_fixes,
     inspect_migration_compatibility,
 )
-from backend.app.core.logging import setup_logging
+from backend.app.core.auth import create_session_token
+from backend.app.core.config import settings
+from backend.app.core.logging import AUDIT_LOGGER_NAME, get_audit_log_path, setup_logging, write_audit_log
 
 
 class MigrationPreflightTests(unittest.TestCase):
@@ -141,6 +145,84 @@ class LoggingSetupTests(unittest.TestCase):
             root_logger.handlers.extend(original_handlers)
             root_logger.setLevel(original_root_level)
             backend_logger.setLevel(original_backend_level)
+
+    def test_write_audit_log_creates_logs_audit_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            audit_logger = logging.getLogger(AUDIT_LOGGER_NAME)
+            original_handlers = list(audit_logger.handlers)
+            original_propagate = audit_logger.propagate
+            original_log_dir = settings.log_dir
+            original_filename = settings.audit_log_filename
+            try:
+                for handler in audit_logger.handlers:
+                    handler.close()
+                audit_logger.handlers.clear()
+                object.__setattr__(settings, "log_dir", temp_dir)
+                object.__setattr__(settings, "audit_log_filename", "audit.log")
+
+                write_audit_log({"event_type": "test", "message": "hello"})
+
+                audit_log_path = get_audit_log_path()
+                self.assertTrue(audit_log_path.exists())
+                payload = json.loads(audit_log_path.read_text(encoding="utf-8").strip())
+                self.assertEqual(payload["event_type"], "test")
+                self.assertEqual(payload["message"], "hello")
+            finally:
+                for handler in audit_logger.handlers:
+                    handler.close()
+                audit_logger.handlers.clear()
+                audit_logger.handlers.extend(original_handlers)
+                audit_logger.propagate = original_propagate
+                object.__setattr__(settings, "log_dir", original_log_dir)
+                object.__setattr__(settings, "audit_log_filename", original_filename)
+
+
+class AuditMiddlewareTests(unittest.TestCase):
+    def test_request_audit_log_records_authenticated_user(self) -> None:
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            audit_logger = logging.getLogger(AUDIT_LOGGER_NAME)
+            original_handlers = list(audit_logger.handlers)
+            original_propagate = audit_logger.propagate
+            original_log_dir = settings.log_dir
+            original_filename = settings.audit_log_filename
+            try:
+                for handler in audit_logger.handlers:
+                    handler.close()
+                audit_logger.handlers.clear()
+                object.__setattr__(settings, "log_dir", temp_dir)
+                object.__setattr__(settings, "audit_log_filename", "audit.log")
+
+                app = FastAPI()
+                register_audit_middleware(app)
+
+                @app.get("/ping")
+                def ping():
+                    return {"ok": True}
+
+                token = create_session_token(mode="guest", display_name="訪客測試")
+                client = TestClient(app)
+                response = client.get("/ping?x=1", headers={"Authorization": f"Bearer {token}"})
+
+                self.assertEqual(response.status_code, 200)
+                lines = get_audit_log_path().read_text(encoding="utf-8").strip().splitlines()
+                payload = json.loads(lines[-1])
+                self.assertEqual(payload["event_type"], "request_audit")
+                self.assertEqual(payload["actor"]["mode"], "guest")
+                self.assertEqual(payload["actor"]["display_name"], "訪客測試")
+                self.assertEqual(payload["request"]["path"], "/ping")
+                self.assertEqual(payload["request"]["query"], "x=1")
+                self.assertEqual(payload["response"]["status_code"], 200)
+            finally:
+                for handler in audit_logger.handlers:
+                    handler.close()
+                audit_logger.handlers.clear()
+                audit_logger.handlers.extend(original_handlers)
+                audit_logger.propagate = original_propagate
+                object.__setattr__(settings, "log_dir", original_log_dir)
+                object.__setattr__(settings, "audit_log_filename", original_filename)
 
 
 class BootstrapFlowTests(unittest.TestCase):

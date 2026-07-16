@@ -3,15 +3,6 @@ import { computed, nextTick, ref, watch } from "vue";
 
 type SearchMode = "fixture" | "model";
 
-type SearchHint = {
-  key: string;
-  mode: SearchMode;
-  entityId: number;
-  title: string;
-  subtitle: string;
-  badge: string;
-};
-
 type SearchChip = {
   key: string;
   label: string;
@@ -29,7 +20,6 @@ const props = defineProps<{
   mode: SearchMode;
   queryDraft: string;
   hasActiveQuery: boolean;
-  smartHints: SearchHint[];
   recentFixtureShortcuts: RecentFixtureShortcut[];
   sectionChips: SearchChip[];
   activeSectionKeys: string[];
@@ -40,10 +30,8 @@ const emit = defineEmits<{
   "update:queryDraft": [value: string];
   submit: [];
   clear: [];
-  applyHint: [hint: SearchHint];
   applyRecentFixtureShortcut: [fixtureCode: string];
   toggleSection: [mode: SearchMode, key: string];
-  onboarding: [];
 }>();
 
 // Keep the search landing shell in one component so the page only owns query state and result data.
@@ -112,30 +100,20 @@ watch(
       </label>
     </div>
 
-    <div v-if="smartHints.length > 0" class="smart-hint-panel">
-      <div class="smart-hint-head">
-        <strong>相近編號</strong>
-        <span>{{ smartHints.length }} 筆</span>
-      </div>
-      <div class="smart-hint-grid">
-        <button
-          v-for="hint in smartHints"
-          :key="hint.key"
-          class="smart-hint-card"
-          type="button"
-          @click="emit('applyHint', hint)"
-        >
-          <span class="smart-hint-badge">{{ hint.badge }}</span>
-          <strong>{{ hint.title }}</strong>
-          <span>{{ hint.subtitle }}</span>
-        </button>
-      </div>
-    </div>
-
     <div v-if="recentFixtureShortcuts.length > 0" class="shortcut-panel">
       <div class="smart-hint-head">
         <strong>最近收 / 退料治具</strong>
-        <span>{{ recentFixtureShortcuts.length }} 筆</span>
+        <div class="shortcut-head-actions">
+          <span>{{ recentFixtureShortcuts.length }} 筆</span>
+          <button
+            v-if="hiddenRecentShortcutCount > 0 || recentShortcutExpanded"
+            class="shortcut-toggle-btn"
+            type="button"
+            @click="recentShortcutExpanded = !recentShortcutExpanded"
+          >
+            {{ recentShortcutExpanded ? "收合" : `顯示更多（+${hiddenRecentShortcutCount}）` }}
+          </button>
+        </div>
       </div>
       <div class="shortcut-row">
         <button
@@ -149,11 +127,6 @@ watch(
             {{ shortcut.transactionType === "receipt" ? "收" : "退" }}
           </span>
           <strong>{{ shortcut.fixtureCode }}</strong>
-        </button>
-      </div>
-      <div v-if="hiddenRecentShortcutCount > 0 || recentShortcutExpanded" class="shortcut-actions">
-        <button class="shortcut-toggle-btn" type="button" @click="recentShortcutExpanded = !recentShortcutExpanded">
-          {{ recentShortcutExpanded ? "收合" : `顯示更多（+${hiddenRecentShortcutCount}）` }}
         </button>
       </div>
     </div>
@@ -171,12 +144,6 @@ watch(
       </button>
     </div>
   </section>
-
-  <button class="floating-onboarding-btn" data-tour="search-onboarding-entry" type="button" @click="emit('onboarding')">
-    <span class="floating-onboarding-kicker">Guide</span>
-    <strong>開始新手教學</strong>
-    <small>重播首頁導覽</small>
-  </button>
 </template>
 
 <style scoped>
@@ -216,7 +183,6 @@ watch(
 
 .hero-card.idle .hero-copy,
 .hero-card.idle .search-toolbar,
-.hero-card.idle .smart-hint-panel,
 .hero-card.idle .chip-row {
   width: min(760px, 100%);
 }
@@ -327,19 +293,10 @@ h1 {
   transform: translateY(calc(-56% - 3px));
 }
 
-.smart-hint-panel {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--blue) 16%, var(--line));
-  border-radius: 16px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, color-mix(in srgb, var(--blue-soft) 52%, white) 100%);
-}
-
 .shortcut-panel {
   display: grid;
-  gap: 10px;
-  padding: 12px;
+  gap: 8px;
+  padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--blue) 16%, var(--line));
   border-radius: 16px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, color-mix(in srgb, var(--blue-soft) 42%, white) 100%);
@@ -352,66 +309,36 @@ h1 {
   gap: 10px;
 }
 
-.smart-hint-head strong {
-  color: #22314a;
-  font-size: 13px;
+.shortcut-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.smart-hint-head span,
-.smart-hint-card span {
-  color: #5d6d89;
+.smart-hint-head strong {
+  color: #22314a;
   font-size: 12px;
 }
 
-.smart-hint-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
+.smart-hint-head span,
+.shortcut-panel span {
+  color: #5d6d89;
+  font-size: 11px;
 }
 
 .shortcut-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
-.shortcut-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.smart-hint-card {
-  display: grid;
-  gap: 4px;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--blue) 16%, var(--line));
-  border-radius: 14px;
-  background: #fff;
-  text-align: left;
-}
-
-.smart-hint-card strong {
-  color: #22314a;
-  font-size: 14px;
-}
-
-.smart-hint-badge {
-  width: fit-content;
-  padding: 2px 8px;
-  border: 1px solid color-mix(in srgb, var(--blue) 18%, var(--line));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--blue-soft) 70%, white);
-  color: color-mix(in srgb, var(--blue) 72%, var(--text)) !important;
-  font-size: 11px !important;
-  font-weight: 700;
-}
 
 .shortcut-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 6px 12px;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
   border: 1px solid color-mix(in srgb, var(--blue) 18%, var(--line));
   border-radius: 999px;
   background: #fff;
@@ -419,7 +346,7 @@ h1 {
 }
 
 .shortcut-chip strong {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .shortcut-toggle-btn {
@@ -427,9 +354,9 @@ h1 {
   border-radius: 999px;
   background: color-mix(in srgb, var(--blue-soft) 72%, white);
   color: var(--tone-info);
-  min-height: 34px;
-  padding: 6px 12px;
-  font-size: 12px;
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 11px;
   font-weight: 800;
 }
 
@@ -437,10 +364,10 @@ h1 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 22px;
-  min-height: 22px;
+  min-width: 18px;
+  min-height: 18px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
 }
 
@@ -476,69 +403,9 @@ h1 {
   color: var(--tone-info);
 }
 
-.floating-onboarding-btn {
-  position: fixed;
-  left: 20px;
-  bottom: 20px;
-  z-index: 25;
-  min-width: 168px;
-  min-height: 72px;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--blue) 24%, var(--line));
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, color-mix(in srgb, var(--blue-soft) 70%, white) 100%);
-  box-shadow: 0 18px 34px color-mix(in srgb, var(--blue) 18%, transparent);
-  color: color-mix(in srgb, var(--blue) 72%, var(--text));
-  display: grid;
-  justify-items: start;
-  gap: 2px;
-  text-align: left;
-  cursor: pointer;
-  backdrop-filter: blur(10px);
-}
-
-.floating-onboarding-btn:hover {
-  border-color: color-mix(in srgb, var(--blue) 40%, var(--line));
-  transform: translateY(-1px);
-}
-
-.floating-onboarding-kicker {
-  display: inline-flex;
-  align-items: center;
-  min-height: 20px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--blue-soft) 84%, white);
-  color: var(--tone-info);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.floating-onboarding-btn strong {
-  color: #22314a;
-  font-size: 14px;
-  line-height: 1.35;
-}
-
-.floating-onboarding-btn small {
-  color: #5d6d89;
-  font-size: 11px;
-  line-height: 1.4;
-}
-
 @media (max-width: 960px) {
   .search-toolbar {
     grid-template-columns: 1fr;
-  }
-
-  .floating-onboarding-btn {
-    left: 14px;
-    bottom: 14px;
-    min-width: 148px;
-    min-height: 68px;
-    padding: 10px 12px;
   }
 }
 </style>

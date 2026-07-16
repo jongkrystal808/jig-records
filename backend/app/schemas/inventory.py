@@ -74,3 +74,18 @@ class StockTransactionRead(ORMModel):
     note: str | None
     created_at: datetime
     items: list[StockTransactionItemRead]
+
+
+class InventoryRecalculateRead(ORMModel):
+    customer_id: int | None
+    fixture_count: int
+    transaction_count: int
+    item_count: int
+
+
+class TransactionReverseRead(ORMModel):
+    transaction_id: int
+    transaction_no: str
+    transaction_type: Literal["receipt", "return"]
+    item_count: int
+    total_quantity: int

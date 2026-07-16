@@ -11,6 +11,8 @@ SearchEntityType = Literal["fixture", "model", "station"]
 
 
 class SearchRepository:
+    _CODE_SEPARATORS = ("-", "_", " ", "/", ".", "(", ")", "[", "]")
+
     def __init__(self, db: Session) -> None:
         self.db = db
 
@@ -19,26 +21,62 @@ class SearchRepository:
         normalized = q.strip().lower()
         return normalized, f"{normalized}%", f"%{normalized}%"
 
+    @classmethod
+    def _compact_code_token(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        for separator in cls._CODE_SEPARATORS:
+            normalized = normalized.replace(separator, "")
+        return normalized
+
+    @classmethod
+    def _compact_code_expr(cls, column):
+        expr = func.lower(func.coalesce(column, ""))
+        for separator in cls._CODE_SEPARATORS:
+            expr = func.replace(expr, separator, "")
+        return expr
+
     def search_fixtures(self, q: str, *, customer_id: int | None = None, limit: int = 20, offset: int = 0) -> tuple[list[dict], int]:
         normalized, prefix_pattern, contains_pattern = self._normalized_query(q)
+        compact_query = self._compact_code_token(q)
+        compact_prefix_pattern = f"{compact_query}%"
+        compact_contains_pattern = f"%{compact_query}%"
+        compact_code_expr = self._compact_code_expr(Fixture.code)
+        score_conditions = []
+        if compact_query:
+            score_conditions.extend(
+                [
+                    (compact_code_expr == compact_query, 0),
+                    (compact_code_expr.like(compact_prefix_pattern), 10),
+                    (compact_code_expr.like(compact_contains_pattern), 40),
+                ]
+            )
+        score_conditions.extend(
+            [
+                (func.lower(Fixture.name) == normalized, 20),
+                (func.lower(Fixture.name).like(prefix_pattern), 30),
+                (func.lower(Fixture.name).like(contains_pattern), 50),
+                (func.lower(func.coalesce(Fixture.storage_location, "")).like(contains_pattern), 60),
+            ]
+        )
         score_expr = case(
-            (func.lower(Fixture.code) == normalized, 0),
-            (func.lower(Fixture.code).like(prefix_pattern), 10),
-            (func.lower(Fixture.name) == normalized, 20),
-            (func.lower(Fixture.name).like(prefix_pattern), 30),
-            (func.lower(Fixture.code).like(contains_pattern), 40),
-            (func.lower(Fixture.name).like(contains_pattern), 50),
-            (func.lower(func.coalesce(Fixture.storage_location, "")).like(contains_pattern), 60),
+            *score_conditions,
             else_=90,
         ).label("match_score")
         active_rank_expr = case((Fixture.is_active.is_(True), 0), else_=1).label("active_rank")
-        conditions = or_(
-            func.lower(Fixture.code).like(contains_pattern),
+        conditions = [
             func.lower(Fixture.name).like(contains_pattern),
             func.lower(func.coalesce(Fixture.storage_location, "")).like(contains_pattern),
-        )
+        ]
+        if compact_query:
+            conditions.insert(0, compact_code_expr.like(compact_contains_pattern))
+        where_clause = or_(*conditions)
+        stock_status_expr = case(
+            (Fixture.is_active.is_(False), "normal"),
+            (FixtureStockSummary.stock_status.is_not(None), FixtureStockSummary.stock_status),
+            else_="normal",
+        ).label("stock_status")
 
-        count_stmt = select(func.count()).select_from(Fixture).where(conditions)
+        count_stmt = select(func.count()).select_from(Fixture).where(where_clause)
         stmt = (
             select(
                 Fixture.id.label("id"),
@@ -46,13 +84,13 @@ class SearchRepository:
                 Fixture.name.label("name"),
                 Fixture.is_active.label("is_active"),
                 FixtureStockSummary.stock_qty.label("stock_qty"),
-                FixtureStockSummary.stock_status.label("stock_status"),
+                stock_status_expr,
                 Fixture.storage_location.label("location_code"),
                 score_expr,
                 active_rank_expr,
             )
             .outerjoin(FixtureStockSummary, FixtureStockSummary.fixture_id == Fixture.id)
-            .where(conditions)
+            .where(where_clause)
         )
         if customer_id is not None:
             count_stmt = count_stmt.where(Fixture.customer_id == customer_id)
@@ -63,22 +101,37 @@ class SearchRepository:
 
     def search_models(self, q: str, *, customer_id: int | None = None, limit: int = 20, offset: int = 0) -> tuple[list[dict], int]:
         normalized, prefix_pattern, contains_pattern = self._normalized_query(q)
+        compact_query = self._compact_code_token(q)
+        compact_prefix_pattern = f"{compact_query}%"
+        compact_contains_pattern = f"%{compact_query}%"
+        compact_code_expr = self._compact_code_expr(MachineModel.code)
+        score_conditions = []
+        if compact_query:
+            score_conditions.extend(
+                [
+                    (compact_code_expr == compact_query, 0),
+                    (compact_code_expr.like(compact_prefix_pattern), 10),
+                    (compact_code_expr.like(compact_contains_pattern), 40),
+                ]
+            )
+        score_conditions.extend(
+            [
+                (func.lower(MachineModel.name) == normalized, 20),
+                (func.lower(MachineModel.name).like(prefix_pattern), 30),
+                (func.lower(MachineModel.name).like(contains_pattern), 50),
+            ]
+        )
         score_expr = case(
-            (func.lower(MachineModel.code) == normalized, 0),
-            (func.lower(MachineModel.code).like(prefix_pattern), 10),
-            (func.lower(MachineModel.name) == normalized, 20),
-            (func.lower(MachineModel.name).like(prefix_pattern), 30),
-            (func.lower(MachineModel.code).like(contains_pattern), 40),
-            (func.lower(MachineModel.name).like(contains_pattern), 50),
+            *score_conditions,
             else_=90,
         ).label("match_score")
         active_rank_expr = case((MachineModel.is_active.is_(True), 0), else_=1).label("active_rank")
-        conditions = or_(
-            func.lower(MachineModel.code).like(contains_pattern),
-            func.lower(MachineModel.name).like(contains_pattern),
-        )
+        conditions = [func.lower(MachineModel.name).like(contains_pattern)]
+        if compact_query:
+            conditions.insert(0, compact_code_expr.like(compact_contains_pattern))
+        where_clause = or_(*conditions)
 
-        count_stmt = select(func.count()).select_from(MachineModel).where(conditions)
+        count_stmt = select(func.count()).select_from(MachineModel).where(where_clause)
         stmt = (
             select(
                 MachineModel.id.label("id"),
@@ -88,7 +141,7 @@ class SearchRepository:
                 score_expr,
                 active_rank_expr,
             )
-            .where(conditions)
+            .where(where_clause)
         )
         if customer_id is not None:
             count_stmt = count_stmt.where(MachineModel.customer_id == customer_id)

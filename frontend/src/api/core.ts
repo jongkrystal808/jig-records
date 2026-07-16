@@ -3,6 +3,16 @@ import { extractErrorMessage } from "@/utils/apiError";
 
 export const API_ROOT = "/api/v2";
 
+export class ApiRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+  }
+}
+
 export function setOptionalParam(params: URLSearchParams, key: string, value: string | number | undefined | null): void {
   if (value === undefined || value === null || value === "") {
     return;
@@ -33,7 +43,7 @@ export async function request<T>(path: string, init?: RequestInit, withAuth = tr
   const body = await response.text();
 
   if (!response.ok) {
-    throw new Error(extractErrorMessage(body, `Request failed: ${response.status}`));
+    throw new ApiRequestError(extractErrorMessage(body, `Request failed: ${response.status}`), response.status);
   }
 
   if (response.status === 204 || !body) {
@@ -51,7 +61,7 @@ export async function requestText(path: string, init?: RequestInit, withAuth = t
   });
   const body = await response.text();
   if (!response.ok) {
-    throw new Error(extractErrorMessage(body, `Request failed: ${response.status}`));
+    throw new ApiRequestError(extractErrorMessage(body, `Request failed: ${response.status}`), response.status);
   }
   return body;
 }
@@ -64,7 +74,7 @@ export async function requestBlob(path: string, init?: RequestInit, withAuth = t
   });
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(extractErrorMessage(body, `Request failed: ${response.status}`));
+    throw new ApiRequestError(extractErrorMessage(body, `Request failed: ${response.status}`), response.status);
   }
   const contentDisposition = response.headers.get("Content-Disposition");
   const filenameMatch = contentDisposition?.match(/filename="?([^"]+)"?/i);

@@ -68,6 +68,7 @@ flowchart LR
 | Validation | Pydantic |
 | ORM | SQLAlchemy |
 | Auth | JWT |
+| App / Audit Logging | Python `logging` + rotating file handler |
 
 ### Database
 
@@ -84,6 +85,7 @@ flowchart LR
 frontend/
 ├─ src/
 │  ├─ components/
+│  ├─ composables/
 │  ├─ pages/
 │  ├─ router/
 │  ├─ utils/
@@ -106,6 +108,7 @@ Current shared-component direction:
 
 ```text
 components/
+├─ UiAutocompleteInput.vue
 ├─ app/
 │  ├─ AppTopbar.vue
 │  ├─ AppMobileDrawer.vue
@@ -117,7 +120,9 @@ components/
 │  └─ InventoryOverviewPanel.vue
 ├─ master/
 │  ├─ MasterListPanel.vue
-│  └─ MasterDetailPanel.vue
+│  ├─ MasterDetailPanel.vue
+│  ├─ TransactionAccountListPanel.vue
+│  └─ TransactionAccountDetailPanel.vue
 ├─ production/
 │  ├─ ProductionHeaderSection.vue
 │  ├─ ProductionDetailSection.vue
@@ -131,26 +136,39 @@ components/
 │  └─ SearchResultPanel.vue
 └─ common/
    ├─ GuidedTour.vue
-   └─ InlineSpinner.vue
+   ├─ InlineSpinner.vue
+   └─ OnboardingFlowPicker.vue
 ```
+
+Composable / helper notes:
+
+- `frontend/src/composables/useProductionBatchImport.ts` now owns Production batch modal state, batch row lifecycle, and submit orchestration
+- `frontend/src/composables/useProductionEditorState.ts` now owns Production editor state, autocomplete handlers, selection sync, and unsaved-change guards
+- `frontend/src/utils/productionBatchImport.ts` holds pure parsing, similarity matching, row-state reduction, and CSV assembly rules for Production batch import
+- `frontend/src/components/UiAutocompleteInput.vue` is the shared autocomplete input shell used by Production editing flows
+- `frontend/src/pages/ProductionPage.vue` is kept as route-level orchestration plus data loading, rather than carrying batch domain logic inline
+- `frontend/src/pages/MasterPage.vue` now acts as route-level orchestration for both classic master-data CRUD tabs and the admin-only transaction-ledger management tab
 
 Application shell notes:
 
 - Login / guest entry is rendered in the root app shell before route content
 - `/inventory` remains the operation-focused receipt/return page
 - `/inventory/overview` remains a full-page route, and its primary entry is the top-bar `更多功能` menu
+- `MasterPage` tabs now map to explicit routes: `/master/fixtures`, `/master/models`, `/master/stations`, `/master/customers`, `/master/users`, `/master/ledger`, `/master/quality`
 - guest users do not see `資料維護`, and router guard blocks direct `/master` access
 - the current shell is a top bar rather than a left sidebar
 - the top bar surfaces login state, customer switch, today receipt/return totals, and low-stock count
-- the top bar provides primary `收/退料` and `收退料資訊匯出` actions that open global modals
+- the top bar provides primary `收/退料`, `收退料資訊匯出`, and `新手教學` actions
 - the top bar provides a `更多功能` menu with `收退料總檢視` / `資料維護` / `產能管理`
 - clicking the logo returns to `/search`
 - `MasterPage` and `ProductionPage` each provide a local `返回搜尋` action
 - mobile layout keeps a persistent hamburger trigger plus current customer name, with non-essential controls collapsed into the menu
-- the root shell now owns the first-login onboarding flow and reuses `data-tour` anchors rendered across multiple pages
+- mobile drawer also exposes `新手教學`, so onboarding replay is not tied to the search page alone
+- the root shell now owns the onboarding picker and reuses `data-tour` anchors rendered across multiple pages
 - onboarding state is stored in lightweight reactive app state and uses route-aware step syncing
 - onboarding is now grouped into selectable flows so users can choose a page- or tab-specific tutorial instead of replaying one long linear tour
-- the root shell also owns a versioned release-notice modal, with copy defined in `frontend/src/releaseNotice.ts` and dismissal persisted per audience in `localStorage`
+- the root shell also owns a versioned release-notice modal, with copy defined in `frontend/src/releaseNotice.ts`
+- release-note dismissal is now one-time per version per browser via `localStorage`, rather than once per account
 
 ---
 
@@ -177,6 +195,7 @@ backend/
 | Repository | Database query and persistence |
 | Schema | Request/response validation |
 | Model | Database table mapping |
+| Middleware | Cross-cutting request audit logging |
 
 ---
 
@@ -193,6 +212,9 @@ Includes:
 - Customer-to-user assignment
 - Fixture responsible-user assignment
 - Reversible active/inactive state management for fixtures, models, stations, and users
+- Admin-only transaction ledger workspace for inventory case review, reversal, and customer-scoped stock-state recovery
+- Admin-only fixture data-quality workspace for integrity review of master data, image coverage, model linkage, and stock consistency
+- Issue-specific navigation rules from the quality workspace into fixture maintenance or search results
 
 API prefix:
 
@@ -214,11 +236,18 @@ Includes:
 - Report export (`xlsx` / `txt`) and preview
 - Stock summary
 - Batch paste import for receipt/return
+- Return-mode parse-time inventory precheck against identifier stock summary
 - On-the-fly fixture creation from pasted rows
 - Similar-fixture confirmation before import
 - Unified single identifier flow for all fixture transactions
 - Free-form transaction number for each batch import
+- UI-visible inline row errors and toast feedback for failed inventory submissions
+- Preview-time `current stock` and `post-transaction stock` columns for each identifier row
+- In-batch sequential stock preview for repeated `fixture + identifier` rows
+- Two-minute duplicate-submission guard for same user + same transaction signature
 - Shared batch-import UI used by both `/inventory` and the global shell modal
+- Admin transaction reversal with full customer-scoped stock recomputation
+- Admin one-click inventory-state rebuild from persisted transaction items
 
 API prefix:
 
@@ -294,6 +323,25 @@ Batch import still uses the existing inventory transaction APIs:
 - `POST /api/v2/inventory/receipts`
 - `POST /api/v2/inventory/returns`
 
+Duplicate-submission behavior:
+
+- the backend compares recent submissions within a 2-minute window
+- the duplicate signature is: same user, same transaction type, same transaction number, and the same set of `fixture + identifier + quantity + ownership_type` items
+- when a duplicate is detected, the API returns a conflict message asking the user to confirm whether to resend
+- the frontend surfaces that message as a confirmation prompt before retrying with `confirm_duplicate=true`
+- even after confirmation, `transaction_no` remains unique; reusing the same transaction number still returns a validation error instead of creating a second record
+
+Preview behavior:
+
+- the batch preview table now shows `current stock` and `post-transaction stock` for each row
+- preview stock is calculated at the `fixture + identifier` level
+- repeated rows for the same `fixture + identifier` are accumulated in display order so the preview matches final submission order
+
+Admin repair / rollback flows use:
+
+- `DELETE /api/v2/inventory/admin/transactions/{transaction_id}`
+- `POST /api/v2/inventory/admin/recalculate`
+
 Fixture creation from the batch flow uses the master API:
 
 - `POST /api/v2/master/fixtures`
@@ -325,6 +373,7 @@ Includes:
 - Station-scoped model query
 - Batch paste import with similarity confirmation
 - Shared-station multi-model support
+- Page-level orchestration with extracted editor-state and batch-import composables
 
 API prefix:
 
@@ -367,12 +416,53 @@ Includes:
 - Deferred fixture / model context loading after result selection
 - Embedded fixture/model maintenance panels inside search results
 - Search-to-production handoff for model-focused capacity work
+- Search result panel auto-scroll after successful search, aligned with the current hero height
 
 API prefix:
 
 ```text
 /api/v2/search/*
 ```
+
+---
+
+### 7.5 Audit Module
+
+Includes:
+
+- Database-backed business audit records in `audit_logs`
+- File-backed append-only audit records in `logs/audit.log`
+- Request-level audit capture for all HTTP API calls
+- Domain-level audit capture for business actions that already call `AuditService.record()`
+
+API prefix:
+
+```text
+/api/v2/audit/*
+```
+
+Audit logging behavior:
+
+- every HTTP request that reaches the FastAPI app is written as `request_audit`
+- existing business audit events are also mirrored to the same file as `domain_audit`
+- the audit file is line-delimited JSON, so each log line is a standalone event
+- the file logger uses rotation to avoid unbounded single-file growth
+
+Current request-audit payload includes:
+
+- `timestamp`
+- `actor.mode`
+- `actor.user_id`
+- `actor.username`
+- `actor.display_name`
+- `actor.role`
+- `request.method`
+- `request.path`
+- `request.query`
+- `request.client_ip`
+- `response.status_code`
+- `response.duration_ms`
+- `error`
 
 ---
 
@@ -433,6 +523,11 @@ Important table-level rules:
 - `stations` uses `(customer_id, code)` as the authoritative unique key
 - `fixtures.responsible_user_id` points to `users.id` and is nullable
 - customer assignment for normal users is represented by `user_customers`
+
+File-based audit note:
+
+- `audit_logs` remains the structured database table for business-level audit history
+- `logs/audit.log` is the broader operational audit trail that also captures read/query/export/login-style request activity
 
 ---
 
@@ -520,6 +615,7 @@ Current master-data write scope:
 - `fixtures`
 - `machine_models`
 - `stations`
+- `fixture quality` report and review
 
 Current admin-only scope:
 
@@ -691,6 +787,8 @@ Search behavior updates:
 - Fixture detail drill-down now shows `model + station + required_qty`
 - Model detail drill-down is limited to the selected model and selected station context where applicable
 - Search and inventory labels now expose the identifier concept to end users as `datecode/編號` without changing the internal field contract
+- Search result navigation now scrolls to the result panel after search completion, and the scroll target is computed after layout settles so the `最近收 / 退料治具` block does not offset the landing position
+- The search workspace can also be opened with route query state such as `?mode=fixture&q=FX-001`, which is used by cross-page handoff flows
 
 ---
 
@@ -754,6 +852,7 @@ flowchart LR
 /api/v2/master/customers/{customer_id}/users
 /api/v2/master/fixtures
 /api/v2/master/fixtures/{fixture_code}/image
+/api/v2/master/fixtures/quality
 /api/v2/master/models
 /api/v2/master/stations
 
@@ -794,6 +893,11 @@ Search API notes:
 - `GET /api/v2/search/fixtures/{fixture_id}/context` is the fixture-side lazy drill-down endpoint
 - `GET /api/v2/search/models/{model_id}/context` is the model-side lazy drill-down endpoint
 
+Audit API notes:
+
+- `GET /api/v2/audit/logs` returns recent database-backed business audit records
+- file-backed `logs/audit.log` is currently an operational log artifact, not a direct API response body
+
 ---
 
 ## 17. Migration Notes
@@ -821,6 +925,7 @@ Compatibility behavior:
 - the offline compatibility entry point is `python -m backend.app.tools.migration_check`
 - runtime gate outcomes are now emitted as structured log events with `passed` / `blocked` / `compat_fixes_applied`
 - this logging path has been validated in the real Docker test deployment: `fixture_m_lite_api` now emits `migration_runtime_gate` with `source=app_startup` and `outcome=passed`
+- runtime audit logging now also writes operational request events to `logs/audit.log`
 - legacy revision id `0004_model_station_fixture_requirements` can still be normalized, but only through the explicit offline compatibility tool
 - `schema_patch.py` remains a historical backfill dependency for `0002_schema_backfill`; its retirement path should follow: telemetry -> fail-loud gate -> removal
 - gate retirement is still blocked on environment inventory and `N` consecutive clean deploy records; the operator runbook lives in `MIGRATION_GATE_RUNBOOK.md`

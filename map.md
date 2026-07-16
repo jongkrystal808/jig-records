@@ -25,9 +25,11 @@
 
 - 改 topbar / customer picker / 今日摘要
   - `frontend/src/components/app/AppTopbar.vue`
+  - 桌面版 `新手教學` 入口也在這裡
 
 - 改手機版抽屜選單
   - `frontend/src/components/app/AppMobileDrawer.vue`
+  - 手機版 `新手教學` 入口也在這裡
 
 - 改全域收退料 / 匯出 modal
   - `frontend/src/components/app/AppGlobalModals.vue`
@@ -36,6 +38,7 @@
   - `frontend/src/components/app/AppReleaseNoticeModal.vue`
   - `frontend/src/releaseNotice.ts`
   - 開關協調在 `frontend/src/App.vue`
+  - 同版本只顯示一次的條件也在 `frontend/src/App.vue`
 
 - 改全域 toast
   - `frontend/src/components/app/AppToastStack.vue`
@@ -49,10 +52,12 @@
   - `frontend/src/components/search/ModelInfoPanel.vue`
   - 查詢 contract / lazy context：`frontend/src/api/searchClient.ts`
   - 查詢型別：`frontend/src/types.ts`
+  - route query handoff（`mode` / `q`）：`frontend/src/pages/SearchWorkspacePage.vue`
 
 - 改查詢頁最近收 / 退料治具快捷入口
   - 資料整理：`frontend/src/pages/SearchWorkspacePage.vue`
   - 顯示與點擊入口：`frontend/src/components/search/SearchHeroSection.vue`
+  - 搜尋完成後自動定位結果區：`frontend/src/pages/SearchWorkspacePage.vue`
 
 - 改收退料作業 / overview
   - `frontend/src/pages/InventoryPage.vue`
@@ -63,7 +68,16 @@
   - inventory：`frontend/src/components/inventory/BatchImportPanel.vue`
   - production：`frontend/src/components/production/ProductionBatchImportModal.vue`
   - production page orchestration：`frontend/src/pages/ProductionPage.vue`
+  - production batch composable：`frontend/src/composables/useProductionBatchImport.ts`
+  - production editor/autocomplete composable：`frontend/src/composables/useProductionEditorState.ts`
+  - production batch pure helper / 規則：`frontend/src/utils/productionBatchImport.ts`
+  - production / 其他表單可共用的 autocomplete UI：`frontend/src/components/UiAutocompleteInput.vue`
   - inventory 的手動 `Tab` 鍵輸入行為也在 `BatchImportPanel.vue`
+  - 退料解析時的 `identifier` 庫存預檢、逐列錯誤標記、送出失敗 toast 也在 `BatchImportPanel.vue`
+  - 送出失敗後重新載入 identifier 庫存摘要、避免預覽沿用舊庫存快照的流程也在 `BatchImportPanel.vue`
+  - `目前庫存` / `交易後庫存` 預覽與同批逐列累計也在 `BatchImportPanel.vue`
+  - inventory preview 純計算 helper：`frontend/src/utils/inventoryBatchPreview.ts`
+  - 退料真正的庫存檢核與逐筆錯誤訊息 fallback 在 `backend/app/services/inventory_service.py`
 
 - 改收退料報表匯出
   - `frontend/src/components/inventory/InventoryExportPanel.vue`
@@ -72,6 +86,10 @@
   - `frontend/src/pages/MasterPage.vue`
   - `frontend/src/components/master/MasterListPanel.vue`
   - `frontend/src/components/master/MasterDetailPanel.vue`
+  - admin 收退料帳目管理：`frontend/src/components/master/TransactionAccountListPanel.vue`
+  - admin 收退料帳目案件詳細 / 撤回 / 重算：`frontend/src/components/master/TransactionAccountDetailPanel.vue`
+  - admin 治具資料品質：`frontend/src/components/master/FixtureQualityPanel.vue`
+  - route 對應：`/master/fixtures`、`/master/models`、`/master/stations`、`/master/customers`、`/master/users`、`/master/ledger`、`/master/quality`
 
 - 改產能頁
   - `frontend/src/pages/ProductionPage.vue`
@@ -103,6 +121,7 @@
 - 改共用 UI 元件 / 共用樣式
   - 元件：`frontend/src/components/Ui*.vue`
   - CSS utility：`frontend/src/styles.css`
+  - `Production` 的 autocomplete 欄位已收斂到 `frontend/src/components/UiAutocompleteInput.vue`
 
 ### 後端
 
@@ -119,11 +138,13 @@
 - 改主資料 API
   - `backend/app/routers/master.py`
   - `backend/app/services/master_service.py`
+  - `GET /master/fixtures/quality` 也在這組
 
 - 改收退料 / 庫存 API
   - `backend/app/routers/inventory.py`
   - `backend/app/services/inventory_service.py`
   - `backend/app/repositories/inventory_repository.py`
+  - 撤回案件 / 全量重算 inventory state 也在這組檔案
 
 - 改 production API
   - `backend/app/routers/production.py`
@@ -136,12 +157,15 @@
 - 改審計 API
   - `backend/app/routers/audit.py`
   - `backend/app/services/audit_service.py`
+  - request-level audit middleware：`backend/app/core/audit_logging.py`
+  - file logger / `logs/audit.log`：`backend/app/core/logging.py`
 
 - 改資料表
   - `backend/app/models/*.py`
 
 - 改後端 schema
   - `backend/app/schemas/*.py`
+  - inventory 管理回傳型別：`backend/app/schemas/inventory.py`
 
 - 改資料查寫
   - `backend/app/repositories/*.py`
@@ -178,7 +202,28 @@
 - 改批次貼上匯入
   - inventory：`frontend/src/components/inventory/BatchImportPanel.vue`
   - production：`frontend/src/pages/ProductionPage.vue` + `frontend/src/components/production/ProductionBatchImportModal.vue`
+  - production domain 邏輯：`frontend/src/composables/useProductionBatchImport.ts`
+  - production editor/autocomplete 邏輯：`frontend/src/composables/useProductionEditorState.ts`
+  - production 純解析 / 相似比對規則：`frontend/src/utils/productionBatchImport.ts`
+  - production autocomplete 共用 UI：`frontend/src/components/UiAutocompleteInput.vue`
   - 如需新主檔建立，還要同步 `frontend/src/api/masterClient.ts` 與 `backend/app/routers/master.py`
+  - 若是退料貼上預覽要先擋 `datecode/編號` 無庫存，還要同步看 `frontend/src/api/inventoryClient.ts` 的 `listIdentifierStockSummary()` 與 `backend/app/services/inventory_service.py`
+
+- 改收退料帳目管理 / 撤回 / 重算
+  - `frontend/src/pages/MasterPage.vue`
+  - `frontend/src/components/master/TransactionAccountListPanel.vue`
+  - `frontend/src/components/master/TransactionAccountDetailPanel.vue`
+  - `frontend/src/api/inventoryClient.ts`
+  - `frontend/src/types.ts`
+  - `backend/app/routers/inventory.py`
+  - `backend/app/services/inventory_service.py`
+  - `backend/app/repositories/inventory_repository.py`
+  - `backend/app/schemas/inventory.py`
+
+- 改治具資料品質問題跳轉規則
+  - `frontend/src/components/master/FixtureQualityPanel.vue`
+  - `frontend/src/pages/MasterPage.vue`
+  - `frontend/src/pages/SearchWorkspacePage.vue`
 
 - 改收退料報表匯出 / preview
   - `frontend/src/components/inventory/InventoryExportPanel.vue`
@@ -203,6 +248,12 @@
   - repository：`backend/app/repositories/search_repository.py`
   - schema：`backend/app/schemas/search.py`
   - migration / index：`backend/alembic/versions/0011_search_indexes.py`
+
+- 改新手教學入口位置 / shell 協調
+  - `frontend/src/App.vue`
+  - `frontend/src/components/app/AppTopbar.vue`
+  - `frontend/src/components/app/AppMobileDrawer.vue`
+  - `frontend/src/onboarding.ts`
 
 - 改 migration compatibility / schema patch 退場
   - runtime gate：`backend/app/core/migrations.py`

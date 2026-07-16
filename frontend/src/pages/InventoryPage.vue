@@ -60,6 +60,7 @@ const recentReceiptRows = computed(() =>
       tx.items.map((item, index) => ({
         id: `${tx.id}-${index}`,
         transaction_no: tx.transaction_no,
+        fixture_id: item.fixture_id,
         fixture_code: item.fixture_code,
         identifier: item.identifier,
         quantity: item.quantity
@@ -76,6 +77,7 @@ const recentReturnRows = computed(() =>
       tx.items.map((item, index) => ({
         id: `${tx.id}-${index}`,
         transaction_no: tx.transaction_no,
+        fixture_id: item.fixture_id,
         fixture_code: item.fixture_code,
         identifier: item.identifier,
         quantity: item.quantity
@@ -116,6 +118,7 @@ const overviewRows = computed(() =>
         transaction_no: tx.transaction_no,
         occurred_at: tx.occurred_at,
         created_by: tx.created_by,
+        fixture_id: item.fixture_id,
         fixture_code: item.fixture_code,
         fixture_name: item.fixture_name,
         ownership_type: item.ownership_type,

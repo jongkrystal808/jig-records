@@ -31,8 +31,7 @@ import type { OnboardingFlowId } from "@/onboarding";
 
 const SESSION_KEY = "jig-record-session";
 const CUSTOMER_KEY = "jig-record-customer-id";
-const ONBOARDING_KEY = "jig-record-onboarding-seen";
-const RELEASE_NOTICE_KEY_PREFIX = "jig-record-release-notice";
+const RELEASE_NOTICE_KEY = "jig-record-release-notice";
 
 const route = useRoute();
 const router = useRouter();
@@ -48,7 +47,6 @@ const mobileMenuOpen = ref(false);
 const batchModalOpen = ref(false);
 const exportModalOpen = ref(false);
 const releaseNoticeOpen = ref(false);
-const pendingOnboardingAfterReleaseNotice = ref(false);
 
 const currentCustomerId = computed(() => selectedCustomerId.value ?? undefined);
 const selectedCustomer = computed(() => customers.value.find((row) => row.id === selectedCustomerId.value) ?? null);
@@ -130,52 +128,14 @@ function resolveOnboardingCustomerId(): number | null {
   return customers.value[0]?.id ?? null;
 }
 
-async function runFirstLoginOnboarding(): Promise<void> {
-  if (releaseNoticeOpen.value) {
-    pendingOnboardingAfterReleaseNotice.value = true;
-    return;
-  }
-  const hasSeenOnboarding = sessionStorage.getItem(ONBOARDING_KEY) === "1";
-  if (hasSeenOnboarding) {
-    return;
-  }
-  const onboardingCustomerId = resolveOnboardingCustomerId();
-  if (onboardingCustomerId === null) {
-    pushToast("目前沒有可用客戶，無法自動啟動新手導覽。", "warning");
-    return;
-  }
-  selectedCustomerId.value = onboardingCustomerId;
-  onboardingPickerOpen.value = true;
-  sessionStorage.setItem(ONBOARDING_KEY, "1");
-  if (route.path !== "/search") {
-    await router.push({ path: "/search" });
-  }
-}
-
-function resolveReleaseNoticeAudienceKey(): string | null {
-  if (!authSession.value) {
-    return null;
-  }
-  if (authSession.value.user?.id !== undefined) {
-    return `user-${authSession.value.user.id}`;
-  }
-  return authSession.value.mode === "guest" ? "guest" : authSession.value.display_name;
-}
-
-function getReleaseNoticeStorageKey(audienceKey: string): string {
-  return `${RELEASE_NOTICE_KEY_PREFIX}:${audienceKey}`;
-}
-
 function maybeOpenReleaseNotice(): boolean {
   if (!currentReleaseNotice.versionId) {
     return false;
   }
-  const audienceKey = resolveReleaseNoticeAudienceKey();
-  if (!audienceKey) {
+  if (!authSession.value) {
     return false;
   }
-  const storageKey = getReleaseNoticeStorageKey(audienceKey);
-  if (localStorage.getItem(storageKey) === currentReleaseNotice.versionId) {
+  if (localStorage.getItem(RELEASE_NOTICE_KEY) === currentReleaseNotice.versionId) {
     return false;
   }
   releaseNoticeOpen.value = true;
@@ -183,15 +143,10 @@ function maybeOpenReleaseNotice(): boolean {
 }
 
 function closeReleaseNotice(): void {
-  const audienceKey = resolveReleaseNoticeAudienceKey();
-  if (audienceKey && currentReleaseNotice.versionId) {
-    localStorage.setItem(getReleaseNoticeStorageKey(audienceKey), currentReleaseNotice.versionId);
+  if (currentReleaseNotice.versionId) {
+    localStorage.setItem(RELEASE_NOTICE_KEY, currentReleaseNotice.versionId);
   }
   releaseNoticeOpen.value = false;
-  if (pendingOnboardingAfterReleaseNotice.value) {
-    pendingOnboardingAfterReleaseNotice.value = false;
-    void runFirstLoginOnboarding();
-  }
 }
 
 function stopOnboarding(): void {
@@ -205,6 +160,18 @@ function stopOnboarding(): void {
   if (route.query.tour === "1") {
     void router.replace({ path: route.path, query: {} });
   }
+}
+
+function openOnboardingPicker(): void {
+  const onboardingCustomerId = resolveOnboardingCustomerId();
+  if (onboardingCustomerId === null) {
+    pushToast("目前沒有可用客戶，無法啟動教學。", "warning");
+    return;
+  }
+  selectedCustomerId.value = onboardingCustomerId;
+  onboardingActive.value = false;
+  onboardingStepIndex.value = 0;
+  onboardingPickerOpen.value = true;
 }
 
 async function syncOnboardingRoute(): Promise<void> {
@@ -349,12 +316,7 @@ async function login(): Promise<void> {
     });
     await loadCustomers();
     await loadTopbarStats();
-    const openedReleaseNotice = maybeOpenReleaseNotice();
-    if (openedReleaseNotice) {
-      pendingOnboardingAfterReleaseNotice.value = true;
-    } else {
-      await runFirstLoginOnboarding();
-    }
+    maybeOpenReleaseNotice();
     pushToast(`已登入：${authSession.value.display_name}`, "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "登入失敗", "error");
@@ -381,7 +343,6 @@ async function guestEntry(): Promise<void> {
 function logout(): void {
   resetSession();
   releaseNoticeOpen.value = false;
-  pendingOnboardingAfterReleaseNotice.value = false;
   topbarAlerts.value = [];
   recentTodayTransactions.value = [];
   todayReceiptQty.value = 0;
@@ -539,6 +500,7 @@ onBeforeUnmount(() => {
           @toggle-mobile-menu="mobileMenuOpen = !mobileMenuOpen"
           @open-batch="openBatchImport"
           @open-export="openInventoryExport"
+          @open-onboarding="openOnboardingPicker"
           @update:selected-customer-id="selectedCustomerId = $event"
           @toggle-more-menu="moreMenuOpen = !moreMenuOpen"
           @open-menu-route="openMenuRoute"
@@ -561,6 +523,7 @@ onBeforeUnmount(() => {
           @update:selected-customer-id="selectedCustomerId = $event"
           @open-batch="openBatchImport"
           @open-export="openInventoryExport"
+          @open-onboarding="openOnboardingPicker"
           @open-menu-route="openMenuRoute"
           @logout="logout"
         />

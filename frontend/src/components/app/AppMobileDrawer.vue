@@ -25,6 +25,7 @@ const emit = defineEmits<{
   "update:selectedCustomerId": [value: number | null];
   openBatch: [];
   openExport: [];
+  openOnboarding: [];
   openMenuRoute: [path: string, disabled: boolean];
   logout: [];
 }>();
@@ -41,6 +42,11 @@ function handleOpenBatch(): void {
 
 function handleOpenExport(): void {
   emit("openExport");
+  emit("close");
+}
+
+function handleOpenOnboarding(): void {
+  emit("openOnboarding");
   emit("close");
 }
 
@@ -70,6 +76,7 @@ function handleOpenExport(): void {
       </label>
       <button v-if="canOperateInventory" class="primary-btn receipt-btn mobile-receipt-btn" type="button" @click="handleOpenBatch">治具收/退料</button>
       <button class="primary-btn receipt-btn mobile-receipt-btn" type="button" @click="handleOpenExport">收退料資訊匯出</button>
+      <button class="outline-btn drawer-link" type="button" @click="handleOpenOnboarding">新手教學</button>
       <button
         v-for="entry in menuEntries"
         :key="`mobile-${entry.to}`"

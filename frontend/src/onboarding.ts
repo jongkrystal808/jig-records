@@ -43,7 +43,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='search-onboarding-entry']",
         title: "右下角固定保留教學入口",
-        description: "第一次登入後會自動提示教學。之後若要再看其他教學分類，就從這個入口重新打開教學選單。",
+        description: "要看教學時，從這個入口打開教學選單即可。之後若要重看其他教學分類，也從這裡重新開啟。",
         placement: "bottom"
       },
       {

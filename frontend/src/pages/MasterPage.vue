@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import { api } from "@/api";
 import { authSession, customers, onboardingActive, onboardingPickerOpen, onboardingStepIndex, selectedCustomerId } from "@/appState";
 import MasterDetailPanel from "@/components/master/MasterDetailPanel.vue";
 import MasterListPanel from "@/components/master/MasterListPanel.vue";
+import FixtureQualityPanel from "@/components/master/FixtureQualityPanel.vue";
+import TransactionAccountDetailPanel from "@/components/master/TransactionAccountDetailPanel.vue";
+import TransactionAccountListPanel from "@/components/master/TransactionAccountListPanel.vue";
 import UiSummaryCards from "@/components/UiSummaryCards.vue";
 import { pushToast } from "@/toastState";
-import type { AppUser, Customer, Fixture, MachineModel, Station } from "@/types";
+import type { AppUser, Customer, Fixture, FixtureQualityReport, MachineModel, MaterialTransaction, Station } from "@/types";
 import { fallbackText } from "@/utils/display";
 
-type MasterTab = "fixture" | "model" | "station" | "customer" | "user";
+type MasterTab = "fixture" | "model" | "station" | "customer" | "user" | "ledger" | "quality";
 
 const router = useRouter();
+const route = useRoute();
 
 const fixtures = ref<Fixture[]>([]);
 const models = ref<MachineModel[]>([]);
@@ -21,6 +25,8 @@ const stations = ref<Station[]>([]);
 const users = ref<AppUser[]>([]);
 const customerRows = ref<Customer[]>([]);
 const customerAssignedUsers = ref<AppUser[]>([]);
+const ledgerTransactions = ref<MaterialTransaction[]>([]);
+const fixtureQualityReport = ref<FixtureQualityReport | null>(null);
 
 const activeTab = ref<MasterTab>("fixture");
 const keyword = ref("");
@@ -29,12 +35,18 @@ const loading = ref(false);
 const saving = ref(false);
 const listPage = ref(1);
 const listPageSize = 10;
+const ledgerKeyword = ref("");
+const ledgerTypeFilter = ref<"all" | "receipt" | "return">("all");
+const ledgerPage = ref(1);
+const ledgerPageSize = 12;
+const ledgerProcessing = ref(false);
 
 const selectedFixtureId = ref<number | null>(null);
 const selectedModelId = ref<number | null>(null);
 const selectedStationId = ref<number | null>(null);
 const selectedUserId = ref<number | null>(null);
 const selectedCustomerRowId = ref<number | null>(null);
+const selectedLedgerTransactionId = ref<number | null>(null);
 
 const fixtureForm = ref(makeEmptyFixtureForm());
 const modelForm = ref(makeEmptyModelForm());
@@ -46,10 +58,17 @@ const moreMenuOpen = ref(false);
 const moreMenuRef = ref<HTMLElement | null>(null);
 const canManageUsers = computed(() => authSession.value?.role === "admin");
 const canManageCustomers = computed(() => authSession.value?.role === "admin");
+const canManageLedger = computed(() => authSession.value?.role === "admin");
+const canManageQuality = computed(() => authSession.value?.role === "admin");
 const selectedCustomerScopeCount = computed(() => customerFormAssignedUserIds.value.length);
 const customerFormAssignedUserIds = ref<number[]>([]);
 const selectedGlobalCustomer = computed(() => customers.value.find((row) => row.id === selectedCustomerId.value) ?? null);
-const canCreateInCurrentTab = computed(() => activeTab.value !== "customer" || canManageCustomers.value);
+const canCreateInCurrentTab = computed(() => {
+  if (activeTab.value === "ledger" || activeTab.value === "quality") {
+    return false;
+  }
+  return activeTab.value !== "customer" || canManageCustomers.value;
+});
 
 function normalizeText(value: string | null | undefined): string {
   return (value ?? "").trim();
@@ -97,8 +116,30 @@ const tabTitleMap: Record<MasterTab, string> = {
   model: "機種",
   station: "站點",
   user: "使用者",
-  customer: "客戶"
+  customer: "客戶",
+  ledger: "收退料帳目",
+  quality: "治具資料品質"
 };
+
+const TAB_PATH_MAP: Record<MasterTab, string> = {
+  fixture: "/master/fixtures",
+  model: "/master/models",
+  station: "/master/stations",
+  customer: "/master/customers",
+  user: "/master/users",
+  ledger: "/master/ledger",
+  quality: "/master/quality"
+};
+
+function resolveMasterTabFromPath(pathname: string): MasterTab {
+  if (pathname === "/master/models") return "model";
+  if (pathname === "/master/stations") return "station";
+  if (pathname === "/master/customers") return "customer";
+  if (pathname === "/master/users") return "user";
+  if (pathname === "/master/ledger") return "ledger";
+  if (pathname === "/master/quality") return "quality";
+  return "fixture";
+}
 
 const searchPlaceholder = computed(() => `搜尋${tabTitleMap[activeTab.value]}編號 / 名稱`);
 
@@ -168,11 +209,25 @@ const filteredUsers = computed(() =>
   })
 );
 
+const filteredLedgerTransactions = computed(() =>
+  ledgerTransactions.value.filter((row) => {
+    const normalizedKeyword = ledgerKeyword.value.trim().toLowerCase();
+    const byKeyword =
+      !normalizedKeyword ||
+      row.transaction_no.toLowerCase().includes(normalizedKeyword) ||
+      row.created_by.toLowerCase().includes(normalizedKeyword) ||
+      row.items.some((item) => item.fixture_code.toLowerCase().includes(normalizedKeyword));
+    const byType = ledgerTypeFilter.value === "all" || row.transaction_type === ledgerTypeFilter.value;
+    return byKeyword && byType;
+  })
+);
+
 const currentRows = computed(() => {
   if (activeTab.value === "fixture") return filteredFixtures.value;
   if (activeTab.value === "model") return filteredModels.value;
   if (activeTab.value === "station") return filteredStations.value;
   if (activeTab.value === "customer") return filteredCustomers.value;
+  if (activeTab.value === "ledger") return filteredLedgerTransactions.value;
   return filteredUsers.value;
 });
 
@@ -182,6 +237,10 @@ const pagedModelRows = computed(() => filteredModels.value.slice((listPage.value
 const pagedStationRows = computed(() => filteredStations.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
 const pagedCustomerRows = computed(() => filteredCustomers.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
 const pagedUserRows = computed(() => filteredUsers.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
+const ledgerTotalPages = computed(() => Math.max(1, Math.ceil(filteredLedgerTransactions.value.length / ledgerPageSize)));
+const pagedLedgerRows = computed(() =>
+  filteredLedgerTransactions.value.slice((ledgerPage.value - 1) * ledgerPageSize, ledgerPage.value * ledgerPageSize)
+);
 
 const emptyStateMessage = computed(() => {
   if (loading.value) return "資料載入中...";
@@ -195,6 +254,9 @@ const selectedModel = computed(() => models.value.find((row) => row.id === selec
 const selectedStation = computed(() => stations.value.find((row) => row.id === selectedStationId.value) ?? null);
 const selectedUser = computed(() => users.value.find((row) => row.id === selectedUserId.value) ?? null);
 const selectedCustomerRow = computed(() => customerRows.value.find((row) => row.id === selectedCustomerRowId.value) ?? null);
+const selectedLedgerTransaction = computed(
+  () => ledgerTransactions.value.find((row) => row.id === selectedLedgerTransactionId.value) ?? null
+);
 const selectedDetailLabel = computed(() =>
   fallbackText(
       selectedFixture.value?.code ||
@@ -255,6 +317,9 @@ const editorBaseline = computed(() => {
       ? { code: normalizeText(row.code), name: normalizeText(row.name), assigned_user_ids: [...row.assigned_user_ids].sort((a, b) => a - b) }
       : { code: "", name: "", assigned_user_ids: [] as number[] };
   }
+  if (activeTab.value === "ledger" || activeTab.value === "quality") {
+    return { mode: "ledger" };
+  }
   const row = selectedUser.value;
   return row
     ? {
@@ -309,6 +374,9 @@ const editorCurrentState = computed(() => {
       name: normalizeText(customerForm.value.name),
       assigned_user_ids: [...customerFormAssignedUserIds.value].sort((a, b) => a - b)
     };
+  }
+  if (activeTab.value === "ledger" || activeTab.value === "quality") {
+    return { mode: "ledger" };
   }
   return {
     username: normalizeText(userForm.value.username),
@@ -377,30 +445,42 @@ async function loadData(showLoading = true): Promise<void> {
   }
   try {
     const customerId = selectedCustomerId.value ?? undefined;
-    const [f, m, s, u, c, customerUsers] = await Promise.all([
+    const [f, m, s, u, c, customerUsers, qualityReport] = await Promise.all([
       api.listFixtures(customerId),
       customerId ? api.listModels(customerId) : Promise.resolve([]),
       customerId ? api.listStations(customerId) : Promise.resolve([]),
       canManageUsers.value ? api.listUsers() : Promise.resolve([]),
       api.listCustomers(),
-      customerId ? api.listCustomerUsers(customerId) : Promise.resolve([])
+      customerId ? api.listCustomerUsers(customerId) : Promise.resolve([]),
+      canManageQuality.value && customerId ? api.getFixtureQualityReport(customerId) : Promise.resolve(null)
     ]);
+    const ledger = canManageLedger.value && customerId ? await api.listTransactions(200, customerId) : [];
     fixtures.value = f;
     models.value = m;
     stations.value = s;
     users.value = u;
     customerRows.value = c;
     customerAssignedUsers.value = customerUsers;
+    ledgerTransactions.value = ledger;
+    fixtureQualityReport.value = qualityReport;
 
     selectedFixtureId.value = f.find((row) => row.id === selectedFixtureId.value)?.id ?? f[0]?.id ?? null;
     selectedModelId.value = m.find((row) => row.id === selectedModelId.value)?.id ?? m[0]?.id ?? null;
     selectedStationId.value = s.find((row) => row.id === selectedStationId.value)?.id ?? s[0]?.id ?? null;
     selectedUserId.value = u.find((row) => row.id === selectedUserId.value)?.id ?? u[0]?.id ?? null;
     selectedCustomerRowId.value = c.find((row) => row.id === selectedCustomerRowId.value)?.id ?? c[0]?.id ?? null;
+    selectedLedgerTransactionId.value = ledger.find((row) => row.id === selectedLedgerTransactionId.value)?.id ?? ledger[0]?.id ?? null;
     if (!canManageUsers.value && activeTab.value === "user") {
       activeTab.value = "fixture";
     }
+    if (!canManageLedger.value && activeTab.value === "ledger") {
+      activeTab.value = "fixture";
+    }
+    if (!canManageQuality.value && activeTab.value === "quality") {
+      activeTab.value = "fixture";
+    }
     listPage.value = 1;
+    ledgerPage.value = 1;
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "載入資料維護資料失敗", "error");
   } finally {
@@ -459,6 +539,9 @@ function syncEditorFromSelection(): void {
     };
     return;
   }
+  if (activeTab.value === "ledger" || activeTab.value === "quality") {
+    return;
+  }
 }
 
 function confirmDiscardChanges(message: string): boolean {
@@ -469,17 +552,19 @@ function confirmDiscardChanges(message: string): boolean {
 }
 
 function switchTab(tab: MasterTab): void {
-  if (tab === activeTab.value) {
+  if (tab === activeTab.value && route.path === TAB_PATH_MAP[tab]) {
     return;
   }
   if (!confirmDiscardChanges("目前表單有未儲存的修改，切換分頁後將會捨棄。要繼續嗎？")) {
     return;
   }
-  activeTab.value = tab;
   keyword.value = "";
   statusFilter.value = "all";
   listPage.value = 1;
-  syncEditorFromSelection();
+  ledgerKeyword.value = "";
+  ledgerTypeFilter.value = "all";
+  ledgerPage.value = 1;
+  void router.push(TAB_PATH_MAP[tab]);
 }
 
 function startCreate(): void {
@@ -516,6 +601,9 @@ function startCreateWithoutPrompt(): void {
     customerFormAssignedUserIds.value = [];
     return;
   }
+  if (activeTab.value === "ledger" || activeTab.value === "quality") {
+    return;
+  }
 }
 
 function selectRow(id: number): void {
@@ -540,7 +628,33 @@ function selectRow(id: number): void {
   if (activeTab.value === "station") selectedStationId.value = id;
   if (activeTab.value === "customer") selectedCustomerRowId.value = id;
   if (activeTab.value === "user") selectedUserId.value = id;
+  if (activeTab.value === "ledger") selectedLedgerTransactionId.value = id;
   syncEditorFromSelection();
+}
+
+function openFixtureFromQuality(fixtureId: number): void {
+  if (!confirmDiscardChanges("目前表單有未儲存的修改，切換到治具詳細資料後將會捨棄。要繼續嗎？")) {
+    return;
+  }
+  activeTab.value = "fixture";
+  keyword.value = "";
+  statusFilter.value = "all";
+  listPage.value = 1;
+  selectedFixtureId.value = fixtureId;
+  syncEditorFromSelection();
+}
+
+async function openSearchFixtureFromQuality(fixtureCode: string): Promise<void> {
+  if (!confirmDiscardChanges("目前表單有未儲存的修改，切換到查詢頁後將會捨棄。要繼續嗎？")) {
+    return;
+  }
+  await router.push({
+    name: "search",
+    query: {
+      mode: "fixture",
+      q: fixtureCode,
+    },
+  });
 }
 
 function reloadSelection(): void {
@@ -815,6 +929,36 @@ watch([activeTab, keyword, statusFilter], () => {
   listPage.value = 1;
 });
 
+function updateLedgerKeyword(value: string): void {
+  ledgerKeyword.value = value;
+}
+
+function updateLedgerTypeFilter(value: "all" | "receipt" | "return"): void {
+  ledgerTypeFilter.value = value;
+}
+
+function previousLedgerPage(): void {
+  ledgerPage.value = Math.max(1, ledgerPage.value - 1);
+}
+
+function nextLedgerPage(): void {
+  ledgerPage.value = Math.min(ledgerTotalPages.value, ledgerPage.value + 1);
+}
+
+watch([ledgerKeyword, ledgerTypeFilter], () => {
+  ledgerPage.value = 1;
+});
+
+watch(filteredLedgerTransactions, () => {
+  if (ledgerPage.value > ledgerTotalPages.value) {
+    ledgerPage.value = ledgerTotalPages.value;
+  }
+  const selectedExists = filteredLedgerTransactions.value.some((row) => row.id === selectedLedgerTransactionId.value);
+  if (!selectedExists) {
+    selectedLedgerTransactionId.value = filteredLedgerTransactions.value[0]?.id ?? null;
+  }
+});
+
 watch(currentRows, () => {
   if (listPage.value > listTotalPages.value) {
     listPage.value = listTotalPages.value;
@@ -924,6 +1068,55 @@ function handleDocumentClick(event: MouseEvent): void {
   }
 }
 
+async function reloadLedgerSelection(): Promise<void> {
+  await loadData();
+}
+
+async function recalculateLedgerState(): Promise<void> {
+  if (!selectedCustomerId.value) {
+    pushToast("請先選擇客戶。", "warning");
+    return;
+  }
+  if (!window.confirm("將依目前交易明細全量重算庫存摘要。要繼續嗎？")) {
+    return;
+  }
+  ledgerProcessing.value = true;
+  try {
+    const result = await api.recalculateInventoryState(selectedCustomerId.value);
+    await loadData(false);
+    pushToast(`重算完成：${result.fixture_count} 個治具、${result.item_count} 筆明細。`, "success");
+  } catch (err) {
+    pushToast(err instanceof Error ? err.message : "重算失敗", "error");
+  } finally {
+    ledgerProcessing.value = false;
+  }
+}
+
+async function reverseSelectedLedgerTransaction(): Promise<void> {
+  if (!selectedCustomerId.value) {
+    pushToast("請先選擇客戶。", "warning");
+    return;
+  }
+  if (!selectedLedgerTransaction.value) {
+    pushToast("請先選擇要撤回的案件。", "warning");
+    return;
+  }
+  const tx = selectedLedgerTransaction.value;
+  if (!window.confirm(`確定要撤回單號 ${tx.transaction_no}？這會刪除整筆${tx.transaction_type === "receipt" ? "收料" : "退料"}案件並重算庫存。`)) {
+    return;
+  }
+  ledgerProcessing.value = true;
+  try {
+    const result = await api.reverseTransaction(tx.id, selectedCustomerId.value);
+    await loadData(false);
+    pushToast(`已撤回 ${result.transaction_no}，共 ${result.item_count} 筆明細。`, "success");
+  } catch (err) {
+    pushToast(err instanceof Error ? err.message : "撤回案件失敗", "error");
+  } finally {
+    ledgerProcessing.value = false;
+  }
+}
+
 async function importCsv(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
@@ -961,6 +1154,13 @@ async function importCsv(event: Event): Promise<void> {
 }
 
 watch(activeTab, syncEditorFromSelection);
+watch(
+  () => route.path,
+  (pathname) => {
+    activeTab.value = resolveMasterTabFromPath(pathname);
+  },
+  { immediate: true }
+);
 watch(selectedCustomerId, async () => {
   await loadData();
   syncEditorFromSelection();
@@ -968,6 +1168,7 @@ watch(selectedCustomerId, async () => {
 
 onMounted(async () => {
   document.addEventListener("click", handleDocumentClick);
+  activeTab.value = resolveMasterTabFromPath(route.path);
   await loadData();
   syncEditorFromSelection();
 });
@@ -993,6 +1194,8 @@ onBeforeUnmount(() => {
           <span class="tab-group-label">系統管理</span>
           <button v-if="canManageCustomers" class="tab-btn tab-btn-admin" :class="{ active: activeTab === 'customer' }" @click="switchTab('customer')">客戶</button>
           <button v-if="canManageUsers" class="tab-btn tab-btn-admin" :class="{ active: activeTab === 'user' }" @click="switchTab('user')">使用者</button>
+          <button v-if="canManageLedger" class="tab-btn tab-btn-admin" :class="{ active: activeTab === 'ledger' }" @click="switchTab('ledger')">收退料帳目管理</button>
+          <button v-if="canManageQuality" class="tab-btn tab-btn-admin" :class="{ active: activeTab === 'quality' }" @click="switchTab('quality')">治具資料品質</button>
         </div>
       </div>
 
@@ -1007,9 +1210,9 @@ onBeforeUnmount(() => {
               {{ selectedGlobalCustomer ? "開始新手導覽" : "先選客戶再導覽" }}
             </button>
             <button class="outline-btn btn-compact toolbar-primary-action" type="button" @click="router.push({ name: 'search' })">返回搜尋</button>
-            <button class="outline-btn btn-compact toolbar-primary-action" type="button" :disabled="loading" @click="exportActiveCsv">匯出 CSV</button>
+            <button class="outline-btn btn-compact toolbar-primary-action" type="button" :disabled="loading || activeTab === 'ledger'" @click="exportActiveCsv">匯出 CSV</button>
           <div ref="moreMenuRef" class="more-menu">
-            <button class="outline-btn btn-compact more-menu-trigger" type="button" :disabled="loading" :aria-expanded="moreMenuOpen" @click.stop="toggleMoreMenu">更多</button>
+            <button class="outline-btn btn-compact more-menu-trigger" type="button" :disabled="loading || activeTab === 'ledger'" :aria-expanded="moreMenuOpen" @click.stop="toggleMoreMenu">更多</button>
             <div v-if="moreMenuOpen" class="more-menu-panel">
               <button class="more-menu-item" type="button" :disabled="loading" @click="downloadTemplate">下載範本</button>
               <button class="more-menu-item" type="button" :disabled="loading" @click="triggerImport">匯入 CSV</button>
@@ -1021,8 +1224,18 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="content-grid">
-      <MasterListPanel
+    <section class="content-grid" :class="{ 'content-grid-single': activeTab === 'quality' }">
+      <template v-if="activeTab === 'quality'">
+        <FixtureQualityPanel
+          :report="fixtureQualityReport"
+          :loading="loading"
+          @open-fixture="openFixtureFromQuality"
+          @open-search-fixture="openSearchFixtureFromQuality"
+        />
+      </template>
+
+      <template v-else-if="activeTab !== 'ledger'">
+        <MasterListPanel
         :active-tab="activeTab"
         :tab-title="tabTitleMap[activeTab]"
         :current-rows-length="currentRows.length"
@@ -1050,9 +1263,9 @@ onBeforeUnmount(() => {
         :on-select-row="selectRow"
         :on-previous-page="previousListPage"
         :on-next-page="nextListPage"
-      />
+        />
 
-      <MasterDetailPanel
+        <MasterDetailPanel
         :active-tab="activeTab"
         :tab-title="tabTitleMap[activeTab]"
         :is-create-mode="isCreateMode"
@@ -1081,7 +1294,33 @@ onBeforeUnmount(() => {
         :on-reset-user-password="resetUserPassword"
         :on-toggle-assigned-user="toggleAssignedUser"
         :on-has-assigned-user="hasAssignedUser"
-      />
+        />
+      </template>
+
+      <template v-else>
+        <TransactionAccountListPanel
+          :rows="pagedLedgerRows"
+          :selected-transaction-id="selectedLedgerTransactionId"
+          :loading="loading"
+          :keyword="ledgerKeyword"
+          :transaction-type="ledgerTypeFilter"
+          :page="ledgerPage"
+          :total-pages="ledgerTotalPages"
+          :on-keyword-change="updateLedgerKeyword"
+          :on-transaction-type-change="updateLedgerTypeFilter"
+          :on-select-row="selectRow"
+          :on-previous-page="previousLedgerPage"
+          :on-next-page="nextLedgerPage"
+        />
+
+        <TransactionAccountDetailPanel
+          :transaction="selectedLedgerTransaction"
+          :processing="ledgerProcessing"
+          :on-reload="reloadLedgerSelection"
+          :on-recalculate="recalculateLedgerState"
+          :on-reverse="reverseSelectedLedgerTransaction"
+        />
+      </template>
     </section>
   </div>
 </template>
@@ -1286,6 +1525,10 @@ onBeforeUnmount(() => {
   gap: 8px;
   min-height: 0;
   overflow: hidden;
+}
+
+.content-grid-single {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .detail-panel,

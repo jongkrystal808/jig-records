@@ -114,7 +114,7 @@ class SearchService:
         transactions = self.inventory_service.list_transactions(
             recent_transaction_limit,
             customer_id=customer_id,
-            fixture_code=fixture["code"],
+            fixture_id=fixture_id,
         )
         return {
             "fixture": fixture,

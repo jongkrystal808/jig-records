@@ -1,29 +1,41 @@
-from datetime import datetime, time, timezone
+from collections import Counter
+from datetime import datetime, time, timedelta, timezone
 from io import BytesIO
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.repositories.inventory_repository import InventoryRepository
 from backend.app.schemas.common import CsvImportPayload
 from backend.app.schemas.inventory import StockTransactionCreate
+from backend.app.services.audit_service import AuditService
 from backend.app.services.production_service import ProductionService
 from backend.app.utils.csv_tools import parse_csv_bytes, render_csv_text
 from backend.app.utils.identifier_rules import resolve_identifier_query
 
 
+class DuplicateTransactionError(ValueError):
+    def __init__(self, *, transaction_id: int, message: str) -> None:
+        super().__init__(message)
+        self.transaction_id = transaction_id
+
+
 class InventoryService:
+    DUPLICATE_GUARD_WINDOW = timedelta(minutes=2)
+
     def __init__(self, db: Session) -> None:
         self.db = db
         self.repo = InventoryRepository(db)
         self.capacity_service = ProductionService(db)
+        self.audit = AuditService(db)
 
-    def receipt(self, payload: StockTransactionCreate, *, commit: bool = True) -> None:
-        self._apply_transaction(payload, "receipt", commit=commit)
+    def receipt(self, payload: StockTransactionCreate, *, commit: bool = True, allow_duplicate: bool = False) -> None:
+        self._apply_transaction(payload, "receipt", commit=commit, allow_duplicate=allow_duplicate)
 
-    def return_material(self, payload: StockTransactionCreate, *, commit: bool = True) -> None:
-        self._apply_transaction(payload, "return", commit=commit)
+    def return_material(self, payload: StockTransactionCreate, *, commit: bool = True, allow_duplicate: bool = False) -> None:
+        self._apply_transaction(payload, "return", commit=commit, allow_duplicate=allow_duplicate)
 
     @staticmethod
     def _normalize_occurred_at(value: datetime | None) -> datetime:
@@ -31,26 +43,100 @@ class InventoryService:
         tzinfo = source.tzinfo or timezone.utc
         return datetime.combine(source.date(), time.min, tzinfo=tzinfo)
 
-    def _apply_transaction(self, payload: StockTransactionCreate, transaction_type: str, *, commit: bool = True) -> None:
-        occurred_at = self._normalize_occurred_at(payload.occurred_at)
-        transaction = self.repo.create_transaction(
+    @staticmethod
+    def _normalize_created_by(value: str) -> str:
+        return value.strip()
+
+    @staticmethod
+    def _build_duplicate_signature_items(payload: StockTransactionCreate) -> Counter[tuple[int, str, int, str]]:
+        return Counter(
+            (
+                item.fixture_id,
+                item.identifier or "",
+                item.quantity,
+                item.ownership_type,
+            )
+            for item in payload.items
+        )
+
+    @staticmethod
+    def _format_duplicate_elapsed(reference_time: datetime, now: datetime) -> str:
+        normalized_reference = reference_time if reference_time.tzinfo is not None else reference_time.replace(tzinfo=timezone.utc)
+        delta_seconds = max(1, int((now - normalized_reference).total_seconds()))
+        if delta_seconds < 60:
+            return f"{delta_seconds} 秒前"
+        minutes = delta_seconds // 60
+        return f"{minutes} 分鐘前"
+
+    def _ensure_not_duplicate_transaction(self, payload: StockTransactionCreate, transaction_type: str) -> None:
+        created_by = self._normalize_created_by(payload.created_by)
+        now = datetime.now(tz=timezone.utc)
+        candidates = self.repo.find_recent_transactions_by_signature(
             customer_id=payload.customer_id,
             transaction_type=transaction_type,
-            occurred_at=occurred_at,
-            created_by=payload.created_by.strip(),
+            created_by=created_by,
             transaction_no=payload.transaction_no,
-            note=payload.note,
+            created_at_from=now - self.DUPLICATE_GUARD_WINDOW,
         )
+        if not candidates:
+            return
+
+        expected_items = self._build_duplicate_signature_items(payload)
+        for transaction in candidates:
+            actual_items = Counter(
+                (
+                    item.fixture_id,
+                    item.identifier or "",
+                    item.quantity,
+                    item.ownership_type,
+                )
+                for item in transaction.items
+            )
+            if actual_items != expected_items:
+                continue
+            elapsed = self._format_duplicate_elapsed(transaction.created_at, now)
+            raise DuplicateTransactionError(
+                transaction_id=transaction.id,
+                message=f"發現 {elapsed} 已有相同交易，是否重複送出？",
+            )
+
+    def _apply_transaction(
+        self,
+        payload: StockTransactionCreate,
+        transaction_type: str,
+        *,
+        commit: bool = True,
+        allow_duplicate: bool = False,
+    ) -> None:
+        if not allow_duplicate:
+            self._ensure_not_duplicate_transaction(payload, transaction_type)
+        occurred_at = self._normalize_occurred_at(payload.occurred_at)
+        normalized_created_by = self._normalize_created_by(payload.created_by)
+        try:
+            transaction = self.repo.create_transaction(
+                customer_id=payload.customer_id,
+                transaction_type=transaction_type,
+                occurred_at=occurred_at,
+                created_by=normalized_created_by,
+                transaction_no=payload.transaction_no,
+                note=payload.note,
+            )
+        except IntegrityError as exc:
+            self.db.rollback()
+            normalized_transaction_no = (payload.transaction_no or "").strip()
+            if normalized_transaction_no:
+                raise ValueError(f"單號 {normalized_transaction_no} 已存在，若要重複送出請先修改單號") from exc
+            raise
         changed_station_model_pairs: set[tuple[int, int]] = set()
 
-        for item in payload.items:
+        for item_index, item in enumerate(payload.items, start=1):
             fixture = self.repo.get_fixture(item.fixture_id)
             if fixture is None:
                 self.db.rollback()
-                raise ValueError(f"治具不存在：ID {item.fixture_id}")
+                raise ValueError(f"第 {item_index} 筆：治具不存在：ID {item.fixture_id}")
             if fixture.customer_id != payload.customer_id:
                 self.db.rollback()
-                raise ValueError(f"治具 {fixture.code} 不屬於目前客戶 {payload.customer_id}")
+                raise ValueError(f"第 {item_index} 筆：治具 {fixture.code} 不屬於目前客戶 {payload.customer_id}")
 
             if transaction_type == "return":
                 identifier = item.identifier or ""
@@ -60,10 +146,12 @@ class InventoryService:
                 )
                 if available_qty <= 0:
                     self.db.rollback()
-                    raise ValueError(f"識別碼 {identifier} 不在目前庫存中")
+                    raise ValueError(f"第 {item_index} 筆：治具 {fixture.code} 的識別碼 {identifier} 不在目前庫存中")
                 if available_qty < item.quantity:
                     self.db.rollback()
-                    raise ValueError(f"識別碼 {identifier} 剩餘可退 {available_qty} pcs，申請退料 {item.quantity} pcs")
+                    raise ValueError(
+                        f"第 {item_index} 筆：治具 {fixture.code} 的識別碼 {identifier} 剩餘可退 {available_qty} pcs，申請退料 {item.quantity} pcs"
+                    )
 
             self.repo.add_transaction_item(
                 transaction_id=transaction.id,
@@ -83,7 +171,7 @@ class InventoryService:
                 next_qty = summary.stock_qty - delta_quantity
                 if next_qty < 0:
                     self.db.rollback()
-                    raise ValueError(f"治具 {fixture.code} 目前庫存 {summary.stock_qty} pcs，不足以退料 {delta_quantity} pcs")
+                    raise ValueError(f"第 {item_index} 筆：治具 {fixture.code} 目前庫存 {summary.stock_qty} pcs，不足以退料 {delta_quantity} pcs")
                 summary.stock_qty = next_qty
                 summary.returned_qty += delta_quantity
 
@@ -119,6 +207,7 @@ class InventoryService:
         limit: int,
         customer_id: int | None = None,
         *,
+        fixture_id: int | None = None,
         transaction_type: str | None = None,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
@@ -131,6 +220,7 @@ class InventoryService:
         return self.repo.list_transactions(
             limit,
             customer_id=customer_id,
+            fixture_id=fixture_id,
             transaction_type=transaction_type,
             date_from=date_from,
             date_to=date_to,
@@ -352,45 +442,95 @@ class InventoryService:
             ],
         )
 
+    def reverse_transaction(self, transaction_id: int, *, customer_id: int | None = None, actor=None) -> dict:
+        transaction = self.repo.get_transaction(transaction_id, customer_id=customer_id)
+        if transaction is None:
+            raise ValueError(f"transaction {transaction_id} not found")
+        item_count = len(transaction.items)
+        total_quantity = sum(int(item.quantity) for item in transaction.items)
+        summary = {
+            "transaction_id": transaction.id,
+            "transaction_no": transaction.transaction_no,
+            "transaction_type": transaction.transaction_type,
+            "item_count": item_count,
+            "total_quantity": total_quantity,
+        }
+        self.repo.delete_transaction(transaction)
+        self.recalculate_inventory_state(customer_id=transaction.customer_id)
+        action_label = "收料" if summary["transaction_type"] == "receipt" else "退料"
+        self.audit.record(
+            customer_id=transaction.customer_id,
+            entity_type="material_transaction",
+            entity_key=summary["transaction_no"],
+            action="reverse",
+            summary=f"撤回{action_label}案件 {summary['transaction_no']}，共 {item_count} 筆明細 / {total_quantity} pcs",
+            actor=actor,
+        )
+        self.db.commit()
+        return summary
+
+    def recalculate_inventory_state(self, *, customer_id: int | None = None) -> dict:
+        fixture_rows = self.repo.list_fixtures(customer_id=customer_id)
+        aggregates = self.repo.summarize_transactions_by_fixture(customer_id=customer_id)
+        for fixture in fixture_rows:
+            summary = self.repo.get_or_create_stock_summary(fixture.id)
+            level = self.repo.get_or_create_stock_level(fixture.id)
+            aggregate = aggregates.get(fixture.id)
+            summary.stock_qty = 0 if aggregate is None else int(aggregate["stock_qty"])
+            summary.returned_qty = 0 if aggregate is None else int(aggregate["returned_qty"])
+            summary.last_transaction_at = None if aggregate is None else aggregate["last_transaction_at"]
+            self.repo.set_stock_status(summary, level.min_stock_qty, touch_last_transaction=False)
+
+        return {
+            "customer_id": customer_id,
+            "fixture_count": len(fixture_rows),
+            "transaction_count": self.repo.count_transactions(customer_id=customer_id),
+            "item_count": self.repo.count_transaction_items(customer_id=customer_id),
+        }
+
     def import_transactions_csv(self, customer_id: int, operator_name: str, payload: CsvImportPayload) -> int:
         rows = parse_csv_bytes(payload.content.encode("utf-8"))
         imported_count = 0
-        for row in rows:
-            fixture_code = row.get("fixture_code", "")
-            transaction_type = row.get("transaction_type", "")
-            ownership_type = row.get("ownership_type", "")
-            if not fixture_code or transaction_type not in {"receipt", "return"}:
-                continue
-            fixture = self.repo.get_fixture_by_code(fixture_code, customer_id=customer_id)
-            if fixture is None:
-                raise ValueError(f"fixture code {fixture_code} not found")
-            if fixture.customer_id != customer_id:
-                raise ValueError(f"fixture {fixture_code} does not belong to customer {customer_id}")
-            quantity = int(row.get("quantity", "0") or "0")
-            if quantity <= 0:
-                continue
-            occurred_at_raw = row.get("occurred_at", "")
-            occurred_at = self._normalize_occurred_at(datetime.fromisoformat(occurred_at_raw)) if occurred_at_raw else None
-            payload_row = StockTransactionCreate(
-                customer_id=customer_id,
-                created_by=row.get("created_by", "") or operator_name,
-                occurred_at=occurred_at,
-                transaction_no=row.get("transaction_no", "") or None,
-                note=row.get("note", "") or None,
-                items=[
-                    {
-                        "fixture_id": fixture.id,
-                        "ownership_type": ownership_type or "self_purchased",
-                        "identifier": row.get("identifier", "") or None,
-                        "quantity": quantity,
-                        "note": row.get("note", "") or None,
-                    }
-                ],
-            )
-            if transaction_type == "receipt":
-                self.receipt(payload_row, commit=False)
-            else:
-                self.return_material(payload_row, commit=False)
-            imported_count += 1
+        for row_index, row in enumerate(rows, start=2):
+            try:
+                fixture_code = row.get("fixture_code", "")
+                transaction_type = row.get("transaction_type", "")
+                ownership_type = row.get("ownership_type", "")
+                if not fixture_code or transaction_type not in {"receipt", "return"}:
+                    continue
+                fixture = self.repo.get_fixture_by_code(fixture_code, customer_id=customer_id)
+                if fixture is None:
+                    raise ValueError(f"找不到治具編號 {fixture_code}")
+                if fixture.customer_id != customer_id:
+                    raise ValueError(f"治具 {fixture_code} 不屬於目前客戶 {customer_id}")
+                quantity = int(row.get("quantity", "0") or "0")
+                if quantity <= 0:
+                    continue
+                occurred_at_raw = row.get("occurred_at", "")
+                occurred_at = self._normalize_occurred_at(datetime.fromisoformat(occurred_at_raw)) if occurred_at_raw else None
+                payload_row = StockTransactionCreate(
+                    customer_id=customer_id,
+                    created_by=row.get("created_by", "") or operator_name,
+                    occurred_at=occurred_at,
+                    transaction_no=row.get("transaction_no", "") or None,
+                    note=row.get("note", "") or None,
+                    items=[
+                        {
+                            "fixture_id": fixture.id,
+                            "ownership_type": ownership_type or "self_purchased",
+                            "identifier": row.get("identifier", "") or None,
+                            "quantity": quantity,
+                            "note": row.get("note", "") or None,
+                        }
+                    ],
+                )
+                if transaction_type == "receipt":
+                    self.receipt(payload_row, commit=False)
+                else:
+                    self.return_material(payload_row, commit=False)
+                imported_count += 1
+            except ValueError as exc:
+                self.db.rollback()
+                raise ValueError(f"CSV 第 {row_index} 列：{exc}") from exc
         self.db.commit()
         return imported_count

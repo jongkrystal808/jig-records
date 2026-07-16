@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import { api, fetchFixtureImageObjectUrl } from "@/api";
-import { authSession, customers, onboardingActive, onboardingPickerOpen, onboardingStepIndex, selectedCustomerId } from "@/appState";
+import { authSession, selectedCustomerId } from "@/appState";
 import InlineSpinner from "@/components/common/InlineSpinner.vue";
 import FixtureInfoPanel from "@/components/search/FixtureInfoPanel.vue";
 import ModelInfoPanel from "@/components/search/ModelInfoPanel.vue";
@@ -24,14 +24,6 @@ import { formatIdentifierStockTags } from "@/utils/display";
 
 type SearchMode = "fixture" | "model";
 type DetailTab = "info" | "edit";
-type SearchHint = {
-  key: string;
-  mode: SearchMode;
-  entityId: number;
-  title: string;
-  subtitle: string;
-  badge: string;
-};
 
 type RecentFixtureShortcut = {
   fixtureCode: string;
@@ -40,7 +32,6 @@ type RecentFixtureShortcut = {
 };
 
 const SEARCH_PAGE_SIZE = 12;
-const SMART_HINT_LIMIT = 8;
 const RECENT_SHORTCUT_TRANSACTION_LIMIT = 80;
 const FIXTURE_CONTEXT_TRANSACTION_LIMIT = 8;
 const FULL_FIXTURE_TRANSACTION_HISTORY_LIMIT = 2000;
@@ -59,6 +50,7 @@ const ModelEditForm = defineAsyncComponent({
 });
 
 const router = useRouter();
+const route = useRoute();
 const nf = new Intl.NumberFormat("zh-TW");
 
 const FIXTURE_SECTION_KEY = "search-fixture-sections";
@@ -82,7 +74,6 @@ const searchResults = ref<SearchResult[]>([]);
 const searchTotal = ref(0);
 const searchPage = ref(1);
 const searchHasMore = ref(false);
-const smartHints = ref<SearchHint[]>([]);
 const selectedResultId = ref<number | null>(null);
 const selectedFixtureContext = ref<SearchFixtureContext | null>(null);
 const selectedModelContext = ref<SearchModelContext | null>(null);
@@ -96,19 +87,8 @@ const fixtureTransactionHistoryLoading = ref(false);
 const fixtureSectionSelection = ref<string[]>(loadSelection(FIXTURE_SECTION_KEY, defaultFixtureSections));
 const modelSectionSelection = ref<string[]>(loadSelection(MODEL_SECTION_KEY, defaultModelSections));
 
-let hintTimer: ReturnType<typeof setTimeout> | null = null;
-let hintRequestId = 0;
 let detailRequestId = 0;
 let searchRequestId = 0;
-
-function startOnboarding(): void {
-  if (!selectedCustomerId.value && customers.value.length > 0) {
-    selectedCustomerId.value = customers.value[0].id;
-  }
-  onboardingActive.value = false;
-  onboardingStepIndex.value = 0;
-  onboardingPickerOpen.value = true;
-}
 
 function loadSelection(key: string, fallback: string[]): string[] {
   const raw = localStorage.getItem(key);
@@ -139,7 +119,6 @@ const panelLoading = computed(() => loading.value || detailLoading.value);
 const selectedFixture = computed(() => selectedFixtureContext.value?.fixture ?? null);
 const selectedFixtureStock = computed(() => selectedFixtureContext.value?.stock ?? null);
 const selectedModel = computed(() => selectedModelContext.value?.model ?? null);
-const resultScrollKey = computed(() => (hasActiveQuery.value && selectedResultId.value ? `${mode.value}-${selectedResultId.value}-${committedQuery.value.trim()}` : ""));
 const visibleFixtureSections = computed(() => {
   const keys = new Set(fixtureSectionSelection.value);
   return {
@@ -360,6 +339,9 @@ async function runSearch(options: { append?: boolean; preferredId?: number | nul
     } else if (!append && nextSelectedId !== null) {
       await loadSelectedContext();
     }
+    if (!append && page.items.length > 0) {
+      await scrollToResultPanel();
+    }
   } catch (err) {
     if (requestId !== searchRequestId) return;
     pushToast(err instanceof Error ? err.message : "搜尋失敗", "error");
@@ -369,41 +351,6 @@ async function runSearch(options: { append?: boolean; preferredId?: number | nul
       loadingMore.value = false;
     }
   }
-}
-
-function scheduleSmartHints(): void {
-  if (hintTimer) {
-    clearTimeout(hintTimer);
-  }
-  const q = queryDraft.value.trim();
-  if (!q || !customerId.value) {
-    smartHints.value = [];
-    return;
-  }
-  hintTimer = setTimeout(async () => {
-    const requestId = ++hintRequestId;
-    try {
-      const page = await api.globalSearch({
-        q,
-        customerId: customerId.value,
-        entityType: mode.value,
-        page: 1,
-        pageSize: SMART_HINT_LIMIT
-      });
-      if (requestId !== hintRequestId) return;
-      smartHints.value = page.items.map((item) => ({
-        key: `${item.entity_type}-${item.reference_id}`,
-        mode: item.entity_type === "model" ? "model" : "fixture",
-        entityId: item.reference_id,
-        title: item.title,
-        subtitle: item.subtitle ?? "",
-        badge: item.entity_type === "model" ? "機種" : "治具"
-      }));
-    } catch {
-      if (requestId !== hintRequestId) return;
-      smartHints.value = [];
-    }
-  }, 180);
 }
 
 function submitSearch(): void {
@@ -420,7 +367,6 @@ function clearSearch(): void {
   searchTotal.value = 0;
   searchPage.value = 1;
   searchHasMore.value = false;
-  smartHints.value = [];
   selectedResultId.value = null;
   selectedFixtureContext.value = null;
   selectedModelContext.value = null;
@@ -462,18 +408,23 @@ function persistSelections(): void {
   localStorage.setItem(DETAIL_TAB_KEY, detailTab.value);
 }
 
-function applySmartHint(hint: SearchHint): void {
-  mode.value = hint.mode;
-  queryDraft.value = hint.title;
-  committedQuery.value = hint.title;
-  detailTab.value = "info";
-  void runSearch({ preferredId: hint.entityId });
-}
-
 function applyRecentFixtureShortcut(fixtureCode: string): void {
   mode.value = "fixture";
   queryDraft.value = fixtureCode;
   committedQuery.value = fixtureCode;
+  detailTab.value = "info";
+  void runSearch();
+}
+
+function applyRouteSearchQuery(): void {
+  const routeMode = route.query.mode;
+  const routeQuery = route.query.q;
+  if ((routeMode !== "fixture" && routeMode !== "model") || typeof routeQuery !== "string" || !routeQuery.trim()) {
+    return;
+  }
+  mode.value = routeMode;
+  queryDraft.value = routeQuery.trim();
+  committedQuery.value = routeQuery.trim();
   detailTab.value = "info";
   void runSearch();
 }
@@ -533,12 +484,17 @@ async function handleModelSaved(modelId: number): Promise<void> {
   pushToast("機種資料已更新。", "success");
 }
 
-function scrollToResultPanel(): void {
-  void nextTick(() => {
-    resultPanel.value?.scrollIntoView({
-      behavior: "smooth",
-      block: "start"
-    });
+async function scrollToResultPanel(): Promise<void> {
+  await nextTick();
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  const panel = resultPanel.value;
+  if (!panel) {
+    return;
+  }
+  const top = panel.getBoundingClientRect().top + window.scrollY - 40;
+  window.scrollTo({
+    top: Math.max(0, top),
+    behavior: "smooth"
   });
 }
 
@@ -550,7 +506,6 @@ watch(mode, async () => {
     detailTab.value = "info";
   }
   persistSelections();
-  scheduleSmartHints();
   if (hasActiveQuery.value) {
     await runSearch();
   }
@@ -561,11 +516,9 @@ watch(queryDraft, () => {
   if (queryDraft.value.trim().length === 0 && committedQuery.value.length > 0) {
     committedQuery.value = "";
   }
-  scheduleSmartHints();
 });
 watch(customerId, async () => {
   await loadCustomerScopedShellData();
-  scheduleSmartHints();
   if (hasActiveQuery.value) {
     await runSearch();
     return;
@@ -578,13 +531,6 @@ watch(selectedResultId, async () => {
   fixtureTransactionHistoryLoading.value = false;
   await loadSelectedContext();
 });
-watch(resultScrollKey, (key, previous) => {
-  if (!key || key === previous) {
-    return;
-  }
-  scrollToResultPanel();
-});
-
 onMounted(async () => {
   const savedMode = localStorage.getItem(MODE_KEY);
   if (savedMode === "fixture" || savedMode === "model") {
@@ -596,13 +542,10 @@ onMounted(async () => {
   }
 
   await loadCustomerScopedShellData();
-  scheduleSmartHints();
+  applyRouteSearchQuery();
 });
 
 onBeforeUnmount(() => {
-  if (hintTimer) {
-    clearTimeout(hintTimer);
-  }
   clearSelectedFixtureImage();
 });
 </script>
@@ -613,7 +556,6 @@ onBeforeUnmount(() => {
       :mode="mode"
       :query-draft="queryDraft"
       :has-active-query="hasActiveQuery"
-      :smart-hints="smartHints"
       :recent-fixture-shortcuts="recentFixtureShortcuts"
       :section-chips="currentSectionChips"
       :active-section-keys="activeSectionKeys"
@@ -621,10 +563,8 @@ onBeforeUnmount(() => {
       @update:query-draft="queryDraft = $event"
       @submit="submitSearch"
       @clear="clearSearch"
-      @apply-hint="applySmartHint"
       @apply-recent-fixture-shortcut="applyRecentFixtureShortcut"
       @toggle-section="toggleSection"
-      @onboarding="startOnboarding"
     />
 
     <section v-if="hasActiveQuery" ref="resultPanel" class="content-grid">

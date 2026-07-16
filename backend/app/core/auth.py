@@ -154,6 +154,43 @@ def get_session_context(
     return _load_context_from_payload(payload, db)
 
 
+def try_get_session_context(authorization: str | None, db: Session | None = None) -> SessionContext | None:
+    if authorization is None or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        return None
+    try:
+        payload = _decode_session_token(token)
+        if db is not None:
+            return _load_context_from_payload(payload, db)
+        mode = payload.get("mode")
+        display_name = str(payload.get("display_name") or "訪客")
+        issued_at = int(payload.get("iat") or 0)
+        expires_at = int(payload.get("exp") or 0)
+        if mode == "guest":
+            return SessionContext(
+                mode="guest",
+                user_id=None,
+                username=None,
+                display_name=display_name,
+                role="guest",
+                issued_at=issued_at,
+                expires_at=expires_at,
+            )
+        return SessionContext(
+            mode="user",
+            user_id=None if payload.get("sub") is None else int(payload["sub"]),
+            username=None if payload.get("username") is None else str(payload.get("username")),
+            display_name=display_name,
+            role=str(payload.get("role") or "unknown"),
+            issued_at=issued_at,
+            expires_at=expires_at,
+        )
+    except HTTPException:
+        return None
+
+
 def require_permission(level: PermissionLevel):
     def dependency(session: SessionContext = Depends(get_session_context)) -> SessionContext:
         if level == "read":

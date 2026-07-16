@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiAutocompleteInput from "@/components/UiAutocompleteInput.vue";
 import UiFormActions from "@/components/UiFormActions.vue";
 import UiSectionHeader from "@/components/UiSectionHeader.vue";
 import type { Fixture, FixtureRequirementListItem, MachineModel, Station } from "@/types";
@@ -95,42 +96,28 @@ function handleRequirementFileChange(event: Event): void {
         </template>
       </UiSectionHeader>
       <form class="inline-form three" data-tour="production-mapping-form" @submit.prevent="onSaveMapping">
-        <div class="autocomplete-field">
-          <input
-            :value="mappingModelCodeInput"
-            :disabled="loading || savingMapping"
-            placeholder="輸入機種代碼"
-            autocomplete="off"
-            spellcheck="false"
-            @focus="onMappingModelFocus"
-            @click="onMappingModelFocus"
-            @input="onMappingModelInput(($event.target as HTMLInputElement).value)"
-            @blur="onMappingModelBlur"
-          />
-          <div v-if="openAutocompleteKey === 'mapping-model'" class="autocomplete-menu">
-            <button v-for="model in filteredModelSuggestions" :key="`mapping-model-${model.id}`" class="autocomplete-option" type="button" @mousedown.prevent="onSelectModelSuggestion(model.code)">
-              {{ model.code }}
-            </button>
-          </div>
-        </div>
-        <div class="autocomplete-field">
-          <input
-            :value="mappingStationCodeInput"
-            :disabled="loading || savingMapping"
-            placeholder="輸入站點代碼"
-            autocomplete="off"
-            spellcheck="false"
-            @focus="onMappingStationFocus"
-            @click="onMappingStationFocus"
-            @input="onMappingStationInput(($event.target as HTMLInputElement).value)"
-            @blur="onMappingStationBlur"
-          />
-          <div v-if="openAutocompleteKey === 'mapping-station'" class="autocomplete-menu">
-            <button v-for="station in filteredStationSuggestions" :key="`mapping-station-${station.id}`" class="autocomplete-option" type="button" @mousedown.prevent="onSelectMappingStationSuggestion(station.code)">
-              {{ station.code }}
-            </button>
-          </div>
-        </div>
+        <UiAutocompleteInput
+          :model-value="mappingModelCodeInput"
+          :disabled="loading || savingMapping"
+          placeholder="輸入機種代碼"
+          :menu-open="openAutocompleteKey === 'mapping-model'"
+          :suggestions="filteredModelSuggestions"
+          @update:model-value="onMappingModelInput"
+          @focus="onMappingModelFocus"
+          @blur="onMappingModelBlur"
+          @select="onSelectModelSuggestion"
+        />
+        <UiAutocompleteInput
+          :model-value="mappingStationCodeInput"
+          :disabled="loading || savingMapping"
+          placeholder="輸入站點代碼"
+          :menu-open="openAutocompleteKey === 'mapping-station'"
+          :suggestions="filteredStationSuggestions"
+          @update:model-value="onMappingStationInput"
+          @focus="onMappingStationFocus"
+          @blur="onMappingStationBlur"
+          @select="onSelectMappingStationSuggestion"
+        />
         <UiFormActions
           class="form-actions-full"
           :editing="editingMappingId !== null"
@@ -191,42 +178,28 @@ function handleRequirementFileChange(event: Event): void {
         <button class="primary-btn dependency-callout-btn" type="button" @click="onOpenMappingPage">前往 Mapping</button>
       </div>
       <form class="inline-form four" data-tour="production-requirement-form" @submit.prevent="onSaveRequirement">
-        <div class="autocomplete-field">
-          <input
-            :value="requirementStationCodeInput"
-            :disabled="loading || savingRequirement || requirementNeedsMapping"
-            :placeholder="requirementNeedsMapping ? '請先建立此機種的站點對應' : '輸入站點代碼'"
-            autocomplete="off"
-            spellcheck="false"
-            @focus="onRequirementStationFocus"
-            @click="onRequirementStationFocus"
-            @input="onRequirementStationInput(($event.target as HTMLInputElement).value)"
-            @blur="onRequirementStationBlur"
-          />
-          <div v-if="openAutocompleteKey === 'requirement-station'" class="autocomplete-menu">
-            <button v-for="station in filteredRequirementStationSuggestions" :key="`req-station-${station.id}`" class="autocomplete-option" type="button" @mousedown.prevent="onSelectRequirementStationSuggestion(station.code)">
-              {{ station.code }}
-            </button>
-          </div>
-        </div>
-        <div class="autocomplete-field">
-          <input
-            :value="fixtureCodeInput"
-            :disabled="loading || savingRequirement"
-            placeholder="輸入治具代碼"
-            autocomplete="off"
-            spellcheck="false"
-            @focus="onFixtureFocus"
-            @click="onFixtureFocus"
-            @input="onFixtureInput(($event.target as HTMLInputElement).value)"
-            @blur="onFixtureBlur"
-          />
-          <div v-if="openAutocompleteKey === 'fixture'" class="autocomplete-menu">
-            <button v-for="fixture in filteredFixtureSuggestions" :key="`req-fixture-${fixture.id}`" class="autocomplete-option" type="button" @mousedown.prevent="onSelectFixtureSuggestion(fixture.code)">
-              {{ fixture.code }}
-            </button>
-          </div>
-        </div>
+        <UiAutocompleteInput
+          :model-value="requirementStationCodeInput"
+          :disabled="loading || savingRequirement || requirementNeedsMapping"
+          :placeholder="requirementNeedsMapping ? '請先建立此機種的站點對應' : '輸入站點代碼'"
+          :menu-open="openAutocompleteKey === 'requirement-station'"
+          :suggestions="filteredRequirementStationSuggestions"
+          @update:model-value="onRequirementStationInput"
+          @focus="onRequirementStationFocus"
+          @blur="onRequirementStationBlur"
+          @select="onSelectRequirementStationSuggestion"
+        />
+        <UiAutocompleteInput
+          :model-value="fixtureCodeInput"
+          :disabled="loading || savingRequirement"
+          placeholder="輸入治具代碼"
+          :menu-open="openAutocompleteKey === 'fixture'"
+          :suggestions="filteredFixtureSuggestions"
+          @update:model-value="onFixtureInput"
+          @focus="onFixtureFocus"
+          @blur="onFixtureBlur"
+          @select="onSelectFixtureSuggestion"
+        />
         <input :value="requiredQty" type="number" min="1" :disabled="loading || savingRequirement" @input="onRequiredQtyChange(Number.parseInt(($event.target as HTMLInputElement).value, 10) || 1)" />
         <UiFormActions
           class="form-actions-full"
@@ -371,44 +344,6 @@ function handleRequirementFileChange(event: Event): void {
 
 .inline-form.four {
   grid-template-columns: 1fr 1.2fr 120px 120px;
-}
-
-.autocomplete-field {
-  position: relative;
-}
-
-.autocomplete-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  z-index: 20;
-  display: grid;
-  max-height: 220px;
-  overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 16px 34px rgba(17, 24, 39, 0.12);
-}
-
-.autocomplete-option {
-  border: 0;
-  border-bottom: 1px solid rgba(220, 227, 238, 0.9);
-  background: #fff;
-  padding: 9px 12px;
-  text-align: left;
-  color: #31435e;
-  font: inherit;
-  cursor: pointer;
-}
-
-.autocomplete-option:last-child {
-  border-bottom: none;
-}
-
-.autocomplete-option:hover {
-  background: #f3f7ff;
 }
 
 .sub-head {

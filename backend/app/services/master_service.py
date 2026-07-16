@@ -2,6 +2,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.auth import SessionContext
+from backend.app.repositories.inventory_repository import InventoryRepository
 from backend.app.repositories.master_repository import MasterRepository
 from backend.app.services.audit_service import AuditService
 from backend.app.schemas.common import CsvImportPayload
@@ -9,6 +10,7 @@ from backend.app.schemas.master import (
     CustomerCreate,
     CustomerUpdate,
     FixtureCreate,
+    FixtureQualityReportRead,
     FixtureUpdate,
     MachineModelCreate,
     MachineModelUpdate,
@@ -16,6 +18,7 @@ from backend.app.schemas.master import (
     StationUpdate,
 )
 from backend.app.utils.csv_tools import parse_csv_bytes, render_csv_text
+from backend.app.utils.fixture_images import resolve_fixture_image_path
 
 
 def _parse_bool(value: str, *, default: bool = True) -> bool:
@@ -29,7 +32,12 @@ class MasterService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.repo = MasterRepository(db)
+        self.inventory_repo = InventoryRepository(db)
         self.audit = AuditService(db)
+
+    def _sync_fixture_stock_status(self, fixture_id: int, min_stock_qty: int) -> None:
+        summary = self.inventory_repo.get_or_create_stock_summary(fixture_id)
+        self.inventory_repo.set_stock_status(summary, min_stock_qty, touch_last_transaction=False)
 
     @staticmethod
     def _normalize_storage_location(value: str | None) -> str | None:
@@ -145,6 +153,7 @@ class MasterService:
             level = self.repo.get_or_create_stock_level(fixture.id)
             if payload.min_stock_qty is not None:
                 level.min_stock_qty = payload.min_stock_qty
+            self._sync_fixture_stock_status(fixture.id, level.min_stock_qty)
             self.audit.record(
                 customer_id=payload.customer_id,
                 entity_type="fixture",
@@ -170,6 +179,84 @@ class MasterService:
             )
             for fixture in fixtures
         ]
+
+    def build_fixture_quality_report(self, customer_id: int) -> FixtureQualityReportRead:
+        fixtures = [fixture for fixture in self.repo.list_fixtures(customer_id=customer_id) if fixture.is_active]
+        fixture_ids = [fixture.id for fixture in fixtures]
+        stock_levels = self.repo.list_stock_levels(fixture_ids)
+        stock_summary_by_fixture = self.inventory_repo.list_stock_summary_rows(customer_id=customer_id)
+        identifier_stock_rows = self.inventory_repo.list_identifier_stock_summary_rows(customer_id=customer_id)
+        related_model_count_by_fixture = self.repo.count_related_models_by_fixture(fixture_ids)
+
+        stock_qty_by_fixture = {int(row["fixture_id"]): int(row["stock_qty"] or 0) for row in stock_summary_by_fixture}
+        identifier_stock_qty_by_fixture: dict[int, int] = {}
+        for row in identifier_stock_rows:
+            fixture_id = int(row["fixture_id"])
+            identifier_stock_qty_by_fixture[fixture_id] = identifier_stock_qty_by_fixture.get(fixture_id, 0) + int(row["stock_qty"] or 0)
+
+        rows: list[dict] = []
+        counts = {
+            "missing_name": 0,
+            "missing_storage_location": 0,
+            "missing_image": 0,
+            "missing_min_stock_qty": 0,
+            "missing_model_relation": 0,
+            "stock_mismatch": 0,
+        }
+        for fixture in fixtures:
+            fixture_name = (fixture.name or "").strip() or None
+            storage_location = self._normalize_storage_location(fixture.storage_location)
+            min_stock_qty = stock_levels.get(fixture.id).min_stock_qty if stock_levels.get(fixture.id) is not None else 0
+            stock_qty = stock_qty_by_fixture.get(fixture.id, 0)
+            identifier_stock_qty = identifier_stock_qty_by_fixture.get(fixture.id, 0)
+            related_model_count = related_model_count_by_fixture.get(fixture.id, 0)
+            has_image = resolve_fixture_image_path(fixture.code) is not None
+
+            issue_codes: list[str] = []
+            if not fixture_name:
+                issue_codes.append("missing_name")
+            if not storage_location:
+                issue_codes.append("missing_storage_location")
+            if not has_image:
+                issue_codes.append("missing_image")
+            if min_stock_qty <= 0:
+                issue_codes.append("missing_min_stock_qty")
+            if related_model_count <= 0:
+                issue_codes.append("missing_model_relation")
+            if stock_qty != identifier_stock_qty:
+                issue_codes.append("stock_mismatch")
+
+            if not issue_codes:
+                continue
+
+            for issue_code in issue_codes:
+                counts[issue_code] += 1
+            rows.append(
+                {
+                    "fixture_id": fixture.id,
+                    "fixture_code": fixture.code,
+                    "fixture_name": fixture_name,
+                    "storage_location": storage_location,
+                    "min_stock_qty": int(min_stock_qty),
+                    "stock_qty": int(stock_qty),
+                    "identifier_stock_qty": int(identifier_stock_qty),
+                    "related_model_count": int(related_model_count),
+                    "has_image": has_image,
+                    "issue_codes": issue_codes,
+                }
+            )
+
+        return FixtureQualityReportRead(
+            total_fixture_count=len(fixtures),
+            problematic_fixture_count=len(rows),
+            missing_name_count=counts["missing_name"],
+            missing_storage_location_count=counts["missing_storage_location"],
+            missing_image_count=counts["missing_image"],
+            missing_min_stock_qty_count=counts["missing_min_stock_qty"],
+            missing_model_relation_count=counts["missing_model_relation"],
+            stock_mismatch_count=counts["stock_mismatch"],
+            rows=rows,
+        )
 
     def get_fixture_detail(self, fixture_id: int, customer_id: int | None = None):
         fixture = self.repo.get_fixture(fixture_id)
@@ -211,6 +298,7 @@ class MasterService:
             level = self.repo.get_or_create_stock_level(fixture.id)
             if payload.min_stock_qty is not None:
                 level.min_stock_qty = payload.min_stock_qty
+            self._sync_fixture_stock_status(fixture.id, level.min_stock_qty)
             self.audit.record(
                 customer_id=payload.customer_id,
                 entity_type="fixture",
@@ -427,6 +515,7 @@ class MasterService:
             level = self.repo.get_or_create_stock_level(fixture.id)
             level.min_stock_qty = min_stock_qty
             fixture.is_active = is_active
+            self._sync_fixture_stock_status(fixture.id, level.min_stock_qty)
             imported_count += 1
         self.audit.record(
             customer_id=customer_id,

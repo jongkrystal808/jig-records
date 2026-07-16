@@ -48,6 +48,7 @@ const emit = defineEmits<{
   toggleMobileMenu: [];
   openBatch: [];
   openExport: [];
+  openOnboarding: [];
   "update:selectedCustomerId": [value: number | null];
   toggleMoreMenu: [];
   openMenuRoute: [path: string, disabled: boolean];
@@ -80,14 +81,19 @@ function handleCustomerChange(event: Event): void {
     <div class="topbar-primary-action">
       <button
         v-if="canOperateInventory"
-        class="primary-btn action-btn receipt-btn desktop-receipt-btn"
+        class="primary-btn action-btn compact-primary-btn"
         data-tour="inventory-entry-trigger"
         type="button"
         @click="emit('openBatch')"
       >
         治具收/退料
       </button>
-      <button class="primary-btn action-btn receipt-btn desktop-receipt-btn" data-tour="inventory-export-entry-trigger" type="button" @click="emit('openExport')">收退料資訊匯出</button>
+      <button class="primary-btn action-btn compact-primary-btn" data-tour="inventory-export-entry-trigger" type="button" @click="emit('openExport')">
+        收退料資訊匯出
+      </button>
+      <button class="outline-btn action-btn compact-outline-btn" data-tour="search-onboarding-entry" type="button" @click="emit('openOnboarding')">
+        新手教學
+      </button>
     </div>
 
     <div class="topbar-actions">
@@ -199,7 +205,9 @@ function handleCustomerChange(event: Event): void {
 
 .topbar-primary-action {
   flex: 0 0 auto;
-  margin-inline: 16px 20px;
+  margin-inline: 12px 18px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .topbar-actions {
@@ -346,16 +354,20 @@ select {
   width: auto;
 }
 
-.primary-btn.receipt-btn {
+.compact-primary-btn {
   border-color: #2f6ee5;
   background: linear-gradient(180deg, #4b89ff 0%, #2f6ee5 100%);
-  min-width: 236px;
-  min-height: 42px;
-  padding-inline: 44px;
+  min-height: 40px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 800;
 }
 
-.desktop-receipt-btn {
-  min-width: 268px;
+.compact-outline-btn {
+  min-height: 34px;
+  padding: 6px 11px;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .mobile-trigger,
@@ -407,6 +419,7 @@ select {
     order: 3;
     width: 100%;
     margin: 0;
+    justify-content: flex-end;
   }
 }
 

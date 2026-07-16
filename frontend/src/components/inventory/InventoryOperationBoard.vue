@@ -17,6 +17,7 @@ type SummaryCard = {
 type RecentRow = {
   id: string;
   transaction_no: string;
+  fixture_id: number;
   fixture_code: string;
   identifier: string | null;
   quantity: number;
@@ -127,6 +128,7 @@ function stockWaterLevelPercent(row: StockSummary): number {
           <table class="grid-table compact-table">
             <thead>
               <tr>
+                <th>治具ID</th>
                 <th>治具</th>
                 <th>datecode/編號</th>
                 <th>數量</th>
@@ -135,13 +137,14 @@ function stockWaterLevelPercent(row: StockSummary): number {
             </thead>
             <tbody>
               <tr v-for="row in currentRecentRows" :key="`recent-${mode}-${row.id}`">
+                <td>{{ row.fixture_id }}</td>
                 <td>{{ row.fixture_code || "-" }}</td>
                 <td>{{ row.identifier || "-" }}</td>
                 <td>{{ row.quantity }}</td>
                 <td>{{ row.transaction_no }}</td>
               </tr>
               <tr v-if="currentRecentRows.length === 0">
-                <td colspan="4" class="empty-cell">{{ currentRecentEmptyText }}</td>
+                <td colspan="5" class="empty-cell">{{ currentRecentEmptyText }}</td>
               </tr>
             </tbody>
           </table>

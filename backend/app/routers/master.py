@@ -11,6 +11,7 @@ from backend.app.schemas.master import (
     CustomerRead,
     CustomerUpdate,
     FixtureCreate,
+    FixtureQualityReportRead,
     FixtureRead,
     FixtureUpdate,
     MachineModelCreate,
@@ -107,6 +108,16 @@ def list_fixtures(
 ):
     customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
     return MasterService(db).list_fixtures(customer_id=customer_id)
+
+
+@router.get("/fixtures/quality", response_model=FixtureQualityReportRead, dependencies=[Depends(require_permission("manage"))])
+def get_fixture_quality_report(
+    customer_id: int = Query(...),
+    session: SessionContext = Depends(require_permission("manage")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    return MasterService(db).build_fixture_quality_report(customer_id)
 
 
 @router.get("/fixtures/export")

@@ -73,6 +73,48 @@ class InventoryRepository:
             stmt = stmt.where(Fixture.customer_id == customer_id)
         return self.db.scalar(stmt)
 
+    def list_fixtures(self, customer_id: int | None = None) -> list[Fixture]:
+        stmt = select(Fixture).order_by(Fixture.code.asc())
+        if customer_id is not None:
+            stmt = stmt.where(Fixture.customer_id == customer_id)
+        return list(self.db.scalars(stmt))
+
+    def get_transaction(self, transaction_id: int, customer_id: int | None = None) -> MaterialTransaction | None:
+        stmt = select(MaterialTransaction).where(MaterialTransaction.id == transaction_id)
+        if customer_id is not None:
+            stmt = stmt.where(MaterialTransaction.customer_id == customer_id)
+        return self.db.scalar(stmt)
+
+    def find_recent_transactions_by_signature(
+        self,
+        *,
+        customer_id: int,
+        transaction_type: str,
+        created_by: str,
+        transaction_no: str | None,
+        created_at_from: datetime,
+    ) -> list[MaterialTransaction]:
+        normalized_transaction_no = (transaction_no or "").strip()
+        if not normalized_transaction_no:
+            return []
+
+        stmt = (
+            select(MaterialTransaction)
+            .where(
+                MaterialTransaction.customer_id == customer_id,
+                MaterialTransaction.transaction_type == transaction_type,
+                MaterialTransaction.created_by == created_by,
+                MaterialTransaction.transaction_no == normalized_transaction_no,
+                MaterialTransaction.created_at >= created_at_from,
+            )
+            .order_by(MaterialTransaction.created_at.desc(), MaterialTransaction.id.desc())
+        )
+        return list(self.db.scalars(stmt))
+
+    def delete_transaction(self, transaction: MaterialTransaction) -> None:
+        self.db.delete(transaction)
+        self.db.flush()
+
     def get_or_create_stock_level(self, fixture_id: int) -> FixtureStockLevel:
         level = self.db.get(FixtureStockLevel, fixture_id)
         if level:
@@ -91,14 +133,21 @@ class InventoryRepository:
         self.db.flush()
         return summary
 
-    def set_stock_status(self, summary: FixtureStockSummary, min_stock_qty: int) -> None:
+    def set_stock_status(
+        self,
+        summary: FixtureStockSummary,
+        min_stock_qty: int,
+        *,
+        touch_last_transaction: bool = True,
+    ) -> None:
         if summary.stock_qty <= 0:
             summary.stock_status = "out_of_stock"
         elif summary.stock_qty < min_stock_qty:
             summary.stock_status = "low_stock"
         else:
             summary.stock_status = "normal"
-        summary.last_transaction_at = datetime.now(tz=timezone.utc)
+        if touch_last_transaction:
+            summary.last_transaction_at = datetime.now(tz=timezone.utc)
 
     def get_available_identifier_qty(self, *, fixture_id: int, identifier: str) -> int:
         stmt = (
@@ -249,6 +298,7 @@ class InventoryRepository:
         limit: int,
         customer_id: int | None = None,
         *,
+        fixture_id: int | None = None,
         transaction_type: str | None = None,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
@@ -266,6 +316,8 @@ class InventoryRepository:
         )
         if customer_id is not None:
             tx_id_stmt = tx_id_stmt.where(MaterialTransaction.customer_id == customer_id)
+        if fixture_id is not None:
+            tx_id_stmt = tx_id_stmt.where(MaterialTransactionItem.fixture_id == fixture_id)
         if transaction_type:
             tx_id_stmt = tx_id_stmt.where(MaterialTransaction.transaction_type == transaction_type)
         if date_from is not None:
@@ -308,6 +360,8 @@ class InventoryRepository:
             .where(MaterialTransactionItem.transaction_id.in_(tx_ids))
             .order_by(MaterialTransactionItem.id.asc())
         )
+        if fixture_id is not None:
+            item_stmt = item_stmt.where(MaterialTransactionItem.fixture_id == fixture_id)
         item_rows = [dict(row._mapping) for row in self.db.execute(item_stmt).all()]
         item_map: dict[int, list[dict]] = {}
         for row in item_rows:
@@ -407,3 +461,58 @@ class InventoryRepository:
         if not clauses:
             return stmt
         return stmt.where(or_(*clauses))
+
+    def summarize_transactions_by_fixture(self, customer_id: int | None = None) -> dict[int, dict]:
+        stock_qty_expr = func.coalesce(
+            func.sum(
+                case(
+                    (MaterialTransaction.transaction_type == "receipt", MaterialTransactionItem.quantity),
+                    else_=-MaterialTransactionItem.quantity,
+                )
+            ),
+            0,
+        )
+        returned_qty_expr = func.coalesce(
+            func.sum(
+                case(
+                    (MaterialTransaction.transaction_type == "return", MaterialTransactionItem.quantity),
+                    else_=0,
+                )
+            ),
+            0,
+        )
+        stmt = (
+            select(
+                MaterialTransactionItem.fixture_id.label("fixture_id"),
+                stock_qty_expr.label("stock_qty"),
+                returned_qty_expr.label("returned_qty"),
+                func.max(MaterialTransaction.occurred_at).label("last_transaction_at"),
+            )
+            .join(MaterialTransaction, MaterialTransaction.id == MaterialTransactionItem.transaction_id)
+            .group_by(MaterialTransactionItem.fixture_id)
+        )
+        if customer_id is not None:
+            stmt = stmt.where(MaterialTransaction.customer_id == customer_id)
+        return {
+            int(row.fixture_id): {
+                "stock_qty": int(row.stock_qty or 0),
+                "returned_qty": int(row.returned_qty or 0),
+                "last_transaction_at": row.last_transaction_at,
+            }
+            for row in self.db.execute(stmt).all()
+        }
+
+    def count_transactions(self, customer_id: int | None = None) -> int:
+        stmt = select(func.count(MaterialTransaction.id))
+        if customer_id is not None:
+            stmt = stmt.where(MaterialTransaction.customer_id == customer_id)
+        return int(self.db.scalar(stmt) or 0)
+
+    def count_transaction_items(self, customer_id: int | None = None) -> int:
+        stmt = select(func.count(MaterialTransactionItem.id)).join(
+            MaterialTransaction,
+            MaterialTransaction.id == MaterialTransactionItem.transaction_id,
+        )
+        if customer_id is not None:
+            stmt = stmt.where(MaterialTransaction.customer_id == customer_id)
+        return int(self.db.scalar(stmt) or 0)

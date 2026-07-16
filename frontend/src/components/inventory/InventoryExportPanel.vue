@@ -33,7 +33,7 @@ const identifier = ref("");
 const selectedColumns = computed(() =>
   reportType.value === "summary"
     ? ["治具編號", "收料數", "退料數", "總數"]
-    : ["日期", "單號", "治具編號", "datecode/編號", "數量"]
+    : ["治具ID", "治具編號", "識別碼", "收料數", "退料數", "總數"]
 );
 const usingCustomScope = computed(() => scopeMode.value === "custom");
 

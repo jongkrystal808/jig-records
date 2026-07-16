@@ -1,8 +1,10 @@
 import type {
+  InventoryRecalculateResult,
   IdentifierStockSummary,
   MaterialTransaction,
   StockSummary,
   StockTransactionCreate,
+  TransactionReverseResult,
   TransactionQueryFilters
 } from "@/types";
 
@@ -115,7 +117,29 @@ export const inventoryApi = {
   createReceipt(payload: StockTransactionCreate) {
     return request<void>("/inventory/receipts", { method: "POST", body: JSON.stringify(payload) });
   },
+  createReceiptWithOptions(payload: StockTransactionCreate, options?: { confirmDuplicate?: boolean }) {
+    const params = new URLSearchParams();
+    if (options?.confirmDuplicate) {
+      params.set("confirm_duplicate", "true");
+    }
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return request<void>(`/inventory/receipts${suffix}`, { method: "POST", body: JSON.stringify(payload) });
+  },
   createReturn(payload: StockTransactionCreate) {
     return request<void>("/inventory/returns", { method: "POST", body: JSON.stringify(payload) });
+  },
+  createReturnWithOptions(payload: StockTransactionCreate, options?: { confirmDuplicate?: boolean }) {
+    const params = new URLSearchParams();
+    if (options?.confirmDuplicate) {
+      params.set("confirm_duplicate", "true");
+    }
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return request<void>(`/inventory/returns${suffix}`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  reverseTransaction(transactionId: number, customerId: number) {
+    return request<TransactionReverseResult>(`/inventory/admin/transactions/${transactionId}?customer_id=${customerId}`, { method: "DELETE" });
+  },
+  recalculateInventoryState(customerId: number) {
+    return request<InventoryRecalculateResult>(`/inventory/admin/recalculate?customer_id=${customerId}`, { method: "POST" });
   }
 };

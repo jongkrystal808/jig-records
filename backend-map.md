@@ -71,6 +71,13 @@
   - backend app logger 初始化
   - standalone CLI 補 stdout handler
   - 有既有 handler 時只把 `backend.app` logger 拉到 `INFO`
+  - `logs/audit.log` rotating file handler 初始化
+  - request / domain audit file log 共用寫入入口
+
+- `backend/app/core/audit_logging.py`
+  - FastAPI request-level audit middleware
+  - 每次 request 寫入 `request_audit`
+  - 記錄 actor / request / response / error metadata
 
 - `backend/app/core/schema_patch.py`
   - legacy DB runtime patch 保底
@@ -151,6 +158,7 @@
 - `PUT /master/customers/{customer_id}`
 - `GET /master/customers/{customer_id}/users`
 - `GET /master/fixtures`
+- `GET /master/fixtures/quality`
 - `POST /master/fixtures`
 - `PUT /master/fixtures/{fixture_id}`
 - `GET /master/fixtures/export`
@@ -177,6 +185,8 @@
 - `fixtures.code` 使用 `(customer_id, code)` 唯一鍵
 - `fixtures.responsible_user_id` 候選名單來自該客戶已指派使用者
 - fixture image 採檔案式讀取，不走 DB 圖片表
+- admin 可用 `GET /master/fixtures/quality` 檢查名稱、儲位、圖片、水位、機種關聯與 identifier/summary 庫存一致性
+- 品質報表目前只回傳資料與 issue code；問題類型對應的跳轉規則由前端 `FixtureQualityPanel.vue` 決定
 
 #### 前端入口
 
@@ -185,6 +195,8 @@
 
 - `frontend/src/pages/MasterPage.vue`
   - fixture / model / station / customer / user 維護
+  - admin 治具資料品質檢查
+  - `/master/*` route-to-tab 同步
   - 主資料 CSV 匯入匯出
 
 - `frontend/src/pages/InventoryPage.vue`
@@ -198,6 +210,7 @@
 - `frontend/src/pages/SearchWorkspacePage.vue`
   - fixture 圖片載入
   - fixture / model lookup 基礎資料
+  - 接收其他頁面帶入的 `mode` / `q` route query
 
 ### Inventory
 
@@ -239,6 +252,10 @@
 - overview 查詢支援 `transaction_type` / `date_from` / `date_to` / `fixture_code` / `transaction_no` / `identifier` / `created_by`
 - 報表匯出支援 `summary|detail` 與 `xlsx|txt`
 - 匯出 preview 由 `/inventory/transactions/export-report/preview` 提供
+- `BatchImportPanel` 預覽現在會同時使用：
+  - `GET /inventory/stock`
+  - `GET /inventory/identifier-stock-summary`
+  來顯示 `目前庫存` 與 `交易後庫存`
 - onboarding 教學模式不會新增後端 tutorial endpoint；只是前端不真正送出 `/receipts` 或 `/returns`
 
 #### 前端入口
@@ -255,6 +272,8 @@
   - 批次貼上匯入
   - 手動 `Tab` 分隔輸入
   - 新治具即時建立
+  - 預覽表 `目前庫存` / `交易後庫存`
+  - 同批重複 `fixture + identifier` 的逐列累計預覽
   - 前端寫入前 `identifier` 正規化改走 `frontend/src/utils/identifier.ts`
   - 教學模式試跑
 
@@ -379,6 +398,8 @@
 - 限 `read` 權限
 - 受 customer scope 保護
 - 目前主要記錄主資料異動、使用者異動、匯入事件
+- `AuditService.record()` 會同步寫 DB `audit_logs` 與 `logs/audit.log`
+- 全域 request audit 不經 `/audit/logs` API 暴露，而是直接落檔到 `logs/audit.log`
 
 #### 前端入口
 

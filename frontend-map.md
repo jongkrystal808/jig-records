@@ -17,7 +17,14 @@
   - `/search` -> `SearchWorkspacePage.vue`
   - `/inventory` -> `InventoryPage.vue`
   - `/inventory/overview` -> `InventoryPage.vue`
-  - `/master` -> `MasterPage.vue`
+  - `/master` -> redirect `/master/fixtures`
+- `/master/fixtures` -> `MasterPage.vue`
+- `/master/models` -> `MasterPage.vue`
+- `/master/stations` -> `MasterPage.vue`
+- `/master/customers` -> `MasterPage.vue`
+- `/master/users` -> `MasterPage.vue`
+- `/master/ledger` -> `MasterPage.vue`
+- `/master/quality` -> `MasterPage.vue`
   - `/production` -> `ProductionPage.vue`
   - `/production/mapping` -> `ProductionPage.vue`
   - `/production/requirements` -> `ProductionPage.vue`
@@ -28,6 +35,7 @@
   - 只保留 session、route、onboarding、release notice、topbar stats refresh、global modal open state
   - 不再直接承接整塊登入頁、topbar、drawer、toast template
   - 協調 onboarding 分類選單與 guided tour 播放
+  - release notice 同版本只顯示一次
 
 - `frontend/src/components/app/AppAuthScreen.vue`
   - 登入畫面
@@ -68,6 +76,7 @@
 - `frontend/src/releaseNotice.ts`
   - 版本公告內容
   - `versionId` / 顯示標題 / 摘要 / highlight 文案
+  - bump `versionId` 才會重新顯示新版提示
 
 - `frontend/src/toastState.ts`
   - 全域 toast 狀態
@@ -201,6 +210,7 @@
   - `frontend/src/App.vue`
   - `frontend/src/components/app/AppReleaseNoticeModal.vue`
   - `frontend/src/releaseNotice.ts`
+  - `frontend/src/App.vue` 負責「同版本只顯示一次」的開關條件
 
 - 改全域 toast UI
   - `frontend/src/components/app/AppToastStack.vue`
@@ -221,10 +231,10 @@
 
 - `SearchWorkspacePage.vue`
   - mode / query state
+  - route query handoff (`mode` / `q`)
   - paginated global search state
   - load more / selected result state
-  - smart hint 排序
-  - 最近收 / 退料治具快捷入口資料整理
+    - 最近收 / 退料治具快捷入口資料整理
   - fixture / model result 組裝與排序承接
   - fixture / model context lazy fetch
   - fixture 完整交易歷史的額外延遲載入
@@ -234,6 +244,7 @@
   - 查詢首頁 hero shell
   - mode switch
   - smart hints
+  - smart hints 收合 / 展開
   - 最近收 / 退料治具快捷入口
   - onboarding 入口
 
@@ -256,7 +267,7 @@
 - fixture 圖片預覽
 - datecode/編號庫存摘要
 - transaction context
-- 相近編號提示排序
+- 最近收 / 退料治具快捷入口點擊後，搜尋完成會自動捲動到結果區
 - 區塊 chip 顯示切換與 localStorage 記憶
 - 最近收 / 退料治具快捷入口
 - 首頁固定「開始新手教學」入口
@@ -285,10 +296,10 @@
 
 ### 改查詢頁時去哪裡
 
-- 改查詢 state、load more、smart hint 排序、快捷入口資料來源、selected context 載入、section persistence
+- 改查詢 state、route query handoff、load more、快捷入口資料來源、selected context 載入、section persistence、搜尋後結果區自動定位
   - `frontend/src/pages/SearchWorkspacePage.vue`
 
-- 改首頁 hero、提示卡、快捷入口、onboarding 按鈕
+- 改首頁 hero、快捷入口、onboarding 按鈕
   - `frontend/src/components/search/SearchHeroSection.vue`
 
 - 改查詢結果外殼與版面
@@ -334,9 +345,12 @@
 
 - `BatchImportPanel.vue`
   - 批次貼上解析
+  - 重複交易確認提示
   - 貼上欄支援手動輸入 `Tab` 分隔資料
   - 新治具建立
   - 相似治具確認 / 替換
+  - `目前庫存` / `交易後庫存` 預覽
+  - 同批重複 `治具 + datecode/編號` 的逐列累計庫存預覽
   - tutorial sandbox 試跑
   - 寫入前 `identifier` 正規化改走 `frontend/src/utils/identifier.ts`
   - 前端對使用者顯示 `datecode/編號` 文案
@@ -366,9 +380,11 @@
 
 - 送出收料
   - `api.createReceipt`
+  - `api.createReceiptWithOptions`
 
 - 送出退料
   - `api.createReturn`
+  - `api.createReturnWithOptions`
 
 - overview 查詢
   - `api.listTransactions`
@@ -383,6 +399,10 @@
 - 批次貼上匯入內的新治具建立
   - `api.createFixture`
 
+- 批次預覽庫存資料
+  - `api.listStock`
+  - `api.listIdentifierStockSummary`
+
 ### 改收退料頁時去哪裡
 
 - 改 page route mode、data refresh、overview filter state
@@ -394,8 +414,9 @@
 - 改 overview 篩選欄位與交易表格
   - `frontend/src/components/inventory/InventoryOverviewPanel.vue`
 
-- 改批次貼上解析規則 / `Tab` 鍵輸入行為 / 相似治具比對 / 匯入預覽表 / tutorial mode
+- 改批次貼上解析規則 / `Tab` 鍵輸入行為 / 相似治具比對 / 匯入預覽表 / 重複交易確認提示 / tutorial mode
   - `frontend/src/components/inventory/BatchImportPanel.vue`
+  - preview 純計算 helper：`frontend/src/utils/inventoryBatchPreview.ts`
 
 - 改匯出面板互動 / preview / radio 選擇樣式
   - `frontend/src/components/inventory/InventoryExportPanel.vue`
@@ -407,15 +428,17 @@
 - 子元件：
   - `frontend/src/components/master/MasterListPanel.vue`
   - `frontend/src/components/master/MasterDetailPanel.vue`
+  - `frontend/src/components/master/FixtureQualityPanel.vue`
 
 ### 目前責任分工
 
 - `MasterPage.vue`
-  - tab state
+  - route-driven tab state
   - 初始化載入
   - CRUD orchestration
   - import / export / template download
   - summary metrics
+  - admin 治具資料品質報表
 
 - `MasterListPanel.vue`
   - tab 清單
@@ -427,7 +450,7 @@
 
 ### 主要功能
 
-- fixture / model / station / customer / user 五個 tab
+- fixture / model / station / customer / user / ledger / quality tab
 - tab 清單分頁
 - 狀態篩選 / 關鍵字搜尋
 - fixture 維護 `responsible_user_id` / `min_stock_qty` / `storage_location`
@@ -439,6 +462,7 @@
 ### API 對應
 
 - 頁面初始化
+  - `api.getFixtureQualityReport`
   - `api.listFixtures`
   - `api.listModels`
   - `api.listStations`
@@ -482,11 +506,11 @@
 
 - `guest` 不可進這頁
 - `user` 可維護 fixture / model / station
-- customer / user tab 實際上是 admin 能力
+- customer / user / ledger / quality tab 實際上是 admin 能力
 
 ### 改資料維護頁時去哪裡
 
-- 改 page tab orchestration、summary、CSV 流程
+- 改 page tab orchestration、summary、CSV 流程、品質報表跳轉
   - `frontend/src/pages/MasterPage.vue`
 
 - 改列表、搜尋、分頁欄位
@@ -494,6 +518,10 @@
 
 - 改 detail 編輯表單
   - `frontend/src/components/master/MasterDetailPanel.vue`
+
+- 改治具資料品質表、問題篩選、CSV 匯出、點回治具編輯、問題類型跳轉規則
+  - `frontend/src/components/master/FixtureQualityPanel.vue`
+  - `frontend/src/pages/MasterPage.vue`
 
 ## 產能頁
 

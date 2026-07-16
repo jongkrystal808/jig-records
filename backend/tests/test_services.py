@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -25,7 +25,7 @@ from backend.app.schemas.inventory import StockTransactionCreate
 from backend.app.schemas.master import FixtureCreate
 from backend.app.schemas.production import FixtureRequirementCreate, ModelStationCreate
 from backend.app.services.auth_service import AuthService
-from backend.app.services.inventory_service import InventoryService
+from backend.app.services.inventory_service import DuplicateTransactionError, InventoryService
 from backend.app.services.master_service import MasterService
 from backend.app.services.production_service import ProductionService
 
@@ -203,6 +203,103 @@ class AuthServiceTests(ServiceTestCase):
             )
         )
         self.assertEqual(allowed.role, "admin")
+
+
+class MasterServiceTests(ServiceTestCase):
+    def test_fixture_quality_report_flags_expected_issues(self) -> None:
+        original_image_dir = settings.fixture_image_dir
+        with tempfile.TemporaryDirectory() as image_dir:
+            object.__setattr__(settings, "fixture_image_dir", image_dir)
+            try:
+                customer = self.repo.create_customer(code="C-QLT", name="Quality Customer")
+                model = self.repo.create_model(customer_id=customer.id, code="M-QLT", name="Quality Model")
+                station = self.repo.create_station(customer_id=customer.id, code="ST-QLT", name="Quality Station")
+                fixture_good = self.repo.create_fixture(
+                    customer_id=customer.id,
+                    responsible_user_id=None,
+                    code="FX-GOOD",
+                    name="Fixture Good",
+                    storage_location="A-01-01",
+                    description=None,
+                )
+                fixture_bad = self.repo.create_fixture(
+                    customer_id=customer.id,
+                    responsible_user_id=None,
+                    code="FX-BAD",
+                    name="",
+                    storage_location=None,
+                    description=None,
+                )
+                self.db.commit()
+
+                Path(image_dir, "FX-GOOD.png").write_bytes(b"fixture-image")
+                self.production_service.create_model_station(
+                    ModelStationCreate(customer_id=customer.id, model_id=model.id, station_id=station.id)
+                )
+                self.production_service.create_fixture_requirement(
+                    FixtureRequirementCreate(
+                        customer_id=customer.id,
+                        model_id=model.id,
+                        station_id=station.id,
+                        fixture_id=fixture_good.id,
+                        required_qty=1,
+                    )
+                )
+                self.inventory_service.receipt(
+                    StockTransactionCreate(
+                        customer_id=customer.id,
+                        created_by="Tester",
+                        transaction_no="QLT-0001",
+                        items=[
+                            {
+                                "fixture_id": fixture_good.id,
+                                "ownership_type": "self_purchased",
+                                "identifier": "1",
+                                "quantity": 4,
+                            },
+                            {
+                                "fixture_id": fixture_bad.id,
+                                "ownership_type": "self_purchased",
+                                "identifier": "2",
+                                "quantity": 3,
+                            },
+                        ],
+                    )
+                )
+
+                good_level = self.inventory_service.repo.get_or_create_stock_level(fixture_good.id)
+                good_level.min_stock_qty = 2
+                bad_level = self.inventory_service.repo.get_or_create_stock_level(fixture_bad.id)
+                bad_level.min_stock_qty = 0
+                bad_summary = self.db.get(FixtureStockSummary, fixture_bad.id)
+                self.assertIsNotNone(bad_summary)
+                bad_summary.stock_qty = 5
+                self.db.commit()
+
+                report = self.master_service.build_fixture_quality_report(customer.id)
+
+                self.assertEqual(report.total_fixture_count, 2)
+                self.assertEqual(report.problematic_fixture_count, 1)
+                self.assertEqual(report.missing_name_count, 1)
+                self.assertEqual(report.missing_storage_location_count, 1)
+                self.assertEqual(report.missing_image_count, 1)
+                self.assertEqual(report.missing_min_stock_qty_count, 1)
+                self.assertEqual(report.missing_model_relation_count, 1)
+                self.assertEqual(report.stock_mismatch_count, 1)
+                self.assertEqual([row.fixture_code for row in report.rows], ["FX-BAD"])
+                self.assertEqual(
+                    set(report.rows[0].issue_codes),
+                    {
+                        "missing_name",
+                        "missing_storage_location",
+                        "missing_image",
+                        "missing_min_stock_qty",
+                        "missing_model_relation",
+                        "stock_mismatch",
+                    },
+                )
+            finally:
+                object.__setattr__(settings, "fixture_image_dir", original_image_dir)
 
 
 class ApiErrorFormatTests(unittest.TestCase):
@@ -495,6 +592,22 @@ class ProductionServiceTests(ServiceTestCase):
 
 
 class InventoryServiceTests(ServiceTestCase):
+    def _make_receipt_payload(self, bundle, transaction_no: str = "12005436") -> StockTransactionCreate:
+        return StockTransactionCreate(
+            customer_id=bundle["customer"].id,
+            created_by="Tester",
+            occurred_at=datetime(2026, 6, 9, 8, 30, tzinfo=timezone.utc),
+            transaction_no=transaction_no,
+            items=[
+                {
+                    "fixture_id": bundle["fixture_a"].id,
+                    "ownership_type": "self_purchased",
+                    "identifier": "2606",
+                    "quantity": 5,
+                }
+            ],
+        )
+
     def test_receipt_identifier_is_left_padded_to_four_digits(self) -> None:
         bundle = self.seed_customer_bundle()
         payload = StockTransactionCreate(
@@ -519,20 +632,7 @@ class InventoryServiceTests(ServiceTestCase):
 
     def test_receipt_updates_stock_summary(self) -> None:
         bundle = self.seed_customer_bundle()
-        payload = StockTransactionCreate(
-            customer_id=bundle["customer"].id,
-            created_by="Tester",
-            occurred_at=datetime(2026, 6, 9, 8, 30, tzinfo=timezone.utc),
-            transaction_no="12005436",
-            items=[
-                {
-                    "fixture_id": bundle["fixture_a"].id,
-                    "ownership_type": "self_purchased",
-                    "identifier": "2606",
-                    "quantity": 5,
-                }
-            ],
-        )
+        payload = self._make_receipt_payload(bundle)
 
         self.inventory_service.receipt(payload)
         summary = self.db.get(FixtureStockSummary, bundle["fixture_a"].id)
@@ -544,6 +644,36 @@ class InventoryServiceTests(ServiceTestCase):
         transaction = self.db.scalar(select(MaterialTransaction).where(MaterialTransaction.customer_id == bundle["customer"].id))
         self.assertIsNotNone(transaction)
         self.assertEqual(transaction.transaction_no, "12005436")
+
+    def test_duplicate_transaction_guard_blocks_recent_identical_submission(self) -> None:
+        bundle = self.seed_customer_bundle()
+        payload = self._make_receipt_payload(bundle, transaction_no="DUP-0001")
+
+        self.inventory_service.receipt(payload)
+        transaction = self.db.scalar(select(MaterialTransaction).where(MaterialTransaction.transaction_no == "DUP-0001"))
+        self.assertIsNotNone(transaction)
+        transaction.created_at = datetime.now(tz=timezone.utc) - timedelta(seconds=75)
+        self.db.commit()
+
+        with self.assertRaises(DuplicateTransactionError) as exc:
+            self.inventory_service.receipt(payload)
+
+        self.assertIn("已有相同交易", str(exc.exception))
+
+    def test_duplicate_transaction_guard_confirm_still_requires_unique_transaction_no(self) -> None:
+        bundle = self.seed_customer_bundle()
+        payload = self._make_receipt_payload(bundle, transaction_no="DUP-0002")
+
+        self.inventory_service.receipt(payload)
+        transaction = self.db.scalar(select(MaterialTransaction).where(MaterialTransaction.transaction_no == "DUP-0002"))
+        self.assertIsNotNone(transaction)
+        transaction.created_at = datetime.now(tz=timezone.utc) - timedelta(seconds=30)
+        self.db.commit()
+
+        with self.assertRaises(ValueError) as exc:
+            self.inventory_service.receipt(payload, allow_duplicate=True)
+
+        self.assertEqual(str(exc.exception), "單號 DUP-0002 已存在，若要重複送出請先修改單號")
 
     def test_legacy_numeric_identifier_longer_than_four_digits_is_preserved(self) -> None:
         bundle = self.seed_customer_bundle()
@@ -708,6 +838,41 @@ class InventoryServiceTests(ServiceTestCase):
             {"RCV-LEGACY-12345"},
         )
 
+    def test_return_error_message_includes_item_index_and_identifier_context(self) -> None:
+        bundle = self.seed_customer_bundle()
+        self.inventory_service.receipt(
+            StockTransactionCreate(
+                customer_id=bundle["customer"].id,
+                created_by="Tester",
+                items=[
+                    {
+                        "fixture_id": bundle["fixture_a"].id,
+                        "ownership_type": "self_purchased",
+                        "identifier": "2606",
+                        "quantity": 1,
+                    }
+                ],
+            )
+        )
+
+        with self.assertRaises(ValueError) as exc:
+            self.inventory_service.return_material(
+                StockTransactionCreate(
+                    customer_id=bundle["customer"].id,
+                    created_by="Tester",
+                    items=[
+                        {
+                            "fixture_id": bundle["fixture_b"].id,
+                            "ownership_type": "self_purchased",
+                            "identifier": "9999",
+                            "quantity": 1,
+                        }
+                    ],
+                )
+            )
+
+        self.assertEqual(str(exc.exception), "第 1 筆：治具 FX-B 的識別碼 9999 不在目前庫存中")
+
     def test_import_transactions_csv_rolls_back_on_invalid_row(self) -> None:
         bundle = self.seed_customer_bundle()
         csv_content = (
@@ -716,12 +881,14 @@ class InventoryServiceTests(ServiceTestCase):
             "receipt,NOT-EXIST,self_purchased,2606,5,Tester,2026-06-09T08:30:00+00:00,\n"
         )
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as exc:
             self.inventory_service.import_transactions_csv(
                 bundle["customer"].id,
                 "Tester",
                 payload=CsvImportPayload(content=csv_content),
         )
+
+        self.assertEqual(str(exc.exception), "CSV 第 3 列：找不到治具編號 NOT-EXIST")
 
         self.db.rollback()
         transaction_count = self.db.scalar(

@@ -15,6 +15,7 @@ const props = defineProps<{
     transaction_no: string;
     occurred_at: string;
     created_by: string;
+    fixture_id: number;
     fixture_code: string;
     fixture_name: string;
     ownership_type: string;
@@ -102,6 +103,7 @@ function updateFilter<Key extends keyof typeof props.filters>(key: Key, value: (
           <tr>
             <th>類型</th>
             <th>單號</th>
+            <th>治具ID</th>
             <th>治具編號</th>
             <th>來源</th>
             <th>datecode/編號</th>
@@ -119,6 +121,7 @@ function updateFilter<Key extends keyof typeof props.filters>(key: Key, value: (
               </span>
             </td>
             <td>{{ row.transaction_no }}</td>
+            <td>{{ row.fixture_id }}</td>
             <td>{{ row.fixture_code }}</td>
             <td>{{ row.ownership_label }}</td>
             <td>{{ row.identifier || "-" }}</td>
@@ -128,7 +131,7 @@ function updateFilter<Key extends keyof typeof props.filters>(key: Key, value: (
             <td>{{ row.note || "-" }}</td>
           </tr>
           <tr v-if="rows.length === 0">
-            <td colspan="9" class="empty-cell">{{ loading ? "查詢中..." : "查無資料" }}</td>
+            <td colspan="10" class="empty-cell">{{ loading ? "查詢中..." : "查無資料" }}</td>
           </tr>
         </tbody>
       </table>

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import os
+from pathlib import Path
 
 
 def _normalize_environment(raw: str | None) -> str:
@@ -40,6 +41,8 @@ class Settings:
     auth_secret_key: str = os.getenv("AUTH_SECRET_KEY", "change-me-in-production")
     auth_token_ttl_seconds: int = int(os.getenv("AUTH_TOKEN_TTL_SECONDS", "86400"))
     default_admin_password: str | None = os.getenv("DEFAULT_ADMIN_PASSWORD")
+    log_dir: str = os.getenv("LOG_DIR", str(Path("logs")))
+    audit_log_filename: str = os.getenv("AUDIT_LOG_FILENAME", "audit.log")
 
     @property
     def is_production(self) -> bool:

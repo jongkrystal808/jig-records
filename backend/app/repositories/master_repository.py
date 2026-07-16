@@ -1,8 +1,9 @@
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.models.inventory import FixtureStockLevel
 from backend.app.models.master import Customer, Fixture, MachineModel, Station, User, UserCustomer
+from backend.app.models.production import FixtureRequirement
 
 
 class MasterRepository:
@@ -83,6 +84,22 @@ class MasterRepository:
         stmt = select(FixtureStockLevel).where(FixtureStockLevel.fixture_id.in_(fixture_ids))
         levels = list(self.db.scalars(stmt))
         return {level.fixture_id: level for level in levels}
+
+    def count_related_models_by_fixture(self, fixture_ids: list[int]) -> dict[int, int]:
+        if not fixture_ids:
+            return {}
+        stmt = (
+            select(
+                FixtureRequirement.fixture_id.label("fixture_id"),
+                func.count(func.distinct(FixtureRequirement.model_id)).label("related_model_count"),
+            )
+            .where(FixtureRequirement.fixture_id.in_(fixture_ids))
+            .group_by(FixtureRequirement.fixture_id)
+        )
+        return {
+            int(row.fixture_id): int(row.related_model_count or 0)
+            for row in self.db.execute(stmt).all()
+        }
 
     def update_fixture(
         self,

@@ -19,7 +19,7 @@ const emit = defineEmits<{
   "update:text": [value: string];
 }>();
 
-// Keep the shared batch-import modal shell outside ProductionPage so the page only owns parsing and submit logic.
+// Keep the shared batch-import modal shell outside ProductionPage so UI chrome stays separate from composable batch domain logic.
 </script>
 
 <template>

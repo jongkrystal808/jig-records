@@ -3,6 +3,7 @@ from fastapi import HTTPException, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import text
 
+from backend.app.core.audit_logging import register_audit_middleware
 from backend.app.core.config import settings
 from backend.app.core.database import SessionLocal
 from backend.app.core.errors import register_error_handlers
@@ -17,6 +18,7 @@ def create_app() -> FastAPI:
     verify_runtime_migration_gate(source="app_startup")
     app = FastAPI(title=settings.app_name, version=settings.app_version)
     register_error_handlers(app)
+    register_audit_middleware(app)
 
     @app.get("/", include_in_schema=False)
     def root() -> RedirectResponse:

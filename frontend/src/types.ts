@@ -25,6 +25,31 @@ export interface Fixture {
   updated_at?: string;
 }
 
+export interface FixtureQualityRow {
+  fixture_id: number;
+  fixture_code: string;
+  fixture_name: string | null;
+  storage_location: string | null;
+  min_stock_qty: number;
+  stock_qty: number;
+  identifier_stock_qty: number;
+  related_model_count: number;
+  has_image: boolean;
+  issue_codes: string[];
+}
+
+export interface FixtureQualityReport {
+  total_fixture_count: number;
+  problematic_fixture_count: number;
+  missing_name_count: number;
+  missing_storage_location_count: number;
+  missing_image_count: number;
+  missing_min_stock_qty_count: number;
+  missing_model_relation_count: number;
+  stock_mismatch_count: number;
+  rows: FixtureQualityRow[];
+}
+
 export interface MachineModel {
   id: number;
   customer_id: number;
@@ -153,6 +178,21 @@ export interface MaterialTransaction {
     quantity: number;
     note: string | null;
   }>;
+}
+
+export interface TransactionReverseResult {
+  transaction_id: number;
+  transaction_no: string;
+  transaction_type: "receipt" | "return";
+  item_count: number;
+  total_quantity: number;
+}
+
+export interface InventoryRecalculateResult {
+  customer_id: number | null;
+  fixture_count: number;
+  transaction_count: number;
+  item_count: number;
 }
 
 export interface TransactionQueryFilters {
