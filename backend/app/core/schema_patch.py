@@ -99,7 +99,6 @@ def _ensure_default_customer(connection: Connection) -> None:
 def _patch_fixture_master(connection: Connection) -> None:
     _add_column_if_missing(connection, "fixtures", "line_storage_location", "VARCHAR(120) NULL")
     _add_column_if_missing(connection, "fixtures", "department_storage_location", "VARCHAR(120) NULL")
-    _add_column_if_missing(connection, "fixtures", "storage_location", "VARCHAR(120) NULL")
     _replace_single_code_unique_with_customer_code_unique(connection, "fixtures", "uq_fixtures_customer_code")
 
 

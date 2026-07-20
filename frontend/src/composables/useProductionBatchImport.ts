@@ -110,7 +110,6 @@ export function useProductionBatchImport(options: UseProductionBatchImportOption
         customer_id: options.selectedCustomerId.value,
         code: entity.inputCode,
         name: entity.inputCode,
-        storage_location: null,
         min_stock_qty: 0,
         description: "由 production 批次匯入建立"
       });

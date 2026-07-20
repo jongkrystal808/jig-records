@@ -23,7 +23,8 @@ class Fixture(Base, TimestampMixin):
     )
     code: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
-    storage_location: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    line_storage_location: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    department_storage_location: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

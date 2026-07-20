@@ -43,7 +43,6 @@ export const masterApi = {
     name: string;
     line_storage_location?: string | null;
     department_storage_location?: string | null;
-    storage_location?: string | null;
     min_stock_qty?: number | null;
     description?: string;
   }) {
@@ -58,7 +57,6 @@ export const masterApi = {
       name: string;
       line_storage_location?: string | null;
       department_storage_location?: string | null;
-      storage_location?: string | null;
       min_stock_qty?: number | null;
       description?: string;
       is_active: boolean;

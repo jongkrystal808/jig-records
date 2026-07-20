@@ -426,6 +426,53 @@ const summaryCards = computed(() => [
   { label: "使用者", value: users.value.length, meta: `啟用 ${users.value.filter((row) => row.is_active).length}` }
 ]);
 
+function clampPage(page: number, totalPages: number): number {
+  return Math.min(Math.max(1, page), totalPages);
+}
+
+function getSelectedListRowId(): number | null {
+  if (activeTab.value === "fixture") return selectedFixtureId.value;
+  if (activeTab.value === "model") return selectedModelId.value;
+  if (activeTab.value === "station") return selectedStationId.value;
+  if (activeTab.value === "customer") return selectedCustomerRowId.value;
+  if (activeTab.value === "user") return selectedUserId.value;
+  return null;
+}
+
+function focusSelectedListRow(fallbackPage = listPage.value): void {
+  const selectedId = getSelectedListRowId();
+  if (selectedId === null) {
+    listPage.value = clampPage(fallbackPage, listTotalPages.value);
+    return;
+  }
+  const selectedIndex = currentRows.value.findIndex((row) => row.id === selectedId);
+  if (selectedIndex === -1) {
+    listPage.value = clampPage(fallbackPage, listTotalPages.value);
+    return;
+  }
+  listPage.value = Math.floor(selectedIndex / listPageSize) + 1;
+}
+
+function focusSelectedLedgerRow(fallbackPage = ledgerPage.value): void {
+  if (selectedLedgerTransactionId.value === null) {
+    ledgerPage.value = clampPage(fallbackPage, ledgerTotalPages.value);
+    return;
+  }
+  const selectedIndex = filteredLedgerTransactions.value.findIndex((row) => row.id === selectedLedgerTransactionId.value);
+  if (selectedIndex === -1) {
+    ledgerPage.value = clampPage(fallbackPage, ledgerTotalPages.value);
+    return;
+  }
+  ledgerPage.value = Math.floor(selectedIndex / ledgerPageSize) + 1;
+}
+
+type LoadDataOptions = {
+  preserveListPage?: boolean;
+  preserveLedgerPage?: boolean;
+  focusSelectedListRow?: boolean;
+  focusSelectedLedgerRow?: boolean;
+};
+
 async function startDemoTour(): Promise<void> {
   if (!selectedGlobalCustomer.value) {
     pushToast("請先選擇客戶，才可以開始新手導覽。", "warning");
@@ -439,7 +486,9 @@ async function startDemoTour(): Promise<void> {
   onboardingPickerOpen.value = true;
 }
 
-async function loadData(showLoading = true): Promise<void> {
+async function loadData(showLoading = true, options: LoadDataOptions = {}): Promise<void> {
+  const previousListPage = listPage.value;
+  const previousLedgerPage = ledgerPage.value;
   if (showLoading) {
     loading.value = true;
   }
@@ -479,8 +528,20 @@ async function loadData(showLoading = true): Promise<void> {
     if (!canManageQuality.value && activeTab.value === "quality") {
       activeTab.value = "fixture";
     }
-    listPage.value = 1;
-    ledgerPage.value = 1;
+    if (options.focusSelectedListRow) {
+      focusSelectedListRow(previousListPage);
+    } else if (options.preserveListPage) {
+      listPage.value = clampPage(previousListPage, listTotalPages.value);
+    } else {
+      listPage.value = 1;
+    }
+    if (options.focusSelectedLedgerRow) {
+      focusSelectedLedgerRow(previousLedgerPage);
+    } else if (options.preserveLedgerPage) {
+      ledgerPage.value = clampPage(previousLedgerPage, ledgerTotalPages.value);
+    } else {
+      ledgerPage.value = 1;
+    }
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "載入資料維護資料失敗", "error");
   } finally {
@@ -687,14 +748,13 @@ async function saveCurrent(): Promise<void> {
     (activeTab.value === "user" && selectedUserId.value !== null);
   saving.value = true;
   try {
-    let savedUserId: number | null = null;
     if (activeTab.value === "fixture") {
       if (!selectedCustomerId.value) {
         pushToast("請先在側邊欄選擇客戶。", "warning");
         return;
       }
       if (selectedFixtureId.value) {
-        await api.updateFixture(selectedFixtureId.value, {
+        const fixture = await api.updateFixture(selectedFixtureId.value, {
           customer_id: selectedCustomerId.value,
           responsible_user_id: fixtureForm.value.responsible_user_id,
           code: fixtureForm.value.code.trim(),
@@ -705,8 +765,9 @@ async function saveCurrent(): Promise<void> {
           description: fixtureForm.value.description.trim() || undefined,
           is_active: fixtureForm.value.is_active
         });
+        selectedFixtureId.value = fixture.id;
       } else {
-        await api.createFixture({
+        const fixture = await api.createFixture({
           customer_id: selectedCustomerId.value,
           responsible_user_id: fixtureForm.value.responsible_user_id,
           code: fixtureForm.value.code.trim(),
@@ -716,6 +777,7 @@ async function saveCurrent(): Promise<void> {
           min_stock_qty: fixtureForm.value.min_stock_qty,
           description: fixtureForm.value.description.trim() || undefined
         });
+        selectedFixtureId.value = fixture.id;
       }
     } else if (activeTab.value === "model") {
       if (!selectedCustomerId.value) {
@@ -723,18 +785,20 @@ async function saveCurrent(): Promise<void> {
         return;
       }
       if (selectedModelId.value) {
-        await api.updateModel(selectedModelId.value, {
+        const model = await api.updateModel(selectedModelId.value, {
           customer_id: selectedCustomerId.value,
           code: modelForm.value.code.trim(),
           name: modelForm.value.name.trim(),
           is_active: modelForm.value.is_active
         });
+        selectedModelId.value = model.id;
       } else {
-        await api.createModel({
+        const model = await api.createModel({
           customer_id: selectedCustomerId.value,
           code: modelForm.value.code.trim(),
           name: modelForm.value.name.trim()
         });
+        selectedModelId.value = model.id;
       }
     } else if (activeTab.value === "station") {
       if (!selectedCustomerId.value) {
@@ -742,27 +806,30 @@ async function saveCurrent(): Promise<void> {
         return;
       }
       if (selectedStationId.value) {
-        await api.updateStation(selectedStationId.value, {
+        const station = await api.updateStation(selectedStationId.value, {
           customer_id: selectedCustomerId.value,
           code: stationForm.value.code.trim(),
           name: stationForm.value.name.trim(),
           is_active: stationForm.value.is_active
         });
+        selectedStationId.value = station.id;
       } else {
-        await api.createStation({
+        const station = await api.createStation({
           customer_id: selectedCustomerId.value,
           code: stationForm.value.code.trim(),
           name: stationForm.value.name.trim()
         });
+        selectedStationId.value = station.id;
       }
     } else if (activeTab.value === "customer") {
       const assignedUserIds = [...customerFormAssignedUserIds.value].sort((a, b) => a - b);
       if (selectedCustomerRowId.value) {
-        await api.updateCustomer(selectedCustomerRowId.value, {
+        const customer = await api.updateCustomer(selectedCustomerRowId.value, {
           code: customerForm.value.code.trim(),
           name: customerForm.value.name.trim(),
           assigned_user_ids: assignedUserIds
         });
+        selectedCustomerRowId.value = customer.id;
       } else {
         const customer = await api.createCustomer({
           code: customerForm.value.code.trim(),
@@ -781,7 +848,7 @@ async function saveCurrent(): Promise<void> {
           is_active: userForm.value.is_active,
           allowed_customer_ids: []
         });
-        savedUserId = user.id;
+        selectedUserId.value = user.id;
       } else {
         if (!userForm.value.password.trim()) {
           pushToast("新增使用者時必須輸入密碼。", "warning");
@@ -796,14 +863,11 @@ async function saveCurrent(): Promise<void> {
           is_active: userForm.value.is_active,
           allowed_customer_ids: []
         });
-        savedUserId = user.id;
+        selectedUserId.value = user.id;
       }
     }
-    await loadData(false);
-    if (savedUserId !== null) {
-      selectedUserId.value = savedUserId;
-      syncEditorFromSelection();
-    }
+    await loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true });
+    syncEditorFromSelection();
     pushToast(isUpdate ? "更新完成。" : "新增完成。", "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "儲存失敗", "error");
@@ -866,7 +930,7 @@ async function toggleCurrentActive(): Promise<void> {
       pushToast(activeTab.value === "customer" ? "客戶分頁不提供停用。" : "請先選擇要調整狀態的資料。", "warning");
       return;
     }
-    await loadData(false);
+    await loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true });
     syncEditorFromSelection();
     pushToast(nextActive ? "已恢復使用。" : "停用完成。", "success");
   } catch (err) {
@@ -1083,7 +1147,7 @@ async function recalculateLedgerState(): Promise<void> {
   ledgerProcessing.value = true;
   try {
     const result = await api.recalculateInventoryState(selectedCustomerId.value);
-    await loadData(false);
+    await loadData(false, { preserveListPage: true, focusSelectedLedgerRow: true });
     pushToast(`重算完成：${result.fixture_count} 個治具、${result.item_count} 筆明細。`, "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "重算失敗", "error");
@@ -1108,7 +1172,7 @@ async function reverseSelectedLedgerTransaction(): Promise<void> {
   ledgerProcessing.value = true;
   try {
     const result = await api.reverseTransaction(tx.id, selectedCustomerId.value);
-    await loadData(false);
+    await loadData(false, { preserveListPage: true, focusSelectedLedgerRow: true });
     pushToast(`已撤回 ${result.transaction_no}，共 ${result.item_count} 筆明細。`, "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "撤回案件失敗", "error");
@@ -1143,7 +1207,7 @@ async function importCsv(event: Event): Promise<void> {
       }
       result = await api.importStationsCsv(selectedCustomerId.value, content, file.name);
     }
-    await loadData(false);
+    await loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true });
     syncEditorFromSelection();
     pushToast(`匯入完成，共 ${result?.imported_count ?? 0} 筆。`, "success");
   } catch (err) {

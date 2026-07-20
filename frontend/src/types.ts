@@ -17,7 +17,6 @@ export interface Fixture {
   name: string;
   line_storage_location: string | null;
   department_storage_location: string | null;
-  storage_location: string | null;
   min_stock_qty: number;
   description: string | null;
   is_active: boolean;

@@ -12,11 +12,32 @@ def _login(client):
     return response.json()["token"]
 
 
+def _create_assigned_customer(client, headers):
+    users = client.get("/api/v2/auth/users", headers=headers)
+    assert users.status_code == 200
+    admin_user_id = next(row["id"] for row in users.json() if row["username"] == "admin")
+
+    counter = getattr(_create_assigned_customer, "_counter", 0) + 1
+    _create_assigned_customer._counter = counter
+
+    response = client.post(
+        "/api/v2/master/customers",
+        json={
+            "code": f"TEST-CUST-{counter:03d}",
+            "name": f"Test Customer {counter}",
+            "assigned_user_ids": [admin_user_id],
+        },
+        headers=headers,
+    )
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
 def test_inventory_capacity_and_search_flow(app_client):
     token = _login(app_client)
     headers = {"Authorization": f"Bearer {token}"}
 
-    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+    customer_id = _create_assigned_customer(app_client, headers)
 
     fixture = app_client.post(
         "/api/v2/master/fixtures",
@@ -81,7 +102,7 @@ def test_inventory_capacity_and_search_flow(app_client):
     )
     assert receipt.status_code == 204
 
-    stock = app_client.get("/api/v2/inventory/stock", headers=headers)
+    stock = app_client.get("/api/v2/inventory/stock", params={"customer_id": customer_id}, headers=headers)
     assert stock.status_code == 200
     assert stock.json()[0]["stock_qty"] == 6
 
@@ -94,7 +115,7 @@ def test_inventory_capacity_and_search_flow(app_client):
     payload = capacity.json()
     assert payload["max_open_station_count"] == 3
 
-    search = app_client.get("/api/v2/search/global", params={"q": "T-001"}, headers=headers)
+    search = app_client.get("/api/v2/search/global", params={"q": "T-001", "customer_id": customer_id}, headers=headers)
     assert search.status_code == 200
     payload = search.json()
     assert payload["items"][0]["entity_type"] == "fixture"
@@ -104,7 +125,7 @@ def test_inventory_capacity_and_search_flow(app_client):
 def test_fixture_reenable_recomputes_low_stock_alert(app_client):
     token = _login(app_client)
     headers = {"Authorization": f"Bearer {token}"}
-    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+    customer_id = _create_assigned_customer(app_client, headers)
 
     fixture = app_client.post(
         "/api/v2/master/fixtures",
@@ -205,7 +226,7 @@ def test_fixture_reenable_recomputes_low_stock_alert(app_client):
 def test_search_global_paginates_and_prioritizes_active_exact_matches(app_client):
     token = _login(app_client)
     headers = {"Authorization": f"Bearer {token}"}
-    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+    customer_id = _create_assigned_customer(app_client, headers)
 
     active_fixture = app_client.post(
         "/api/v2/master/fixtures",
@@ -277,7 +298,7 @@ def test_search_global_paginates_and_prioritizes_active_exact_matches(app_client
 def test_search_global_matches_fixture_and_model_codes_without_separators(app_client):
     token = _login(app_client)
     headers = {"Authorization": f"Bearer {token}"}
-    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+    customer_id = _create_assigned_customer(app_client, headers)
 
     fixture = app_client.post(
         "/api/v2/master/fixtures",
@@ -323,7 +344,7 @@ def test_search_global_matches_fixture_and_model_codes_without_separators(app_cl
 def test_search_fixture_context_loads_detail_on_demand(app_client):
     token = _login(app_client)
     headers = {"Authorization": f"Bearer {token}"}
-    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+    customer_id = _create_assigned_customer(app_client, headers)
 
     fixture = app_client.post(
         "/api/v2/master/fixtures",
@@ -405,7 +426,7 @@ def test_search_fixture_context_loads_detail_on_demand(app_client):
 def test_search_fixture_context_filters_shared_transaction_items_to_selected_fixture(app_client):
     token = _login(app_client)
     headers = {"Authorization": f"Bearer {token}"}
-    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+    customer_id = _create_assigned_customer(app_client, headers)
 
     fixture_a = app_client.post(
         "/api/v2/master/fixtures",
@@ -504,7 +525,7 @@ def test_search_fixture_context_filters_shared_transaction_items_to_selected_fix
 def test_inventory_accepts_legacy_numeric_identifier_longer_than_four_digits(app_client):
     token = _login(app_client)
     headers = {"Authorization": f"Bearer {token}"}
-    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+    customer_id = _create_assigned_customer(app_client, headers)
 
     fixture = app_client.post(
         "/api/v2/master/fixtures",
@@ -556,7 +577,7 @@ def test_inventory_transactions_still_return_legacy_identifier_history(app_clien
 
     token = _login(app_client)
     headers = {"Authorization": f"Bearer {token}"}
-    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+    customer_id = _create_assigned_customer(app_client, headers)
 
     fixture = app_client.post(
         "/api/v2/master/fixtures",
@@ -624,7 +645,7 @@ def test_inventory_transactions_still_return_legacy_identifier_history(app_clien
 def test_csv_import_flow(app_client):
     token = _login(app_client)
     headers = {"Authorization": f"Bearer {token}"}
-    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+    customer_id = _create_assigned_customer(app_client, headers)
 
     payload = {
         "filename": "fixtures.csv",
@@ -642,7 +663,7 @@ def test_csv_import_flow(app_client):
 def test_admin_can_reverse_transaction_case_and_rebuild_stock(app_client):
     token = _login(app_client)
     headers = {"Authorization": f"Bearer {token}"}
-    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+    customer_id = _create_assigned_customer(app_client, headers)
 
     fixture = app_client.post(
         "/api/v2/master/fixtures",
@@ -720,7 +741,7 @@ def test_admin_recalculate_inventory_state_repairs_summary_after_manual_change(a
 
     token = _login(app_client)
     headers = {"Authorization": f"Bearer {token}"}
-    customer_id = app_client.get("/api/v2/master/customers", headers=headers).json()[0]["id"]
+    customer_id = _create_assigned_customer(app_client, headers)
 
     fixture = app_client.post(
         "/api/v2/master/fixtures",

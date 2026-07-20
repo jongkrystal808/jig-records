@@ -1,6 +1,6 @@
 from typing import Literal
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.models.inventory import FixtureStockSummary
@@ -35,12 +35,24 @@ class SearchRepository:
             expr = func.replace(expr, separator, "")
         return expr
 
+    @staticmethod
+    def _fixture_location_expr():
+        line = func.nullif(func.trim(func.coalesce(Fixture.line_storage_location, "")), "")
+        department = func.nullif(func.trim(func.coalesce(Fixture.department_storage_location, "")), "")
+        return case(
+            (and_(line.is_not(None), department.is_not(None)), line + literal(" / ") + department),
+            (line.is_not(None), line),
+            (department.is_not(None), department),
+            else_=None,
+        )
+
     def search_fixtures(self, q: str, *, customer_id: int | None = None, limit: int = 20, offset: int = 0) -> tuple[list[dict], int]:
         normalized, prefix_pattern, contains_pattern = self._normalized_query(q)
         compact_query = self._compact_code_token(q)
         compact_prefix_pattern = f"{compact_query}%"
         compact_contains_pattern = f"%{compact_query}%"
         compact_code_expr = self._compact_code_expr(Fixture.code)
+        location_expr = self._fixture_location_expr()
         score_conditions = []
         if compact_query:
             score_conditions.extend(
@@ -55,7 +67,7 @@ class SearchRepository:
                 (func.lower(Fixture.name) == normalized, 20),
                 (func.lower(Fixture.name).like(prefix_pattern), 30),
                 (func.lower(Fixture.name).like(contains_pattern), 50),
-                (func.lower(func.coalesce(Fixture.storage_location, "")).like(contains_pattern), 60),
+                (func.lower(func.coalesce(location_expr, "")).like(contains_pattern), 60),
             ]
         )
         score_expr = case(
@@ -65,7 +77,7 @@ class SearchRepository:
         active_rank_expr = case((Fixture.is_active.is_(True), 0), else_=1).label("active_rank")
         conditions = [
             func.lower(Fixture.name).like(contains_pattern),
-            func.lower(func.coalesce(Fixture.storage_location, "")).like(contains_pattern),
+            func.lower(func.coalesce(location_expr, "")).like(contains_pattern),
         ]
         if compact_query:
             conditions.insert(0, compact_code_expr.like(compact_contains_pattern))
@@ -85,7 +97,7 @@ class SearchRepository:
                 Fixture.is_active.label("is_active"),
                 FixtureStockSummary.stock_qty.label("stock_qty"),
                 stock_status_expr,
-                Fixture.storage_location.label("location_code"),
+                location_expr.label("location_code"),
                 score_expr,
                 active_rank_expr,
             )

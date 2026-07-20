@@ -207,7 +207,7 @@ def require_permission(level: PermissionLevel):
 
 
 def get_allowed_customer_ids(session: SessionContext, db: Session) -> list[int] | None:
-    if session.role == "admin" or session.is_guest:
+    if session.is_guest:
         return None
     if session.user_id is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="customer access is not available")
@@ -230,7 +230,7 @@ def _serialize_customer(customer: Customer, db: Session) -> dict:
 
 
 def list_accessible_customers(session: SessionContext, db: Session) -> list[dict]:
-    if session.role == "admin" or session.is_guest:
+    if session.is_guest:
         stmt = select(Customer).order_by(Customer.code)
         return [_serialize_customer(customer, db) for customer in db.scalars(stmt)]
     allowed_customer_ids = get_allowed_customer_ids(session, db)
@@ -247,7 +247,7 @@ def resolve_customer_scope(
     *,
     allow_empty: bool = True,
 ) -> int | None:
-    if session.role == "admin" or session.is_guest:
+    if session.is_guest:
         return customer_id
     allowed_customer_ids = get_allowed_customer_ids(session, db) or []
     if customer_id is None:

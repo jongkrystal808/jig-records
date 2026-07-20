@@ -17,13 +17,11 @@ import {
 import AppAuthScreen from "@/components/app/AppAuthScreen.vue";
 import AppGlobalModals from "@/components/app/AppGlobalModals.vue";
 import AppMobileDrawer from "@/components/app/AppMobileDrawer.vue";
-import AppReleaseNoticeModal from "@/components/app/AppReleaseNoticeModal.vue";
 import AppToastStack from "@/components/app/AppToastStack.vue";
 import AppTopbar from "@/components/app/AppTopbar.vue";
 import GuidedTour from "@/components/common/GuidedTour.vue";
 import OnboardingFlowPicker from "@/components/common/OnboardingFlowPicker.vue";
 import { getOnboardingFlow, onboardingFlows } from "@/onboarding";
-import { currentReleaseNotice } from "@/releaseNotice";
 import { dismissToast, pushToast, toasts } from "@/toastState";
 import type { MaterialTransaction } from "@/types";
 import { formatLocalDateKey as formatDateKey } from "@/utils/date";
@@ -31,7 +29,6 @@ import type { OnboardingFlowId } from "@/onboarding";
 
 const SESSION_KEY = "jig-record-session";
 const CUSTOMER_KEY = "jig-record-customer-id";
-const RELEASE_NOTICE_KEY = "jig-record-release-notice";
 
 const route = useRoute();
 const router = useRouter();
@@ -46,7 +43,6 @@ const moreMenuOpen = ref(false);
 const mobileMenuOpen = ref(false);
 const batchModalOpen = ref(false);
 const exportModalOpen = ref(false);
-const releaseNoticeOpen = ref(false);
 
 const currentCustomerId = computed(() => selectedCustomerId.value ?? undefined);
 const selectedCustomer = computed(() => customers.value.find((row) => row.id === selectedCustomerId.value) ?? null);
@@ -88,10 +84,6 @@ const dateTimeFormatter = new Intl.DateTimeFormat("zh-TW", {
 // Keep App.vue focused on session, routing, onboarding, and shared data refresh orchestration.
 
 function closeActiveModal(): void {
-  if (releaseNoticeOpen.value) {
-    closeReleaseNotice();
-    return;
-  }
   if (exportModalOpen.value) {
     exportModalOpen.value = false;
     return;
@@ -126,27 +118,6 @@ function resolveOnboardingCustomerId(): number | null {
     return selectedCustomerId.value;
   }
   return customers.value[0]?.id ?? null;
-}
-
-function maybeOpenReleaseNotice(): boolean {
-  if (!currentReleaseNotice.versionId) {
-    return false;
-  }
-  if (!authSession.value) {
-    return false;
-  }
-  if (localStorage.getItem(RELEASE_NOTICE_KEY) === currentReleaseNotice.versionId) {
-    return false;
-  }
-  releaseNoticeOpen.value = true;
-  return true;
-}
-
-function closeReleaseNotice(): void {
-  if (currentReleaseNotice.versionId) {
-    localStorage.setItem(RELEASE_NOTICE_KEY, currentReleaseNotice.versionId);
-  }
-  releaseNoticeOpen.value = false;
 }
 
 function stopOnboarding(): void {
@@ -316,7 +287,6 @@ async function login(): Promise<void> {
     });
     await loadCustomers();
     await loadTopbarStats();
-    maybeOpenReleaseNotice();
     pushToast(`已登入：${authSession.value.display_name}`, "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "登入失敗", "error");
@@ -331,7 +301,6 @@ async function guestEntry(): Promise<void> {
     authSession.value = await api.guestEntry();
     await loadCustomers();
     await loadTopbarStats();
-    maybeOpenReleaseNotice();
     pushToast("已使用訪客入口登入", "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "訪客登入失敗", "error");
@@ -342,7 +311,6 @@ async function guestEntry(): Promise<void> {
 
 function logout(): void {
   resetSession();
-  releaseNoticeOpen.value = false;
   topbarAlerts.value = [];
   recentTodayTransactions.value = [];
   todayReceiptQty.value = 0;
@@ -442,7 +410,6 @@ onMounted(async () => {
   if (authSession.value) {
     await loadCustomers();
     await loadTopbarStats();
-    maybeOpenReleaseNotice();
   }
 });
 
@@ -539,14 +506,6 @@ onBeforeUnmount(() => {
           @close-batch="batchModalOpen = false"
           @close-export="exportModalOpen = false"
           @refresh-stats="loadTopbarStats"
-        />
-        <AppReleaseNoticeModal
-          :open="releaseNoticeOpen"
-          :version-label="currentReleaseNotice.versionLabel"
-          :title="currentReleaseNotice.title"
-          :summary="currentReleaseNotice.summary"
-          :highlights="currentReleaseNotice.highlights"
-          @close="closeReleaseNotice"
         />
       </template>
 

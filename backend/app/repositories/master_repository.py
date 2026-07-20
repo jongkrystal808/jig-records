@@ -45,7 +45,8 @@ class MasterRepository:
         responsible_user_id: int | None,
         code: str,
         name: str,
-        storage_location: str | None,
+        line_storage_location: str | None = None,
+        department_storage_location: str | None = None,
         description: str | None,
     ) -> Fixture:
         fixture = Fixture(
@@ -53,7 +54,8 @@ class MasterRepository:
             responsible_user_id=responsible_user_id,
             code=code,
             name=name,
-            storage_location=storage_location,
+            line_storage_location=line_storage_location,
+            department_storage_location=department_storage_location,
             description=description,
         )
         self.db.add(fixture)
@@ -109,7 +111,8 @@ class MasterRepository:
         responsible_user_id: int | None,
         code: str,
         name: str,
-        storage_location: str | None,
+        line_storage_location: str | None = None,
+        department_storage_location: str | None = None,
         description: str | None,
         is_active: bool,
     ) -> Fixture:
@@ -117,7 +120,8 @@ class MasterRepository:
         fixture.responsible_user_id = responsible_user_id
         fixture.code = code
         fixture.name = name
-        fixture.storage_location = storage_location
+        fixture.line_storage_location = line_storage_location
+        fixture.department_storage_location = department_storage_location
         fixture.description = description
         fixture.is_active = is_active
         self.db.flush()

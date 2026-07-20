@@ -11,7 +11,6 @@ const fixture: Fixture = {
   name: "Fixture 17",
   line_storage_location: null,
   department_storage_location: null,
-  storage_location: null,
   min_stock_qty: 3,
   description: null,
   is_active: true

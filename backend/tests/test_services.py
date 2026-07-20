@@ -22,7 +22,7 @@ from backend.app.repositories.master_repository import MasterRepository
 from backend.app.schemas.common import CsvImportPayload
 from backend.app.schemas.auth import UserCreate, UserUpdate
 from backend.app.schemas.inventory import StockTransactionCreate
-from backend.app.schemas.master import FixtureCreate
+from backend.app.schemas.master import FixtureCreate, FixtureUpdate
 from backend.app.schemas.production import FixtureRequirementCreate, ModelStationCreate
 from backend.app.services.auth_service import AuthService
 from backend.app.services.inventory_service import DuplicateTransactionError, InventoryService
@@ -59,7 +59,8 @@ class ServiceTestCase(unittest.TestCase):
             responsible_user_id=None,
             code="FX-A",
             name="Fixture A",
-            storage_location=None,
+            line_storage_location=None,
+            department_storage_location=None,
             description=None,
         )
         fixture_b = self.repo.create_fixture(
@@ -67,7 +68,8 @@ class ServiceTestCase(unittest.TestCase):
             responsible_user_id=None,
             code="FX-B",
             name="Fixture B",
-            storage_location=None,
+            line_storage_location=None,
+            department_storage_location=None,
             description=None,
         )
 
@@ -206,6 +208,40 @@ class AuthServiceTests(ServiceTestCase):
 
 
 class MasterServiceTests(ServiceTestCase):
+    def test_fixture_department_storage_location_is_preserved_when_line_is_empty(self) -> None:
+        customer = self.repo.create_customer(code="C-DEP", name="Department Storage Customer")
+        self.db.commit()
+
+        created = self.master_service.create_fixture(
+            FixtureCreate(
+                customer_id=customer.id,
+                code="FX-DEP",
+                name="Fixture Department Only",
+                line_storage_location=None,
+                department_storage_location="RD-SHELF-9",
+                min_stock_qty=1,
+            )
+        )
+
+        self.assertIsNone(created["line_storage_location"])
+        self.assertEqual(created["department_storage_location"], "RD-SHELF-9")
+
+        updated = self.master_service.update_fixture(
+            created["id"],
+            FixtureUpdate(
+                customer_id=customer.id,
+                code="FX-DEP",
+                name="Fixture Department Only",
+                line_storage_location=None,
+                department_storage_location="RD-SHELF-10",
+                min_stock_qty=1,
+                is_active=True,
+            ),
+        )
+
+        self.assertIsNone(updated["line_storage_location"])
+        self.assertEqual(updated["department_storage_location"], "RD-SHELF-10")
+
     def test_fixture_quality_report_flags_expected_issues(self) -> None:
         original_image_dir = settings.fixture_image_dir
         with tempfile.TemporaryDirectory() as image_dir:
@@ -219,7 +255,8 @@ class MasterServiceTests(ServiceTestCase):
                     responsible_user_id=None,
                     code="FX-GOOD",
                     name="Fixture Good",
-                    storage_location="A-01-01",
+                    line_storage_location="A-01-01",
+                    department_storage_location=None,
                     description=None,
                 )
                 fixture_bad = self.repo.create_fixture(
@@ -227,7 +264,8 @@ class MasterServiceTests(ServiceTestCase):
                     responsible_user_id=None,
                     code="FX-BAD",
                     name="",
-                    storage_location=None,
+                    line_storage_location=None,
+                    department_storage_location=None,
                     description=None,
                 )
                 self.db.commit()
@@ -458,7 +496,8 @@ class ProductionServiceTests(ServiceTestCase):
             responsible_user_id=None,
             code="FX-C",
             name="Fixture C",
-            storage_location=None,
+            line_storage_location=None,
+            department_storage_location=None,
             description=None,
         )
         self.db.add_all(
@@ -959,7 +998,8 @@ class ProductionApiTests(ServiceTestCase):
             responsible_user_id=None,
             code="FX-C",
             name="Fixture C",
-            storage_location=None,
+            line_storage_location=None,
+            department_storage_location=None,
             description=None,
         )
         self.db.add_all(

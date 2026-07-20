@@ -19,13 +19,14 @@ def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     existing = {
+        "fixture_columns": {column["name"] for column in inspector.get_columns("fixtures")},
         "fixtures": {index["name"] for index in inspector.get_indexes("fixtures")},
         "machine_models": {index["name"] for index in inspector.get_indexes("machine_models")},
         "stations": {index["name"] for index in inspector.get_indexes("stations")},
         "material_transactions": {index["name"] for index in inspector.get_indexes("material_transactions")},
     }
 
-    if "ix_fixtures_storage_location" not in existing["fixtures"]:
+    if "storage_location" in existing["fixture_columns"] and "ix_fixtures_storage_location" not in existing["fixtures"]:
         op.create_index("ix_fixtures_storage_location", "fixtures", ["storage_location"], unique=False)
     if "ix_machine_models_name" not in existing["machine_models"]:
         op.create_index("ix_machine_models_name", "machine_models", ["name"], unique=False)
@@ -39,6 +40,7 @@ def downgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     existing = {
+        "fixture_columns": {column["name"] for column in inspector.get_columns("fixtures")},
         "fixtures": {index["name"] for index in inspector.get_indexes("fixtures")},
         "machine_models": {index["name"] for index in inspector.get_indexes("machine_models")},
         "stations": {index["name"] for index in inspector.get_indexes("stations")},
@@ -51,5 +53,5 @@ def downgrade() -> None:
         op.drop_index("ix_stations_name", table_name="stations")
     if "ix_machine_models_name" in existing["machine_models"]:
         op.drop_index("ix_machine_models_name", table_name="machine_models")
-    if "ix_fixtures_storage_location" in existing["fixtures"]:
+    if "storage_location" in existing["fixture_columns"] and "ix_fixtures_storage_location" in existing["fixtures"]:
         op.drop_index("ix_fixtures_storage_location", table_name="fixtures")

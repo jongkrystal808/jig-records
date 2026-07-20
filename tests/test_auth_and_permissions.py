@@ -29,7 +29,7 @@ def test_auth_login_guest_and_permissions(app_client):
 
     customers = app_client.get("/api/v2/master/customers", headers={"Authorization": f"Bearer {session['token']}"})
     assert customers.status_code == 200
-    assert customers.json()
+    assert customers.json() == []
 
     guest = _guest(app_client)
     guest_customers = app_client.get("/api/v2/master/customers", headers={"Authorization": f"Bearer {guest['token']}"})
@@ -47,12 +47,21 @@ def test_auth_login_guest_and_permissions(app_client):
 def test_scoped_user_only_sees_assigned_customers(app_client):
     admin = _login(app_client)
     admin_headers = {"Authorization": f"Bearer {admin['token']}"}
-    customers = app_client.get("/api/v2/master/customers", headers=admin_headers).json()
-    customer_a = customers[0]["id"]
+    current_admin = app_client.get("/api/v2/auth/users", headers=admin_headers)
+    assert current_admin.status_code == 200
+    admin_user_id = next(row["id"] for row in current_admin.json() if row["username"] == "admin")
+
+    created_customer_a = app_client.post(
+        "/api/v2/master/customers",
+        json={"code": "CUST1", "name": "Customer 1", "assigned_user_ids": [admin_user_id]},
+        headers=admin_headers,
+    )
+    assert created_customer_a.status_code == 201
+    customer_a = created_customer_a.json()["id"]
 
     created_customer = app_client.post(
         "/api/v2/master/customers",
-        json={"code": "CUST2", "name": "Customer 2"},
+        json={"code": "CUST2", "name": "Customer 2", "assigned_user_ids": [admin_user_id]},
         headers=admin_headers,
     )
     assert created_customer.status_code == 201
@@ -76,14 +85,14 @@ def test_scoped_user_only_sees_assigned_customers(app_client):
     assign_customer = app_client.put(
         f"/api/v2/master/customers/{customer_a}",
         json={
-            "code": customers[0]["code"],
-            "name": customers[0]["name"],
-            "assigned_user_ids": [created_user.json()["id"]],
+            "code": "CUST1",
+            "name": "Customer 1",
+            "assigned_user_ids": [admin_user_id, created_user.json()["id"]],
         },
         headers=admin_headers,
     )
     assert assign_customer.status_code == 200
-    assert assign_customer.json()["assigned_user_ids"] == [created_user.json()["id"]]
+    assert assign_customer.json()["assigned_user_ids"] == [admin_user_id, created_user.json()["id"]]
 
     scoped = app_client.post("/api/v2/auth/login", json={"username": "limited", "password": "secret123"})
     assert scoped.status_code == 200
@@ -121,6 +130,41 @@ def test_scoped_user_only_sees_assigned_customers(app_client):
         headers=scoped_headers,
     )
     assert forbidden_fixture.status_code == 403
+
+
+def test_admin_only_sees_assigned_customers(app_client):
+    admin = _login(app_client)
+    admin_headers = {"Authorization": f"Bearer {admin['token']}"}
+
+    current_admin = app_client.get("/api/v2/auth/users", headers=admin_headers)
+    assert current_admin.status_code == 200
+    admin_user_id = next(row["id"] for row in current_admin.json() if row["username"] == "admin")
+
+    created_customer_a = app_client.post(
+        "/api/v2/master/customers",
+        json={"code": "CUST1", "name": "Customer 1", "assigned_user_ids": [admin_user_id]},
+        headers=admin_headers,
+    )
+    assert created_customer_a.status_code == 201
+    customer_a = created_customer_a.json()["id"]
+
+    created_customer = app_client.post(
+        "/api/v2/master/customers",
+        json={"code": "CUST2", "name": "Customer 2"},
+        headers=admin_headers,
+    )
+    assert created_customer.status_code == 201
+    customer_b = created_customer.json()["id"]
+
+    scoped_admin = _login(app_client)
+    scoped_admin_headers = {"Authorization": f"Bearer {scoped_admin['token']}"}
+
+    scoped_customers = app_client.get("/api/v2/master/customers", headers=scoped_admin_headers)
+    assert scoped_customers.status_code == 200
+    assert [row["id"] for row in scoped_customers.json()] == [customer_a]
+
+    forbidden = app_client.get("/api/v2/inventory/stock", params={"customer_id": customer_b}, headers=scoped_admin_headers)
+    assert forbidden.status_code == 403
 
 
 def test_validation_error_uses_unified_error_format(app_client):

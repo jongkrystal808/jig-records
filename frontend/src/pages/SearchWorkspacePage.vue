@@ -491,7 +491,7 @@ async function scrollToResultPanel(): Promise<void> {
   if (!panel) {
     return;
   }
-  const top = panel.getBoundingClientRect().top + window.scrollY - 40;
+  const top = panel.getBoundingClientRect().top + window.scrollY - 200;
   window.scrollTo({
     top: Math.max(0, top),
     behavior: "smooth"

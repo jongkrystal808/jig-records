@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
+import { currentReleaseNotice } from "@/releaseNotice";
 
 type SearchMode = "fixture" | "model";
 
@@ -42,6 +43,7 @@ const visibleRecentFixtureShortcuts = computed(() =>
   recentShortcutExpanded.value ? props.recentFixtureShortcuts : props.recentFixtureShortcuts.slice(0, RECENT_SHORTCUT_PREVIEW_COUNT)
 );
 const hiddenRecentShortcutCount = computed(() => Math.max(props.recentFixtureShortcuts.length - RECENT_SHORTCUT_PREVIEW_COUNT, 0));
+const hasReleaseNotice = computed(() => currentReleaseNotice.highlights.length > 0);
 
 function focusQueryInput(): void {
   queryInput.value?.focus();
@@ -64,9 +66,33 @@ watch(
 
 <template>
   <section class="hero-card" :class="{ idle: !hasActiveQuery }">
-    <div class="hero-copy">
-      <span class="eyebrow">Search Workspace</span>
-      <h1>治具 / 機種查詢</h1>
+    <div class="hero-head">
+      <div class="hero-copy">
+        <span class="eyebrow">Search Workspace</span>
+        <h1>治具 / 機種查詢</h1>
+      </div>
+      <div v-if="hasReleaseNotice" class="release-notice-anchor">
+        <button
+          class="release-notice-trigger"
+          type="button"
+          aria-label="查看更新內容"
+          title="查看更新內容"
+        >
+          i
+        </button>
+        <div class="release-notice-popover" role="note">
+          <div class="release-notice-head">
+            <span class="release-notice-version">{{ currentReleaseNotice.versionLabel }}</span>
+            <strong>{{ currentReleaseNotice.title }}</strong>
+          </div>
+          <p>{{ currentReleaseNotice.summary }}</p>
+          <ul>
+            <li v-for="highlight in currentReleaseNotice.highlights" :key="highlight">
+              {{ highlight }}
+            </li>
+          </ul>
+        </div>
+      </div>
     </div>
 
     <div class="search-toolbar">
@@ -162,6 +188,13 @@ watch(
   box-shadow: var(--shadow);
 }
 
+.hero-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
 .hero-card::before {
   content: "";
   position: absolute;
@@ -187,9 +220,17 @@ watch(
   width: min(760px, 100%);
 }
 
+.hero-card.idle .hero-head {
+  width: min(760px, 100%);
+}
+
 .hero-card.idle .mode-switch,
 .hero-card.idle .chip-row {
   justify-content: center;
+}
+
+.hero-card.idle .hero-head {
+  align-items: flex-start;
 }
 
 .eyebrow {
@@ -204,6 +245,91 @@ h1 {
   margin: 4px 0 0;
   color: #22314a;
   font-size: 24px;
+}
+
+.release-notice-anchor {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.release-notice-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid color-mix(in srgb, var(--blue) 20%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--blue-soft) 78%, white);
+  color: var(--tone-info);
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--blue) 12%, transparent);
+}
+
+.release-notice-trigger:focus-visible {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue-soft) 88%, white);
+}
+
+.release-notice-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 5;
+  width: min(360px, calc(100vw - 40px));
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--blue) 16%, var(--line));
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 40px rgba(34, 49, 74, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.release-notice-anchor:hover .release-notice-popover,
+.release-notice-anchor:focus-within .release-notice-popover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.release-notice-head {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.release-notice-version {
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.release-notice-head strong {
+  color: #22314a;
+  font-size: 14px;
+}
+
+.release-notice-popover p {
+  margin: 0 0 8px;
+  color: #5d6d89;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.release-notice-popover ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #22314a;
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .hero-copy p {
@@ -404,6 +530,10 @@ h1 {
 }
 
 @media (max-width: 960px) {
+  .hero-head {
+    align-items: flex-start;
+  }
+
   .search-toolbar {
     grid-template-columns: 1fr;
   }
