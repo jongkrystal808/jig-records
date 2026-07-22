@@ -8,12 +8,38 @@ export type OnboardingFlowId =
   | "production-mapping"
   | "production-requirements";
 
+export interface OnboardingStepNote {
+  /** "warning" 用在不可逆或需要特別小心的操作；"info" 用在一般補充說明 */
+  tone: "warning" | "info";
+  text: string;
+}
+
+export interface OnboardingStepExample {
+  /** 這個範例對應的情境標籤，例如「兩行格式」「TAB 格式」 */
+  label?: string;
+  value: string;
+}
+
+export interface OnboardingStepImage {
+  /** 對應 public/ 底下的路徑或完整網址 */
+  src: string;
+  alt: string;
+}
+
 export interface OnboardingStep {
   id: string;
   route: string;
   target: string;
   title: string;
   description: string;
+  /** 條列式子步驟或重點，會顯示在 description 下方 */
+  bullets?: string[];
+  /** 一個或多個範例值，會以等寬字體卡片呈現 */
+  example?: OnboardingStepExample[];
+  /** 需要特別提醒的注意事項，會以醒目提示框呈現 */
+  note?: OnboardingStepNote;
+  /** 搭配截圖或示意圖，幫助理解畫面位置 */
+  image?: OnboardingStepImage;
   placement?: TourPlacement;
   openBatchModal?: boolean;
   openMoreMenu?: boolean;
@@ -51,7 +77,11 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='search-mode-switch']",
         title: "先決定查治具還是查機種",
-        description: "治具模式適合追庫存、圖片、收退料與站點需求；機種模式適合追站點配置、治具需求與產能分析。先選模式，再輸入關鍵字。",
+        description: "兩種模式對應不同的資料視角，先選模式再輸入關鍵字，查到的內容會完全不同：",
+        bullets: [
+          "治具模式：適合追庫存、圖片、收退料紀錄與站點需求",
+          "機種模式：適合追站點配置、治具需求與產能分析"
+        ],
         placement: "bottom"
       },
       {
@@ -67,7 +97,15 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='search-section-chips']",
         title: "查到資料後，用區塊籤控制畫面內容",
-        description: "這裡可以切換總覽、圖片、datecode/編號庫存、收退料、相關機種、站點詳細或資料維護。新手不需要一次看全部，先開自己要的區塊即可。",
+        description: "新手不需要一次看全部，先開自己現在要的區塊即可，其餘區塊隨時可以切回來看：",
+        bullets: [
+          "總覽：基本資訊與目前狀態",
+          "圖片：治具或機種相關照片",
+          "datecode/編號庫存：目前庫存明細",
+          "收退料：這筆資料的歷史異動紀錄",
+          "相關機種／站點詳細：關聯資料",
+          "資料維護：修改主資料本身"
+        ],
         placement: "bottom"
       }
     ]
@@ -93,6 +131,10 @@ export const onboardingFlows: OnboardingFlow[] = [
         target: "[data-tour='inventory-batch-panel'] [data-tour='inventory-mode-switch']",
         title: "先切換收料或退料模式",
         description: "貼資料前先確認方向。收料會把數量加回庫存，退料會把數量扣回去；單號與備註也會一起記錄到交易歷史。",
+        note: {
+          tone: "warning",
+          text: "模式選錯會讓庫存數量往反方向變動，貼資料前務必再確認一次目前是收料還是退料。"
+        },
         placement: "bottom",
         openBatchModal: true
       },
@@ -110,7 +152,16 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='inventory-batch-panel'] [data-tour='inventory-paste-field']",
         title: "批次貼上支援兩種格式",
-        description: "可貼兩行一組：第一行 `治具代碼-datecode/編號`，第二行 `數量`；也可貼單行表格式：`治具代碼[TAB]datecode/編號[TAB]數量`。這個欄位可直接按 Tab 輸入分隔。若 datecode/編號是 1 到 4 碼純數字，系統會自動左補零成 4 碼；其餘值會按原樣保留。",
+        description: "這個欄位可直接貼上，也可以按 Tab 輸入分隔：",
+        bullets: [
+          "兩行一組：第一行治具代碼-datecode/編號，第二行數量",
+          "單行表格式：治具代碼、datecode/編號、數量用 Tab 分開",
+          "datecode/編號若是 1 到 4 碼純數字，系統會自動左補零成 4 碼；其餘值按原樣保留"
+        ],
+        example: [
+          { label: "兩行格式", value: "JIG-0012-0088\n5" },
+          { label: "TAB 格式", value: "JIG-0012\t0088\t5" }
+        ],
         placement: "left",
         openBatchModal: true
       },
@@ -119,7 +170,12 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='inventory-batch-panel'] [data-tour='inventory-preview-table']",
         title: "貼上後先看解析預覽，不要直接送出",
-        description: "系統會把每一列拆成治具、datecode/編號、數量與狀態。只有 `ready` 的列會真的送出；`error` 代表原始格式需要先修正。",
+        description: "系統會把每一列拆成治具、datecode/編號、數量與狀態，先確認每一列的狀態再考慮送出：",
+        bullets: [
+          "ready：格式正確，會被實際送出",
+          "error：原始格式有問題，需要先修正這一列",
+          "needs-confirm / needs-add：治具尚未確認，見下一步說明"
+        ],
         placement: "top",
         openBatchModal: true
       },
@@ -128,7 +184,11 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='inventory-batch-panel'] [data-tour='inventory-preview-table']",
         title: "收料遇到沒建過的治具，要先決定怎麼處理",
-        description: "如果系統找到相近代碼，會先標成 `needs-confirm`，你可以按 `同一治具` 採用既有治具，或改為新增。若完全找不到，會標成 `needs-add`，可按 `新增治具` 現場建立，或先 `略過` 這一列。",
+        description: "系統會依相似程度分成兩種情況，處理方式不同：",
+        bullets: [
+          "needs-confirm（找到相近代碼）：按「同一治具」採用既有治具，或改為新增",
+          "needs-add（完全找不到）：按「新增治具」現場建立，或先「略過」這一列"
+        ],
         placement: "top",
         openBatchModal: true
       },
@@ -138,6 +198,10 @@ export const onboardingFlows: OnboardingFlow[] = [
         target: "[data-tour='inventory-batch-panel'] [data-tour='inventory-submit-action']",
         title: "確認單號與待處理列都清乾淨後再送出",
         description: "畫面上只要還有 `needs-confirm`、`needs-add` 或 `error`，系統就不會放行。先把異常列處理完，再按送出收料或送出退料寫入正式記錄。",
+        note: {
+          tone: "warning",
+          text: "送出後會直接寫入正式收退料紀錄與庫存數量，沒有一鍵復原，如果送錯需要另外手動調整，建議送出前再核對一次單號與數量。"
+        },
         placement: "top",
         openBatchModal: true
       }
@@ -232,6 +296,10 @@ export const onboardingFlows: OnboardingFlow[] = [
         target: "[data-tour='master-detail-form']",
         title: "在表單完成新增或修改，最後要記得儲存",
         description: "無論是補治具名稱、機種資訊或站點代碼，最後都要按儲存才會真的寫入。之後收退料與產能頁才會讀到最新設定。",
+        note: {
+          tone: "warning",
+          text: "沒按儲存就切換清單項目或離開頁面，目前表單上的修改會直接遺失。"
+        },
         placement: "left"
       }
     ]
@@ -265,7 +333,11 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/production/mapping",
         target: "[data-tour='production-tabs']",
         title: "產能頁先分清楚兩種設定",
-        description: "`機種站點對應` 是先定義某個機種會經過哪些站點；`治具需求` 則是在既有站點上再綁治具與數量。順序不要顛倒。",
+        description: "這兩個分頁有先後關係，順序不要顛倒：",
+        bullets: [
+          "① 機種站點對應：先定義某個機種會經過哪些站點",
+          "② 治具需求：在①已經建立的站點上，再綁治具與需求數量"
+        ],
         placement: "bottom"
       },
       {
@@ -290,6 +362,10 @@ export const onboardingFlows: OnboardingFlow[] = [
         target: "[data-tour='production-mapping-form']",
         title: "輸入機種代碼與站點代碼後直接新增",
         description: "兩個欄位都支援輸入後下拉選擇。選好機種和站點後按 `新增 / 更新`，就完成一筆機種站點綁定。",
+        example: [
+          { label: "機種代碼", value: "ABC-1200" },
+          { label: "站點代碼", value: "ST-05" }
+        ],
         placement: "top"
       },
       {
@@ -355,7 +431,13 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/production/requirements",
         target: "[data-tour='production-requirement-form']",
         title: "操作順序是先站點，再治具，最後數量",
-        description: "先選站點，再選治具代碼，最後填需要的數量。站點欄位只接受目前機種已綁定的站點，避免在錯誤站點上建立需求。",
+        description: "站點欄位只接受目前機種已綁定的站點，避免在錯誤站點上建立需求：",
+        bullets: [
+          "① 選站點（僅列出此機種已在 Mapping 綁定的站點）",
+          "② 選治具代碼",
+          "③ 填需要的數量"
+        ],
+        example: [{ label: "需求數量", value: "3" }],
         placement: "top"
       },
       {

@@ -80,7 +80,7 @@ function summarizeQuantity(row: MaterialTransaction | null): number {
           </thead>
           <tbody>
             <tr v-for="(item, index) in transaction.items" :key="`${transaction.id}-${item.fixture_id}-${index}`">
-              <td>{{ item.fixture_id }}</td>
+              <td>{{ item.fixture_id ?? "已刪除" }}</td>
               <td>{{ item.fixture_code }}</td>
               <td>{{ item.identifier || "-" }}</td>
               <td>{{ item.quantity }}</td>

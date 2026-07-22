@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.models.inventory import (
@@ -48,6 +48,8 @@ class InventoryRepository:
         *,
         transaction_id: int,
         fixture_id: int,
+        fixture_code: str | None = None,
+        fixture_name: str | None = None,
         ownership_type: str,
         identifier: str | None,
         quantity: int,
@@ -56,6 +58,8 @@ class InventoryRepository:
         item = MaterialTransactionItem(
             transaction_id=transaction_id,
             fixture_id=fixture_id,
+            deleted_fixture_code=fixture_code,
+            deleted_fixture_name=fixture_name,
             ownership_type=ownership_type,
             identifier=identifier,
             quantity=quantity,
@@ -63,6 +67,54 @@ class InventoryRepository:
         )
         self.db.add(item)
         return item
+
+    def remove_fixture_transaction_items(self, fixture: Fixture, *, delete_records: bool) -> dict:
+        transaction_ids = list(
+            self.db.scalars(
+                select(MaterialTransactionItem.transaction_id)
+                .where(MaterialTransactionItem.fixture_id == fixture.id)
+                .distinct()
+            )
+        )
+        item_count = int(
+            self.db.scalar(
+                select(func.count(MaterialTransactionItem.id)).where(MaterialTransactionItem.fixture_id == fixture.id)
+            )
+            or 0
+        )
+        deleted_transaction_count = 0
+
+        if delete_records:
+            self.db.execute(delete(MaterialTransactionItem).where(MaterialTransactionItem.fixture_id == fixture.id))
+            for transaction_id in transaction_ids:
+                remaining_item_count = int(
+                    self.db.scalar(
+                        select(func.count(MaterialTransactionItem.id)).where(
+                            MaterialTransactionItem.transaction_id == transaction_id
+                        )
+                    )
+                    or 0
+                )
+                if remaining_item_count == 0:
+                    self.db.execute(delete(MaterialTransaction).where(MaterialTransaction.id == transaction_id))
+                    deleted_transaction_count += 1
+        else:
+            self.db.execute(
+                update(MaterialTransactionItem)
+                .where(MaterialTransactionItem.fixture_id == fixture.id)
+                .values(
+                    fixture_id=None,
+                    deleted_fixture_code=fixture.code,
+                    deleted_fixture_name=fixture.name,
+                )
+            )
+
+        self.db.flush()
+        return {
+            "transaction_item_count": item_count,
+            "affected_transaction_count": len(transaction_ids),
+            "deleted_transaction_count": deleted_transaction_count,
+        }
 
     def get_fixture(self, fixture_id: int) -> Fixture | None:
         return self.db.get(Fixture, fixture_id)
@@ -308,10 +360,12 @@ class InventoryRepository:
         identifier_contains: str | None = None,
         created_by: str | None = None,
     ) -> list[dict]:
+        fixture_code_expr = func.coalesce(Fixture.code, MaterialTransactionItem.deleted_fixture_code)
+        fixture_name_expr = func.coalesce(Fixture.name, MaterialTransactionItem.deleted_fixture_name)
         tx_id_stmt = (
             select(MaterialTransaction.id)
             .join(MaterialTransactionItem, MaterialTransactionItem.transaction_id == MaterialTransaction.id)
-            .join(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
+            .outerjoin(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
             .distinct()
         )
         if customer_id is not None:
@@ -325,7 +379,7 @@ class InventoryRepository:
         if date_to is not None:
             tx_id_stmt = tx_id_stmt.where(MaterialTransaction.occurred_at <= date_to)
         if fixture_code:
-            tx_id_stmt = tx_id_stmt.where(Fixture.code.ilike(f"%{fixture_code.strip()}%"))
+            tx_id_stmt = tx_id_stmt.where(fixture_code_expr.ilike(f"%{fixture_code.strip()}%"))
         if transaction_no:
             tx_id_stmt = tx_id_stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
         tx_id_stmt = self._apply_identifier_filter(
@@ -353,10 +407,10 @@ class InventoryRepository:
                 MaterialTransactionItem.identifier,
                 MaterialTransactionItem.quantity,
                 MaterialTransactionItem.note,
-                Fixture.code.label("fixture_code"),
-                Fixture.name.label("fixture_name"),
+                fixture_code_expr.label("fixture_code"),
+                fixture_name_expr.label("fixture_name"),
             )
-            .join(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
+            .outerjoin(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
             .where(MaterialTransactionItem.transaction_id.in_(tx_ids))
             .order_by(MaterialTransactionItem.id.asc())
         )
@@ -407,6 +461,8 @@ class InventoryRepository:
         identifier_contains: str | None = None,
         created_by: str | None = None,
     ) -> list[dict]:
+        fixture_code_expr = func.coalesce(Fixture.code, MaterialTransactionItem.deleted_fixture_code)
+        fixture_name_expr = func.coalesce(Fixture.name, MaterialTransactionItem.deleted_fixture_name)
         stmt = (
             select(
                 MaterialTransaction.id.label("transaction_id"),
@@ -418,14 +474,14 @@ class InventoryRepository:
                 MaterialTransactionItem.fixture_id.label("fixture_id"),
                 MaterialTransactionItem.identifier.label("identifier"),
                 MaterialTransactionItem.quantity.label("quantity"),
-                Fixture.code.label("fixture_code"),
-                Fixture.name.label("fixture_name"),
+                fixture_code_expr.label("fixture_code"),
+                fixture_name_expr.label("fixture_name"),
             )
             .join(MaterialTransactionItem, MaterialTransactionItem.transaction_id == MaterialTransaction.id)
-            .join(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
+            .outerjoin(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
         )
         if customer_id is not None:
-            stmt = stmt.where(MaterialTransaction.customer_id == customer_id, Fixture.customer_id == customer_id)
+            stmt = stmt.where(MaterialTransaction.customer_id == customer_id)
         if transaction_type:
             stmt = stmt.where(MaterialTransaction.transaction_type == transaction_type)
         if date_from is not None:
@@ -433,7 +489,7 @@ class InventoryRepository:
         if date_to is not None:
             stmt = stmt.where(MaterialTransaction.occurred_at <= date_to)
         if fixture_code:
-            stmt = stmt.where(Fixture.code.ilike(f"%{fixture_code.strip()}%"))
+            stmt = stmt.where(fixture_code_expr.ilike(f"%{fixture_code.strip()}%"))
         if transaction_no:
             stmt = stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
         stmt = self._apply_identifier_filter(
@@ -489,6 +545,7 @@ class InventoryRepository:
                 func.max(MaterialTransaction.occurred_at).label("last_transaction_at"),
             )
             .join(MaterialTransaction, MaterialTransaction.id == MaterialTransactionItem.transaction_id)
+            .where(MaterialTransactionItem.fixture_id.is_not(None))
             .group_by(MaterialTransactionItem.fixture_id)
         )
         if customer_id is not None:

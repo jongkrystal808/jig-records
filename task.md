@@ -10,10 +10,10 @@
 - [x] 前端新增全域客戶切換下拉
 - [x] 前端在各模組請求帶入 `customer_id`
 - [x] 新增 `users` 表（帳號、密碼雜湊、名稱、角色、啟用狀態）
-- [x] 新增 `user_customers` 表，維護一般使用者可見客戶清單
+- [x] 新增 `user_customers` 表，維護已登入 `admin` / `user` 的可見客戶清單
 - [x] 新增 `POST /auth/login`、`POST /auth/guest`、`GET /auth/users`
 - [x] 前端新增登入頁，支援「帳密登入」與「訪客入口」
-- [x] `admin` 可看全部客戶且可編輯全部資料
+- [x] `admin` 可管理已指派客戶內的全部資料
 - [x] `guest` 可看全部客戶但不可編輯，且不可進入 `資料維護`
 - [x] `user` 只能看授權客戶，客戶指派改由客戶分頁維護
 - [x] `user` 可編輯授權客戶下的業務資料，但不可管理客戶與使用者
@@ -65,7 +65,7 @@
 - `SearchWorkspacePage` 目前仍沒有可收合的篩選區。
 - `SearchWorkspacePage` 的 fixture / model context 已改為選取後延遲載入，不再首屏全量預載全部 search domain 資料。
 - `npm run build` 目前可通過。
-- `.venv\\Scripts\\python.exe -m pytest -q` 目前為 `75 passed`。
+- `.venv\\Scripts\\python.exe -m pytest -q` 目前為 `86 passed`。
 - 目前 `identifier` 已收斂為單一規則：
   - 純數字且長度 `1-4`：寫入前左補零為 4 碼，查詢時同時匹配 `1 / 01 / 001 / 0001` 類零補齊舊資料。
   - 其餘值：視為 legacy `identifier / datecode`，寫入與查詢都以原值處理。
@@ -96,6 +96,11 @@
 - `治具資料品質` 分頁已支援依問題類型篩選、匯出品質 CSV，並依問題類型導向不同頁面。
 - `MasterPage` 各分頁已具備獨立 URL：`/master/fixtures`、`/master/models`、`/master/stations`、`/master/customers`、`/master/users`、`/master/ledger`、`/master/quality`。
 - 查詢頁已支援從 route query 帶入 `mode` 與 `q`，供跨頁跳轉直接落到指定治具查詢結果。
+- 現行權限與資料行為以 backend router/service/repository 為準；架構文件若有落差需回頭依程式校正。
+- `admin` 已可在治具維護頁永久刪除治具，API 為 `DELETE /api/v2/master/fixtures/{fixture_id}`。
+- 刪除時可選擇保留或刪除該治具的收/退料明細；保留時以治具代碼/名稱快照維持歷史查詢與匯出，刪除時只移除該治具明細，混合交易的其他治具明細不受影響。
+- 目標 MySQL 已升級至 Alembic `0014_fixture_deletion`，transaction item 的 `fixture_id` 可為空並使用 `ON DELETE SET NULL`。
+- 現行 backend customer scope 對 `admin` 與 `user` 都依 `user_customers` 指派；`manage` 權限不會略過客戶範圍。
 
 ## Phase 0-4 Approved Update
 
@@ -351,18 +356,32 @@
 - [x] 新增 auth / customer scope 測試，驗證 `admin` / `guest` / `user` 三種角色行為
 
 ### 20) 角色與客戶權限定案
-- [x] `admin` 不限制客戶可視範圍，且可編輯全部資料
+- [x] `admin` 具備完整管理權限，但 customer-scoped 操作仍限 `user_customers` 已指派客戶
 - [x] `guest` 不限制客戶可視範圍，但只能讀取
 - [x] `guest` 不顯示 `資料維護` 導航，且不可直接進入 `/master`
 - [x] `user` 可先建立帳號，再由客戶分頁指派可見客戶
 - [x] `user` 可編輯 `fixtures / models / stations`
 - [x] `user` 不可管理 `customers / users`
-- [x] 所有 customer-scoped API 對 `user` 強制檢查 `customer_id`
+- [x] 所有 customer-scoped API 對已登入的 `admin` / `user` 強制檢查 `customer_id` 與客戶指派
 - [x] 使用者分頁不再維護客戶勾選；改由客戶分頁維護 `assigned_user_ids`
 - [x] 客戶已指派使用者同時作為該客戶治具的負責人候選名單
 - [x] 負責人分頁已移除
 
 ## Update Log
+
+### 2026-07-22
+
+- 新增 admin-only 治具永久刪除 API 與資料維護頁操作入口。
+- 刪除對話框可選擇：
+  - 保留收/退料紀錄：將 transaction item 的 `fixture_id` 設為 `NULL`，並保留 `deleted_fixture_code` / `deleted_fixture_name` 快照。
+  - 一起刪除收/退料紀錄：只刪除該治具的 item；父交易沒有其他 item 時才一併刪除。
+- 治具刪除會在同一 transaction 內清除 requirement、stock level/summary，並使相關 capacity summary 失效。
+- 新增 Alembic `0014_fixture_deletion`，並已在目標 MySQL 完成升級與 schema/backfill 驗證。
+- 修正 Alembic URL 中 percent-encoded 密碼會觸發 ConfigParser interpolation 的問題。
+- 新增 service/API/migration 測試，覆蓋保留歷史、刪除明細、混合交易與 admin 授權。
+- 文件 customer scope 已依現行 backend 校正：admin 仍需被指派到客戶，`manage` 不會繞過 scope。
+- 已重新驗證完整後端測試：`86 passed`；frontend production build 亦通過。
+
 
 ### 2026-07-09
 

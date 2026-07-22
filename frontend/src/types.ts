@@ -169,7 +169,7 @@ export interface MaterialTransaction {
   note: string | null;
   created_at: string;
   items: Array<{
-    fixture_id: number;
+    fixture_id: number | null;
     fixture_code: string;
     fixture_name: string;
     ownership_type: "customer_supplied" | "self_purchased";

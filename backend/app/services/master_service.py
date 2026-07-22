@@ -331,6 +331,50 @@ class MasterService:
             self.db.rollback()
             raise ValueError("fixture code already exists within customer") from exc
 
+    def delete_fixture(
+        self,
+        fixture_id: int,
+        *,
+        customer_id: int,
+        delete_transactions: bool,
+        actor: SessionContext | None = None,
+    ) -> dict:
+        fixture = self.repo.get_fixture(fixture_id)
+        if fixture is None or fixture.customer_id != customer_id:
+            raise ValueError(f"fixture {fixture_id} not found")
+
+        fixture_code = fixture.code
+        fixture_name = fixture.name
+        try:
+            transaction_stats = self.inventory_repo.remove_fixture_transaction_items(
+                fixture,
+                delete_records=delete_transactions,
+            )
+            deleted_requirement_count = self.repo.delete_fixture(fixture)
+            record_action = "並刪除相關收退料明細" if delete_transactions else "並保留相關收退料歷史"
+            self.audit.record(
+                customer_id=customer_id,
+                entity_type="fixture",
+                entity_key=fixture_code,
+                action="delete",
+                summary=(
+                    f"永久刪除治具 {fixture_code} / {fixture_name}，{record_action}；"
+                    f"影響 {transaction_stats['transaction_item_count']} 筆明細"
+                ),
+                actor=actor,
+            )
+            self.db.commit()
+            return {
+                "fixture_id": fixture_id,
+                "fixture_code": fixture_code,
+                "transaction_records_deleted": delete_transactions,
+                "deleted_requirement_count": deleted_requirement_count,
+                **transaction_stats,
+            }
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise ValueError("治具仍被其他資料引用，無法刪除") from exc
+
     def create_model(self, payload: MachineModelCreate, actor: SessionContext | None = None):
         customer = self.repo.get_customer(payload.customer_id)
         if customer is None:

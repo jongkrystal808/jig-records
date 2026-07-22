@@ -17,7 +17,7 @@ type SummaryCard = {
 type RecentRow = {
   id: string;
   transaction_no: string;
-  fixture_id: number;
+  fixture_id: number | null;
   fixture_code: string;
   identifier: string | null;
   quantity: number;

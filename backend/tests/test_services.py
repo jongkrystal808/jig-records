@@ -16,7 +16,8 @@ from backend.app.core.database import get_db
 from backend.app.core.errors import register_error_handlers
 from backend.app.models import Base
 from backend.app.models.audit import AuditLog
-from backend.app.models.inventory import FixtureStockLevel, FixtureStockSummary, MaterialTransaction
+from backend.app.models.inventory import FixtureStockLevel, FixtureStockSummary, MaterialTransaction, MaterialTransactionItem
+from backend.app.models.production import FixtureRequirement
 from backend.app.routers import api_router
 from backend.app.repositories.master_repository import MasterRepository
 from backend.app.schemas.common import CsvImportPayload
@@ -241,6 +242,152 @@ class MasterServiceTests(ServiceTestCase):
 
         self.assertIsNone(updated["line_storage_location"])
         self.assertEqual(updated["department_storage_location"], "RD-SHELF-10")
+
+    def test_delete_fixture_preserves_transaction_history_snapshot(self) -> None:
+        bundle = self.seed_customer_bundle()
+        fixture_id = bundle["fixture_a"].id
+        customer_id = bundle["customer"].id
+        self.production_service.create_model_station(
+            ModelStationCreate(
+                customer_id=customer_id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+            )
+        )
+        self.production_service.create_fixture_requirement(
+            FixtureRequirementCreate(
+                customer_id=customer_id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+                fixture_id=fixture_id,
+                required_qty=2,
+            )
+        )
+        self.inventory_service.receipt(
+            StockTransactionCreate(
+                customer_id=customer_id,
+                created_by="Admin",
+                transaction_no="DELETE-KEEP-001",
+                items=[
+                    {
+                        "fixture_id": fixture_id,
+                        "ownership_type": "self_purchased",
+                        "identifier": "1",
+                        "quantity": 3,
+                    },
+                    {
+                        "fixture_id": bundle["fixture_b"].id,
+                        "ownership_type": "customer_supplied",
+                        "identifier": "2",
+                        "quantity": 4,
+                    },
+                ],
+            )
+        )
+
+        result = self.master_service.delete_fixture(
+            fixture_id,
+            customer_id=customer_id,
+            delete_transactions=False,
+        )
+
+        self.assertIsNone(self.repo.get_fixture(fixture_id))
+        self.assertFalse(result["transaction_records_deleted"])
+        self.assertEqual(result["transaction_item_count"], 1)
+        self.assertEqual(result["deleted_requirement_count"], 1)
+        self.assertEqual(
+            self.db.scalar(
+                select(func.count(FixtureRequirement.id)).where(FixtureRequirement.fixture_id == fixture_id)
+            ),
+            0,
+        )
+
+        transaction = next(
+            row
+            for row in self.inventory_service.list_transactions(limit=50, customer_id=customer_id)
+            if row["transaction_no"] == "DELETE-KEEP-001"
+        )
+        deleted_item = next(item for item in transaction["items"] if item["fixture_code"] == "FX-A")
+        self.assertIsNone(deleted_item["fixture_id"])
+        self.assertEqual(deleted_item["fixture_name"], "Fixture A")
+        self.assertEqual(
+            next(item for item in transaction["items"] if item["fixture_code"] == "FX-B")["fixture_id"],
+            bundle["fixture_b"].id,
+        )
+        export_rows = self.inventory_service.repo.list_transaction_item_rows(
+            customer_id=customer_id,
+            transaction_no="DELETE-KEEP-001",
+        )
+        export_deleted_item = next(row for row in export_rows if row["fixture_code"] == "FX-A")
+        self.assertIsNone(export_deleted_item["fixture_id"])
+        self.assertEqual(export_deleted_item["fixture_name"], "Fixture A")
+        self.inventory_service.recalculate_inventory_state(customer_id=customer_id)
+
+        replacement = self.master_service.create_fixture(
+            FixtureCreate(customer_id=customer_id, code="FX-A", name="Fixture A Replacement")
+        )
+        self.assertNotEqual(replacement["id"], fixture_id)
+
+    def test_delete_fixture_can_remove_only_its_transaction_items(self) -> None:
+        bundle = self.seed_customer_bundle()
+        fixture_id = bundle["fixture_a"].id
+        customer_id = bundle["customer"].id
+        self.inventory_service.receipt(
+            StockTransactionCreate(
+                customer_id=customer_id,
+                created_by="Admin",
+                transaction_no="DELETE-ONLY-001",
+                items=[
+                    {
+                        "fixture_id": fixture_id,
+                        "ownership_type": "self_purchased",
+                        "identifier": "1",
+                        "quantity": 2,
+                    }
+                ],
+            )
+        )
+        self.inventory_service.receipt(
+            StockTransactionCreate(
+                customer_id=customer_id,
+                created_by="Admin",
+                transaction_no="DELETE-MIXED-001",
+                items=[
+                    {
+                        "fixture_id": fixture_id,
+                        "ownership_type": "self_purchased",
+                        "identifier": "2",
+                        "quantity": 1,
+                    },
+                    {
+                        "fixture_id": bundle["fixture_b"].id,
+                        "ownership_type": "customer_supplied",
+                        "identifier": "3",
+                        "quantity": 1,
+                    },
+                ],
+            )
+        )
+
+        result = self.master_service.delete_fixture(
+            fixture_id,
+            customer_id=customer_id,
+            delete_transactions=True,
+        )
+
+        self.assertTrue(result["transaction_records_deleted"])
+        self.assertEqual(result["transaction_item_count"], 2)
+        self.assertEqual(result["deleted_transaction_count"], 1)
+        transaction_rows = self.inventory_service.list_transactions(limit=50, customer_id=customer_id)
+        self.assertNotIn("DELETE-ONLY-001", {row["transaction_no"] for row in transaction_rows})
+        mixed = next(row for row in transaction_rows if row["transaction_no"] == "DELETE-MIXED-001")
+        self.assertEqual([item["fixture_code"] for item in mixed["items"]], ["FX-B"])
+        self.assertEqual(
+            self.db.scalar(
+                select(func.count(MaterialTransactionItem.id)).where(MaterialTransactionItem.fixture_id == fixture_id)
+            ),
+            0,
+        )
 
     def test_fixture_quality_report_flags_expected_issues(self) -> None:
         original_image_dir = settings.fixture_image_dir
@@ -992,6 +1139,8 @@ class ProductionApiTests(ServiceTestCase):
 
     def test_shared_station_capacity_and_query_are_scoped_by_model(self) -> None:
         bundle = self.seed_customer_bundle()
+        self.repo.replace_allowed_users_for_customer(bundle["customer"].id, [self.admin["id"]])
+        self.db.commit()
         second_model = self.repo.create_model(customer_id=bundle["customer"].id, code="M-002", name="Model 2")
         fixture_c = self.repo.create_fixture(
             customer_id=bundle["customer"].id,
@@ -1118,6 +1267,45 @@ class ProductionApiTests(ServiceTestCase):
 
         missing_scope = self.client.get("/api/v2/inventory/stock", headers=headers)
         self.assertEqual(missing_scope.status_code, 403)
+
+    def test_only_admin_can_delete_fixture(self) -> None:
+        bundle = self.seed_customer_bundle()
+        scoped_user = self.auth_service.create_user(
+            UserCreate(
+                username="fixture-editor",
+                password="secret123",
+                display_name="Fixture Editor",
+                role="user",
+                is_active=True,
+                allowed_customer_ids=[],
+            )
+        )
+        self.repo.replace_allowed_users_for_customer(
+            bundle["customer"].id,
+            [scoped_user["id"], self.admin["id"]],
+        )
+        self.db.commit()
+        scoped_token = create_session_token(mode="user", user=self.repo.get_user(scoped_user["id"]))
+        scoped_headers = {"Authorization": f"Bearer {scoped_token}"}
+
+        forbidden = self.client.delete(
+            f"/api/v2/master/fixtures/{bundle['fixture_a'].id}",
+            params={"customer_id": bundle["customer"].id, "delete_transactions": False},
+            headers=scoped_headers,
+        )
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertIsNotNone(self.repo.get_fixture(bundle["fixture_a"].id))
+
+        deleted = self.client.delete(
+            f"/api/v2/master/fixtures/{bundle['fixture_a'].id}",
+            params={"customer_id": bundle["customer"].id, "delete_transactions": False},
+            headers=self._auth_headers(),
+        )
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.json()["fixture_code"], "FX-A")
+        self.assertFalse(deleted.json()["transaction_records_deleted"])
+        self.assertIsNone(self.repo.get_fixture(bundle["fixture_a"].id))
+
 
 
 if __name__ == "__main__":

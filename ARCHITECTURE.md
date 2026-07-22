@@ -215,6 +215,7 @@ Includes:
 - Admin-only transaction ledger workspace for inventory case review, reversal, and customer-scoped stock-state recovery
 - Admin-only fixture data-quality workspace for integrity review of master data, image coverage, model linkage, and stock consistency
 - Issue-specific navigation rules from the quality workspace into fixture maintenance or search results
+- Admin-only permanent fixture deletion with an explicit preserve/delete transaction-history choice
 
 API prefix:
 
@@ -566,10 +567,10 @@ Note:
 
 ## Customer Access Scope
 
-- `admin` can see all customers.
-- non-admin authenticated users can only see customers assigned in `user_customers`.
-- `guest` can also see all customers, but stays read-only.
-- customer-scoped APIs reject requests without `customer_id` for non-admin users.
+- authenticated `admin` and `user` sessions can only see customers assigned in `user_customers`.
+- `manage` permission does not bypass customer scope; admin operations remain limited to assigned customers.
+- `guest` can see all customers, but stays read-only.
+- authenticated customer-scoped APIs reject unassigned customers and require `customer_id` whenever the endpoint needs a concrete scope.
 - customer assignment is edited from the `customer` maintenance tab, not from the `user` tab.
 - users assigned to a customer are also the selectable responsible-person candidates for that customer's fixtures.
 
@@ -577,7 +578,7 @@ Note:
 
 ### admin
 
-- Customer visibility: all customers
+- Customer visibility: only customers assigned in `user_customers`
 - Data edit: allowed
 - Master page access: allowed
 - Customer management: allowed
@@ -645,7 +646,9 @@ Current transaction-item contract on the API surface:
 
 ```text
 material_transaction_items
-- fixture_id
+- fixture_id (nullable after fixture deletion)
+- deleted_fixture_code
+- deleted_fixture_name
 - ownership_type
 - identifier
 - quantity
@@ -851,6 +854,7 @@ flowchart LR
 /api/v2/master/customers
 /api/v2/master/customers/{customer_id}/users
 /api/v2/master/fixtures
+/api/v2/master/fixtures/{fixture_id} (DELETE)
 /api/v2/master/fixtures/{fixture_code}/image
 /api/v2/master/fixtures/quality
 /api/v2/master/models
@@ -885,6 +889,9 @@ Master/Auth API notes:
 - `POST /api/v2/auth/guest` returns a guest-mode session payload
 - `GET /api/v2/master/customers` returns only accessible customers for the current session
 - `GET /api/v2/master/customers/{customer_id}/users` returns the responsible-user candidate set for that customer
+- `DELETE /api/v2/master/fixtures/{fixture_id}` requires `manage` permission and an assigned `customer_id` scope
+- `delete_transactions=false` preserves receipt/return history by detaching the fixture FK and keeping code/name snapshots
+- `delete_transactions=true` removes only that fixture's item rows and removes a parent transaction only when no other items remain
 
 Search API notes:
 
@@ -916,6 +923,9 @@ Recent schema evolution:
 - Alembic revision `0008_fixture_responsible_user` adds `fixtures.responsible_user_id`
 - Alembic revision `0009_remove_owners_and_scope_fixture_code` removes `owners` and changes fixture uniqueness to `(customer_id, code)`
 - Alembic revision `0011_search_indexes` adds search-facing indexes for `fixtures.storage_location`, `machine_models.name`, `stations.name`, and `material_transactions.occurred_at`
+- Alembic revision `0012_split_fixture_storage_columns` splits fixture storage into line and department columns
+- Alembic revision `0013_drop_fixture_storage_location` removes the superseded single storage column
+- Alembic revision `0014_fixture_deletion` makes transaction fixture references nullable with `ON DELETE SET NULL` and adds deleted-fixture code/name snapshots
 
 Compatibility behavior:
 

@@ -33,6 +33,9 @@ const keyword = ref("");
 const statusFilter = ref<"all" | "active" | "inactive">("all");
 const loading = ref(false);
 const saving = ref(false);
+const fixtureDeleteDialogOpen = ref(false);
+const deleteFixtureTransactions = ref(false);
+const fixtureDeleting = ref(false);
 const listPage = ref(1);
 const listPageSize = 10;
 const ledgerKeyword = ref("");
@@ -940,6 +943,49 @@ async function toggleCurrentActive(): Promise<void> {
   }
 }
 
+function openFixtureDeleteDialog(): void {
+  if (!canManageUsers.value || !selectedFixtureId.value) {
+    pushToast("只有管理員可以永久刪除治具。", "warning");
+    return;
+  }
+  deleteFixtureTransactions.value = false;
+  fixtureDeleteDialogOpen.value = true;
+}
+
+function closeFixtureDeleteDialog(): void {
+  if (fixtureDeleting.value) {
+    return;
+  }
+  fixtureDeleteDialogOpen.value = false;
+}
+
+async function confirmFixtureDeletion(): Promise<void> {
+  const fixtureId = selectedFixtureId.value;
+  const customerId = selectedCustomerId.value;
+  if (!fixtureId || !customerId) {
+    pushToast("請先選擇要刪除的治具與客戶。", "warning");
+    return;
+  }
+
+  fixtureDeleting.value = true;
+  saving.value = true;
+  try {
+    const result = await api.deleteFixture(fixtureId, customerId, deleteFixtureTransactions.value);
+    fixtureDeleteDialogOpen.value = false;
+    selectedFixtureId.value = null;
+    await loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true });
+    syncEditorFromSelection();
+    const recordMessage = result.transaction_records_deleted
+      ? `已刪除 ${result.transaction_item_count} 筆相關收退料明細。`
+      : `已保留 ${result.transaction_item_count} 筆相關收退料歷史。`;
+    pushToast(`治具 ${result.fixture_code} 已永久刪除。${recordMessage}`, "success");
+  } catch (err) {
+    pushToast(err instanceof Error ? err.message : "治具刪除失敗", "error");
+  } finally {
+    fixtureDeleting.value = false;
+    saving.value = false;
+  }
+}
 async function resetUserPassword(): Promise<void> {
   if (activeTab.value !== "user" || !selectedUserId.value) {
     pushToast("請先選擇使用者。", "warning");
@@ -1339,6 +1385,7 @@ onBeforeUnmount(() => {
         :toggle-action-label="toggleActionLabel"
         :can-manage-customers="canManageCustomers"
         :can-manage-users="canManageUsers"
+        :can-delete-fixture="canManageUsers"
         :selected-fixture-id="selectedFixtureId"
         :selected-user-id="selectedUserId"
         :selected-customer-scope-count="selectedCustomerScopeCount"
@@ -1355,6 +1402,7 @@ onBeforeUnmount(() => {
         :on-reload-selection="reloadSelection"
         :on-save-current="saveCurrent"
         :on-toggle-current-active="toggleCurrentActive"
+        :on-request-delete-fixture="openFixtureDeleteDialog"
         :on-reset-user-password="resetUserPassword"
         :on-toggle-assigned-user="toggleAssignedUser"
         :on-has-assigned-user="hasAssignedUser"
@@ -1386,6 +1434,46 @@ onBeforeUnmount(() => {
         />
       </template>
     </section>
+
+    <div v-if="fixtureDeleteDialogOpen" class="ui-modal-backdrop fixture-delete-backdrop" role="presentation" @click.self="closeFixtureDeleteDialog">
+      <section class="ui-modal-card fixture-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="fixture-delete-title">
+        <header class="fixture-delete-dialog-head">
+          <div>
+            <p class="fixture-delete-eyebrow">Admin only</p>
+            <h3 id="fixture-delete-title">永久刪除治具 {{ selectedFixture?.code }}</h3>
+          </div>
+          <button class="fixture-delete-close" type="button" :disabled="fixtureDeleting" aria-label="關閉" @click="closeFixtureDeleteDialog">×</button>
+        </header>
+        <p class="fixture-delete-intro">治具主檔、庫存摘要與產能需求會永久刪除。請選擇歷史收退料記錄的處理方式。</p>
+
+        <div class="fixture-delete-options">
+          <label :class="{ selected: !deleteFixtureTransactions }">
+            <input v-model="deleteFixtureTransactions" type="radio" :value="false" />
+            <span>
+              <strong>保留收退料記錄（建議）</strong>
+              <small>歷史明細會保留刪除當下的治具編號與名稱，仍可查詢及匯出。</small>
+            </span>
+          </label>
+
+          <label :class="{ selected: deleteFixtureTransactions }">
+            <input v-model="deleteFixtureTransactions" type="radio" :value="true" />
+            <span>
+              <strong>一併刪除相關記錄</strong>
+              <small>只刪除此治具的明細；案件若還有其他治具會保留，沒有其他明細才刪除整張案件。</small>
+            </span>
+          </label>
+        </div>
+
+        <p v-if="deleteFixtureTransactions" class="fixture-delete-warning">
+          相關收退料明細將永久刪除，且無法透過帳目管理復原。
+        </p>
+
+        <footer class="fixture-delete-dialog-actions">
+          <button class="outline-btn" type="button" :disabled="fixtureDeleting" @click="closeFixtureDeleteDialog">取消</button>
+          <button class="fixture-delete-confirm" type="button" :disabled="fixtureDeleting" @click="confirmFixtureDeletion">{{ fixtureDeleting ? "刪除中..." : "確認永久刪除" }}</button>
+        </footer>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -1919,6 +2007,123 @@ textarea {
   flex-wrap: wrap;
 }
 
+.fixture-delete-backdrop {
+  z-index: 1200;
+}
+
+.fixture-delete-dialog {
+  width: min(620px, calc(100vw - 28px));
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.fixture-delete-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.fixture-delete-eyebrow {
+  margin: 0 0 4px;
+  color: #b23a3a;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fixture-delete-dialog h3,
+.fixture-delete-intro,
+.fixture-delete-warning {
+  margin: 0;
+}
+
+.fixture-delete-dialog h3 {
+  color: #29374f;
+  font-size: 18px;
+}
+
+.fixture-delete-intro {
+  color: #5c6b82;
+  line-height: 1.6;
+}
+
+.fixture-delete-close {
+  border: 0;
+  background: transparent;
+  color: #6a778b;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.fixture-delete-options {
+  display: grid;
+  gap: 10px;
+}
+
+.fixture-delete-options label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.fixture-delete-options label.selected {
+  border-color: #cf5a5a;
+  box-shadow: 0 0 0 2px rgba(207, 90, 90, 0.12);
+}
+
+.fixture-delete-options span {
+  display: grid;
+  gap: 4px;
+}
+
+.fixture-delete-options strong {
+  color: #34425a;
+}
+
+.fixture-delete-options small {
+  color: #69778c;
+  line-height: 1.5;
+}
+
+.fixture-delete-warning {
+  padding: 10px 12px;
+  border: 1px solid #edb5b5;
+  border-radius: 8px;
+  color: #9b3030;
+  background: #fff4f4;
+  font-weight: 700;
+}
+
+.fixture-delete-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.fixture-delete-confirm {
+  border: 1px solid #b93434;
+  border-radius: 9px;
+  padding: 7px 12px;
+  color: #fff;
+  background: #b93434;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.fixture-delete-confirm:disabled,
+.fixture-delete-close:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 @media (max-width: 1500px) {
   .content-grid {
     grid-template-columns: 1fr;

@@ -38,7 +38,17 @@ class MaterialTransactionItem(Base):
     transaction_id: Mapped[int] = mapped_column(
         ForeignKey("material_transactions.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    fixture_id: Mapped[int] = mapped_column(ForeignKey("fixtures.id"), nullable=False, index=True)
+    fixture_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "fixtures.id",
+            name="fk_material_transaction_items_fixture_id_fixtures",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        index=True,
+    )
+    deleted_fixture_code: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
+    deleted_fixture_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     ownership_type: Mapped[str] = mapped_column(ownership_type_enum, nullable=False)
     identifier: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)

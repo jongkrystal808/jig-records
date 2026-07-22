@@ -156,6 +156,8 @@ class InventoryService:
             self.repo.add_transaction_item(
                 transaction_id=transaction.id,
                 fixture_id=item.fixture_id,
+                fixture_code=fixture.code,
+                fixture_name=fixture.name,
                 ownership_type=item.ownership_type,
                 identifier=item.identifier,
                 quantity=item.quantity,

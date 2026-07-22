@@ -1,11 +1,30 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
+interface GuidedTourStepNote {
+  tone: "warning" | "info";
+  text: string;
+}
+
+interface GuidedTourStepExample {
+  label?: string;
+  value: string;
+}
+
+interface GuidedTourStepImage {
+  src: string;
+  alt: string;
+}
+
 interface GuidedTourStep {
   id: string;
   target: string;
   title: string;
   description: string;
+  bullets?: string[];
+  example?: GuidedTourStepExample[];
+  note?: GuidedTourStepNote;
+  image?: GuidedTourStepImage;
   placement?: "top" | "bottom" | "left" | "right";
 }
 
@@ -76,7 +95,10 @@ function updateLayout(): void {
   const rect = target.getBoundingClientRect();
   spotlightRect.value = rect;
 
-  const cardWidth = Math.min(320, window.innerWidth - 32);
+  const hasRichContent = Boolean(
+    currentStep.value.image || (currentStep.value.bullets?.length ?? 0) > 0
+  );
+  const cardWidth = Math.min(hasRichContent ? 360 : 320, window.innerWidth - 32);
   const cardHeight = tourCardRef.value?.offsetHeight ?? 196;
   const gap = 16;
   const placement = currentStep.value.placement ?? "bottom";
@@ -143,7 +165,36 @@ onBeforeUnmount(() => {
       <aside ref="tourCardRef" class="tour-card" :style="cardStyle">
         <div class="tour-step-count">步驟 {{ currentIndex + 1 }} / {{ steps.length }}</div>
         <h3>{{ currentStep.title }}</h3>
+
+        <img
+          v-if="currentStep.image"
+          class="tour-image"
+          :src="currentStep.image.src"
+          :alt="currentStep.image.alt"
+          @load="refreshLayout"
+        />
+
         <p>{{ currentStep.description }}</p>
+
+        <ul v-if="currentStep.bullets?.length" class="tour-bullets">
+          <li v-for="(bullet, i) in currentStep.bullets" :key="i">{{ bullet }}</li>
+        </ul>
+
+        <div v-if="currentStep.example?.length" class="tour-examples">
+          <div v-for="(ex, i) in currentStep.example" :key="i" class="tour-example-row">
+            <span v-if="ex.label" class="tour-example-label">{{ ex.label }}</span>
+            <code class="tour-example-value">{{ ex.value }}</code>
+          </div>
+        </div>
+
+        <div
+          v-if="currentStep.note"
+          class="tour-note"
+          :class="`tour-note-${currentStep.note.tone}`"
+        >
+          <span class="tour-note-icon" aria-hidden="true">{{ currentStep.note.tone === "warning" ? "⚠" : "ℹ" }}</span>
+          <span>{{ currentStep.note.text }}</span>
+        </div>
       </aside>
       <div class="tour-floating-actions">
         <button class="outline-btn" type="button" @click="emit('close')">結束</button>
@@ -205,6 +256,89 @@ onBeforeUnmount(() => {
 .tour-card p {
   margin: 0;
   color: #55657f;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.tour-image {
+  display: block;
+  width: 100%;
+  max-height: 160px;
+  object-fit: contain;
+  border-radius: 10px;
+  border: 1px solid rgba(214, 224, 238, 0.96);
+  background: #f4f7fb;
+}
+
+.tour-bullets {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: #45536b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.tour-bullets li::marker {
+  color: #2f6ee5;
+}
+
+.tour-examples {
+  display: grid;
+  gap: 6px;
+}
+
+.tour-example-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #f4f7fb;
+  border: 1px solid rgba(214, 224, 238, 0.96);
+}
+
+.tour-example-label {
+  color: #5b6b84;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.tour-example-value {
+  color: #20304f;
+  font-size: 12px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.tour-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.tour-note-warning {
+  color: #8a4b0a;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.32);
+}
+
+.tour-note-info {
+  color: #1f4d8f;
+  background: rgba(47, 110, 229, 0.1);
+  border: 1px solid rgba(47, 110, 229, 0.28);
+}
+
+.tour-note-icon {
+  flex: none;
   font-size: 13px;
   line-height: 1.6;
 }

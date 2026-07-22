@@ -54,6 +54,8 @@
   - JWT session 解析
   - `read` / `write` / `manage` 權限檢查
   - customer scope 驗證
+  - 已登入 `admin` / `user` 都依 `user_customers` 解析可見客戶
+  - `manage` 權限不會略過 customer scope；`guest` 仍為全客戶唯讀
 
 - `backend/app/core/database.py`
   - `engine`
@@ -66,6 +68,7 @@
   - fail-loud compatibility report 組裝
   - explicit offline compat fix helper
   - structured gate outcome logging: `passed` / `blocked` / `compat_fixes_applied`
+  - Alembic URL 寫入 ConfigParser 前會 escape `%`，支援 percent-encoded 密碼
 
 - `backend/app/core/logging.py`
   - backend app logger 初始化
@@ -161,6 +164,7 @@
 - `GET /master/fixtures/quality`
 - `POST /master/fixtures`
 - `PUT /master/fixtures/{fixture_id}`
+- `DELETE /master/fixtures/{fixture_id}?customer_id=...&delete_transactions=false`
 - `GET /master/fixtures/export`
 - `GET /master/fixtures/template`
 - `POST /master/fixtures/import`
@@ -182,6 +186,12 @@
 
 - `customers` / `users` 是 `manage` 權限
 - `fixtures` / `models` / `stations` 是 `write` 權限
+- 治具永久刪除限定 `manage`（admin），且 admin 必須已透過 `user_customers` 指派到目標客戶
+- `delete_transactions=false`：保留 transaction item，將 `fixture_id` 設為 `NULL` 並保存治具 code/name snapshot
+- `delete_transactions=true`：只刪除該治具 item；混合交易保留其他 item，空交易才刪除 parent
+- 刪除流程由 `MasterService` 在單一 transaction 內協調 inventory history、requirements、stock level/summary、capacity cache 與 audit
+- `fixtures.code` 的 `(customer_id, code)` 唯一鍵在刪除後可重新使用
+- 回傳 `FixtureDeleteRead` 提供受影響 item/transaction/requirement 數量
 - `fixtures.code` 使用 `(customer_id, code)` 唯一鍵
 - `fixtures.responsible_user_id` 候選名單來自該客戶已指派使用者
 - fixture image 採檔案式讀取，不走 DB 圖片表
@@ -258,6 +268,8 @@
   來顯示 `目前庫存` 與 `交易後庫存`
 - onboarding 教學模式不會新增後端 tutorial endpoint；只是前端不真正送出 `/receipts` 或 `/returns`
 
+- 被刪治具若選擇保留歷史，交易查詢與匯出以 `deleted_fixture_code` / `deleted_fixture_name` fallback 顯示
+- 保留歷史的 orphan item 不納入目前庫存與 fixture 聚合，但仍受 parent transaction 的 customer scope 保護
 #### 前端入口
 
 - `frontend/src/pages/InventoryPage.vue`
@@ -571,7 +583,9 @@
 - 檔案：`backend/app/models/inventory.py`
 - 主要欄位：
   - `transaction_id`
-  - `fixture_id`
+  - `fixture_id`（nullable；治具刪除後可為 `NULL`）
+  - `deleted_fixture_code`
+  - `deleted_fixture_name`
   - `ownership_type`
   - `identifier`
   - `quantity`
@@ -645,6 +659,9 @@
 - 搜尋頁效能目前依賴 `0011_search_indexes` 提供的名稱 / 儲位 / 交易時間索引。
 - 如果要改 `identifier` 規則，優先改 `backend/app/utils/identifier_rules.py` 與 `backend/tests/test_identifier_rules.py`，不要把規則重新散回 schema / service。
 - 若前端也需要改同語意規則，優先同步 `frontend/src/utils/identifier.ts` 與 `frontend/src/utils/identifier.test.ts`，不要回到元件內重寫 `padStart(4)`。
+- `0014_fixture_deletion` 讓 transaction item 可保留被刪治具的 code/name snapshot；刪除治具不再被舊 FK 阻擋。
+- 目標 MySQL 已驗證 revision `0014_fixture_deletion`、nullable FK、`ON DELETE SET NULL` 與 snapshot backfill。
+- customer scope 的權威行為在 `backend/app/core/auth.py`：已登入 admin 不具全客戶 bypass，需有 `user_customers` 指派。
 - `App.vue` 目前沒有渲染 audit 摘要區塊，因此 `/audit/logs` 雖保留，但不是首頁主流程的一部分。
 - migration/schema patch 的退場方向是三段式：
   - 先保留觀測與離線 compat 工具

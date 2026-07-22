@@ -15,7 +15,7 @@ const props = defineProps<{
     transaction_no: string;
     occurred_at: string;
     created_by: string;
-    fixture_id: number;
+    fixture_id: number | null;
     fixture_code: string;
     fixture_name: string;
     ownership_type: string;

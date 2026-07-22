@@ -64,6 +64,23 @@ export const masterApi = {
   ) {
     return request<Fixture>(`/master/fixtures/${fixtureId}`, { method: "PUT", body: JSON.stringify(payload) });
   },
+  deleteFixture(fixtureId: number, customerId: number, deleteTransactions: boolean) {
+    const params = new URLSearchParams({
+      customer_id: String(customerId),
+      delete_transactions: String(deleteTransactions)
+    });
+    return request<{
+      fixture_id: number;
+      fixture_code: string;
+      transaction_records_deleted: boolean;
+      transaction_item_count: number;
+      affected_transaction_count: number;
+      deleted_transaction_count: number;
+      deleted_requirement_count: number;
+    }>(`/master/fixtures/${fixtureId}?${params.toString()}`, {
+      method: "DELETE"
+    });
+  },
   listModels(customerId?: number) {
     const params = new URLSearchParams();
     setOptionalParam(params, "customer_id", customerId);

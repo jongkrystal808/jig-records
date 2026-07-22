@@ -90,6 +90,8 @@
   - admin 收退料帳目案件詳細 / 撤回 / 重算：`frontend/src/components/master/TransactionAccountDetailPanel.vue`
   - admin 治具資料品質：`frontend/src/components/master/FixtureQualityPanel.vue`
   - route 對應：`/master/fixtures`、`/master/models`、`/master/stations`、`/master/customers`、`/master/users`、`/master/ledger`、`/master/quality`
+  - admin 治具永久刪除 / 歷史紀錄選擇：`MasterPage.vue`、`MasterDetailPanel.vue`、`frontend/src/api/masterClient.ts`
+  - 保留歷史時前端交易型別允許 `fixture_id: null`：`frontend/src/types.ts`
 
 - 改產能頁
   - `frontend/src/pages/ProductionPage.vue`
@@ -139,6 +141,10 @@
   - `backend/app/routers/master.py`
   - `backend/app/services/master_service.py`
   - `GET /master/fixtures/quality` 也在這組
+  - admin 治具永久刪除：`DELETE /master/fixtures/{fixture_id}`
+  - 刪除 orchestration：`backend/app/services/master_service.py`、`backend/app/repositories/master_repository.py`
+  - 收/退料歷史保留或刪除：`backend/app/repositories/inventory_repository.py`、`backend/app/models/inventory.py`
+  - schema migration：`backend/alembic/versions/0014_fixture_deletion.py`
 
 - 改收退料 / 庫存 API
   - `backend/app/routers/inventory.py`
@@ -219,6 +225,19 @@
   - `backend/app/services/inventory_service.py`
   - `backend/app/repositories/inventory_repository.py`
   - `backend/app/schemas/inventory.py`
+
+
+- 改治具永久刪除 / 被刪治具的收退料歷史
+  - 前端流程：`frontend/src/pages/MasterPage.vue`
+  - 刪除入口：`frontend/src/components/master/MasterDetailPanel.vue`
+  - API client / type：`frontend/src/api/masterClient.ts`、`frontend/src/types.ts`
+  - API 與業務 transaction：`backend/app/routers/master.py`、`backend/app/services/master_service.py`
+  - 治具關聯資料刪除：`backend/app/repositories/master_repository.py`
+  - 收退料 item 保留/刪除與歷史查詢：`backend/app/repositories/inventory_repository.py`
+  - ORM / response schema：`backend/app/models/inventory.py`、`backend/app/schemas/inventory.py`、`backend/app/schemas/master.py`
+  - DB migration：`backend/alembic/versions/0014_fixture_deletion.py`
+  - 權限語意：僅 `manage`（admin），且仍受 `user_customers` customer scope 限制
+  - 保留模式以 code/name snapshot 顯示與匯出；刪除模式不會移除混合交易中的其他治具 item
 
 - 改治具資料品質問題跳轉規則
   - `frontend/src/components/master/FixtureQualityPanel.vue`

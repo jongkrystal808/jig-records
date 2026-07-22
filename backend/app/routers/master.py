@@ -11,6 +11,7 @@ from backend.app.schemas.master import (
     CustomerRead,
     CustomerUpdate,
     FixtureCreate,
+    FixtureDeleteRead,
     FixtureQualityReportRead,
     FixtureRead,
     FixtureUpdate,
@@ -171,6 +172,32 @@ def update_fixture(
     service = MasterService(db)
     try:
         return service.update_fixture(fixture_id, payload, actor=session)
+    except ValueError as exc:
+        message = str(exc)
+        status_code = status.HTTP_404_NOT_FOUND if message.endswith("not found") else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=status_code, detail=message) from exc
+
+
+@router.delete(
+    "/fixtures/{fixture_id}",
+    response_model=FixtureDeleteRead,
+    dependencies=[Depends(require_permission("manage"))],
+)
+def delete_fixture(
+    fixture_id: int,
+    customer_id: int = Query(...),
+    delete_transactions: bool = Query(default=False),
+    session: SessionContext = Depends(require_permission("manage")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    try:
+        return MasterService(db).delete_fixture(
+            fixture_id,
+            customer_id=customer_id,
+            delete_transactions=delete_transactions,
+            actor=session,
+        )
     except ValueError as exc:
         message = str(exc)
         status_code = status.HTTP_404_NOT_FOUND if message.endswith("not found") else status.HTTP_400_BAD_REQUEST

@@ -69,6 +69,16 @@ class FixtureRead(TimestampedResponse):
     is_active: bool
 
 
+class FixtureDeleteRead(BaseModel):
+    fixture_id: int
+    fixture_code: str
+    transaction_records_deleted: bool
+    transaction_item_count: int
+    affected_transaction_count: int
+    deleted_transaction_count: int
+    deleted_requirement_count: int
+
+
 class FixtureQualityRowRead(BaseModel):
     fixture_id: int
     fixture_code: str

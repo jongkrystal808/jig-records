@@ -1,9 +1,9 @@
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.models.inventory import FixtureStockLevel
+from backend.app.models.inventory import FixtureStockLevel, FixtureStockSummary
 from backend.app.models.master import Customer, Fixture, MachineModel, Station, User, UserCustomer
-from backend.app.models.production import FixtureRequirement
+from backend.app.models.production import FixtureRequirement, MachineCapacitySummary
 
 
 class MasterRepository:
@@ -126,6 +126,31 @@ class MasterRepository:
         fixture.is_active = is_active
         self.db.flush()
         return fixture
+
+    def delete_fixture(self, fixture: Fixture) -> int:
+        affected_station_ids = list(
+            self.db.scalars(
+                select(FixtureRequirement.station_id)
+                .where(FixtureRequirement.fixture_id == fixture.id)
+                .distinct()
+            )
+        )
+        requirement_count = int(
+            self.db.scalar(
+                select(func.count(FixtureRequirement.id)).where(FixtureRequirement.fixture_id == fixture.id)
+            )
+            or 0
+        )
+        self.db.execute(delete(FixtureRequirement).where(FixtureRequirement.fixture_id == fixture.id))
+        if affected_station_ids:
+            self.db.execute(
+                delete(MachineCapacitySummary).where(MachineCapacitySummary.station_id.in_(affected_station_ids))
+            )
+        self.db.execute(delete(FixtureStockLevel).where(FixtureStockLevel.fixture_id == fixture.id))
+        self.db.execute(delete(FixtureStockSummary).where(FixtureStockSummary.fixture_id == fixture.id))
+        self.db.delete(fixture)
+        self.db.flush()
+        return requirement_count
 
     def get_or_create_stock_level(self, fixture_id: int) -> FixtureStockLevel:
         level = self.db.get(FixtureStockLevel, fixture_id)

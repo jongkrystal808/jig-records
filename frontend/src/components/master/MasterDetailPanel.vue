@@ -17,6 +17,7 @@ const props = defineProps<{
   toggleActionLabel: string;
   canManageCustomers: boolean;
   canManageUsers: boolean;
+  canDeleteFixture: boolean;
   selectedFixtureId: number | null;
   selectedUserId: number | null;
   selectedCustomerScopeCount: number;
@@ -61,6 +62,7 @@ const props = defineProps<{
   onReloadSelection: () => void;
   onSaveCurrent: () => void | Promise<void>;
   onToggleCurrentActive: () => void | Promise<void>;
+  onRequestDeleteFixture: () => void;
   onResetUserPassword: () => void | Promise<void>;
   onToggleAssignedUser: (userId: number, checked: boolean) => void;
   onHasAssignedUser: (userId: number) => boolean;
@@ -186,6 +188,14 @@ const props = defineProps<{
         @cancel="onStartCreate"
         @delete="onToggleCurrentActive"
       />
+      <div v-if="activeTab === 'fixture' && canDeleteFixture && !isCreateMode" class="fixture-delete-zone">
+        <div>
+          <strong>永久刪除治具</strong>
+          <small>此操作不可復原，執行前可選擇是否一併刪除相關收退料記錄。</small>
+        </div>
+        <button class="fixture-delete-btn" type="button" :disabled="saving" @click="onRequestDeleteFixture">永久刪除</button>
+      </div>
+
     </form>
   </article>
 </template>
@@ -243,6 +253,51 @@ const props = defineProps<{
   background: rgba(255, 239, 207, 0.95);
   border: 1px solid rgba(224, 138, 30, 0.24);
 }
+
+.fixture-delete-zone {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid #efc0c0;
+  border-radius: 10px;
+  background: #fff8f8;
+}
+
+.fixture-delete-zone div {
+  display: grid;
+  gap: 3px;
+}
+
+.fixture-delete-zone strong {
+  color: #9f2f2f;
+  font-size: 12px;
+}
+
+.fixture-delete-zone small {
+  color: #7f5555;
+  font-size: 11px;
+}
+
+.fixture-delete-btn {
+  border: 1px solid #bd3e3e;
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: #fff;
+  background: #bd3e3e;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.fixture-delete-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 
 .action-group {
   display: flex;

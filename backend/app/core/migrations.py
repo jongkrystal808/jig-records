@@ -81,7 +81,7 @@ def _alembic_config() -> Config:
     root = Path(__file__).resolve().parents[3]
     config = Config(str(root / "alembic.ini"))
     config.set_main_option("script_location", str(root / "backend" / "alembic"))
-    config.set_main_option("sqlalchemy.url", settings.database_url)
+    config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
     return config
 
 

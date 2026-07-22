@@ -211,6 +211,7 @@ Includes:
 - Stations
 - Customer-to-user assignment
 - Fixture responsible-user assignment
+- Admin-only permanent fixture deletion with an explicit preserve/delete transaction-history choice
 
 ### 8.2 Inventory Management
 
@@ -255,9 +256,14 @@ Includes:
 
 Rules:
 
-- `admin`: all customers, can manage everything
+- `admin`: assigned customers only, can manage everything within that scope
 - `user`: assigned customers only, can edit business data
 - `guest`: all customers, read-only, no `/master`
+
+Customer scope rules:
+
+- Authenticated `admin` and `user` sessions are both scoped by `user_customers`
+- `manage` permission does not bypass customer assignment
 
 ---
 
@@ -335,18 +341,18 @@ Images are file-based, not stored in dedicated image tables.
 
 ## 12. Storage Location Design
 
-Authoritative storage field:
+Authoritative storage fields:
 
 ```text
-fixtures.storage_location
+fixtures.line_storage_location
+fixtures.department_storage_location
 ```
 
-Recommended location format:
+Recommended location values:
 
 ```text
-A-01-01
-A-01-02
-B-02-03
+Line: A-01-01
+Department: Tooling
 ```
 
 Warehouse profile / assignment tables are intentionally removed in the current design.

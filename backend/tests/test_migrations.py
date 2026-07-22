@@ -13,6 +13,7 @@ from sqlalchemy import create_engine, text
 
 from backend.app.core.audit_logging import register_audit_middleware
 from backend.app.core.migrations import (
+    _alembic_config,
     _normalize_alembic_revisions,
     _prepare_alembic_version_table,
     apply_runtime_compatibility_fixes,
@@ -88,6 +89,17 @@ class MigrationPreflightTests(unittest.TestCase):
             report = inspect_migration_compatibility(connection)
             self.assertFalse(report.runtime_upgrade_allowed)
             self.assertTrue(report.has_legacy_schema_without_version_table)
+
+
+    def test_alembic_config_accepts_percent_encoded_database_url(self) -> None:
+        original_database_url = settings.database_url
+        encoded_url = "mysql+pymysql://fixture:password%23@example.test/database"
+        try:
+            object.__setattr__(settings, "database_url", encoded_url)
+            config = _alembic_config()
+            self.assertEqual(config.get_main_option("sqlalchemy.url"), encoded_url)
+        finally:
+            object.__setattr__(settings, "database_url", original_database_url)
 
 
 class RuntimeSafetySettingsTests(unittest.TestCase):
@@ -270,7 +282,7 @@ class BootstrapFlowTests(unittest.TestCase):
                 ).scalar_one()
             engine.dispose()
 
-            self.assertEqual(revision, "0011_search_indexes")
+            self.assertEqual(revision, "0014_fixture_deletion")
             self.assertEqual(admin_count, 1)
             self.assertTrue(
                 any('"event": "migration_runtime_gate"' in message and '"outcome": "passed"' in message for message in captured.output)

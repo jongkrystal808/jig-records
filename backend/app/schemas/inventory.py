@@ -55,7 +55,7 @@ class IdentifierStockSummaryRead(ORMModel):
 
 
 class StockTransactionItemRead(ORMModel):
-    fixture_id: int
+    fixture_id: int | None
     fixture_code: str
     fixture_name: str
     ownership_type: Literal["customer_supplied", "self_purchased"]

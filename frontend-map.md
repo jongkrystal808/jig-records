@@ -439,6 +439,8 @@
   - import / export / template download
   - summary metrics
   - admin 治具資料品質報表
+  - admin 治具永久刪除 dialog state 與送出 orchestration
+  - 刪除完成後重載 fixtures / quality / models / stations 並清除選取
 
 - `MasterListPanel.vue`
   - tab 清單
@@ -447,6 +449,8 @@
 
 - `MasterDetailPanel.vue`
   - fixture / model / station / customer / user detail form
+  - admin-only 治具永久刪除入口
+  - 透過 props 將刪除請求交回 `MasterPage.vue`
 
 ### 主要功能
 
@@ -459,6 +463,8 @@
 - fixture / model / station CSV 匯入匯出 / 範本下載
 - 從資料維護頁重新啟動新手導覽
 
+- admin 可永久刪除治具，並選擇保留或刪除該治具的收/退料紀錄
+- 保留歷史為預設建議選項；刪除歷史不影響混合交易中的其他治具明細
 ### API 對應
 
 - 頁面初始化
@@ -478,6 +484,7 @@
   - `api.downloadFixtureTemplateCsv`
 
 - model tab
+  - `api.deleteFixture(fixtureId, customerId, deleteTransactions)`
   - `api.createModel`
   - `api.updateModel`
   - `api.exportModelsCsv`
@@ -507,21 +514,30 @@
 - `guest` 不可進這頁
 - `user` 可維護 fixture / model / station
 - customer / user / ledger / quality tab 實際上是 admin 能力
+- 治具永久刪除只對 `admin` 顯示，前端以 `canManageUsers` 控制入口
+- 後端仍以 `manage` 權限作為真正授權邊界，不能只依賴前端隱藏按鈕
+- admin 也必須選到已透過 `user_customers` 指派的客戶，否則後端會拒絕
 
 ### 改資料維護頁時去哪裡
 
 - 改 page tab orchestration、summary、CSV 流程、品質報表跳轉
   - `frontend/src/pages/MasterPage.vue`
+  - 治具刪除 dialog 與刪除後 refresh 也在此檔
 
 - 改列表、搜尋、分頁欄位
   - `frontend/src/components/master/MasterListPanel.vue`
 
 - 改 detail 編輯表單
   - `frontend/src/components/master/MasterDetailPanel.vue`
+  - admin-only 永久刪除按鈕與危險區塊也在此檔
 
 - 改治具資料品質表、問題篩選、CSV 匯出、點回治具編輯、問題類型跳轉規則
   - `frontend/src/components/master/FixtureQualityPanel.vue`
   - `frontend/src/pages/MasterPage.vue`
+
+- 改治具刪除 API payload / response
+  - `frontend/src/api/masterClient.ts`
+  - `frontend/src/types.ts`（保留歷史時 `fixture_id` 可為 `null`）
 
 ## 產能頁
 
