@@ -2,7 +2,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.models.inventory import FixtureStockLevel, FixtureStockSummary
-from backend.app.models.master import Customer, Fixture, MachineModel, Station, User, UserCustomer
+from backend.app.models.master import Customer, Fixture, MachineModel, ModelStation, Station, User, UserCustomer
 from backend.app.models.production import FixtureRequirement, MachineCapacitySummary
 
 
@@ -192,6 +192,49 @@ class MasterRepository:
         self.db.flush()
         return model
 
+    def delete_model(self, model: MachineModel) -> dict:
+        affected_station_ids = list(
+            {
+                *self.db.scalars(
+                    select(func.distinct(ModelStation.station_id)).where(ModelStation.model_id == model.id)
+                ),
+                *self.db.scalars(
+                    select(func.distinct(FixtureRequirement.station_id)).where(FixtureRequirement.model_id == model.id)
+                ),
+            }
+        )
+        mapping_count = int(
+            self.db.scalar(
+                select(func.count(ModelStation.id)).where(ModelStation.model_id == model.id)
+            )
+            or 0
+        )
+        requirement_count = int(
+            self.db.scalar(
+                select(func.count(FixtureRequirement.id)).where(FixtureRequirement.model_id == model.id)
+            )
+            or 0
+        )
+        capacity_summary_count = int(
+            self.db.scalar(
+                select(func.count(MachineCapacitySummary.station_id)).where(
+                    MachineCapacitySummary.station_id.in_(affected_station_ids)
+                )
+            )
+            or 0
+        ) if affected_station_ids else 0
+        self.db.execute(delete(FixtureRequirement).where(FixtureRequirement.model_id == model.id))
+        self.db.execute(delete(ModelStation).where(ModelStation.model_id == model.id))
+        if affected_station_ids:
+            self.db.execute(delete(MachineCapacitySummary).where(MachineCapacitySummary.station_id.in_(affected_station_ids)))
+        self.db.delete(model)
+        self.db.flush()
+        return {
+            "deleted_model_station_count": mapping_count,
+            "deleted_requirement_count": requirement_count,
+            "deleted_capacity_summary_count": capacity_summary_count,
+        }
+
     def create_station(self, *, customer_id: int, code: str, name: str) -> Station:
         station = Station(customer_id=customer_id, code=code, name=name, is_active=True)
         self.db.add(station)
@@ -222,6 +265,32 @@ class MasterRepository:
         station.is_active = is_active
         self.db.flush()
         return station
+
+    def delete_station(self, station: Station) -> dict:
+        mapping_count = int(
+            self.db.scalar(select(func.count(ModelStation.id)).where(ModelStation.station_id == station.id))
+            or 0
+        )
+        requirement_count = int(
+            self.db.scalar(select(func.count(FixtureRequirement.id)).where(FixtureRequirement.station_id == station.id))
+            or 0
+        )
+        capacity_summary_count = int(
+            self.db.scalar(
+                select(func.count(MachineCapacitySummary.station_id)).where(MachineCapacitySummary.station_id == station.id)
+            )
+            or 0
+        )
+        self.db.execute(delete(FixtureRequirement).where(FixtureRequirement.station_id == station.id))
+        self.db.execute(delete(ModelStation).where(ModelStation.station_id == station.id))
+        self.db.execute(delete(MachineCapacitySummary).where(MachineCapacitySummary.station_id == station.id))
+        self.db.delete(station)
+        self.db.flush()
+        return {
+            "deleted_model_station_count": mapping_count,
+            "deleted_requirement_count": requirement_count,
+            "deleted_capacity_summary_count": capacity_summary_count,
+        }
 
     def list_users(self) -> list[User]:
         return list(self.db.scalars(select(User).order_by(User.username)))

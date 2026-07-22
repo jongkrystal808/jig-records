@@ -1,5 +1,5 @@
 from fastapi.responses import FileResponse
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from backend.app.core.auth import SessionContext, list_accessible_customers, require_permission, resolve_customer_scope
@@ -12,13 +12,16 @@ from backend.app.schemas.master import (
     CustomerUpdate,
     FixtureCreate,
     FixtureDeleteRead,
+    FixtureImageUploadRead,
     FixtureQualityReportRead,
     FixtureRead,
     FixtureUpdate,
     MachineModelCreate,
+    MachineModelDeleteRead,
     MachineModelRead,
     MachineModelUpdate,
     StationCreate,
+    StationDeleteRead,
     StationRead,
     StationUpdate,
 )
@@ -178,6 +181,35 @@ def update_fixture(
         raise HTTPException(status_code=status_code, detail=message) from exc
 
 
+@router.post(
+    "/fixtures/{fixture_id}/image",
+    response_model=FixtureImageUploadRead,
+    dependencies=[Depends(require_permission("write"))],
+)
+async def upload_fixture_image(
+    fixture_id: int,
+    customer_id: int = Query(...),
+    image: UploadFile = File(...),
+    session: SessionContext = Depends(require_permission("write")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    service = MasterService(db)
+    try:
+        return service.upload_fixture_image(
+            fixture_id,
+            customer_id=customer_id,
+            content=await image.read(),
+            content_type=image.content_type,
+            filename=image.filename,
+            actor=session,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        status_code = status.HTTP_404_NOT_FOUND if message.endswith("not found") else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=status_code, detail=message) from exc
+
+
 @router.delete(
     "/fixtures/{fixture_id}",
     response_model=FixtureDeleteRead,
@@ -298,6 +330,26 @@ def update_model(
         raise HTTPException(status_code=status_code, detail=message) from exc
 
 
+@router.delete(
+    "/models/{model_id}",
+    response_model=MachineModelDeleteRead,
+    dependencies=[Depends(require_permission("manage"))],
+)
+def delete_model(
+    model_id: int,
+    customer_id: int = Query(...),
+    session: SessionContext = Depends(require_permission("manage")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    try:
+        return MasterService(db).delete_model(model_id, customer_id=customer_id, actor=session)
+    except ValueError as exc:
+        message = str(exc)
+        status_code = status.HTTP_404_NOT_FOUND if message.endswith("not found") else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=status_code, detail=message) from exc
+
+
 @router.post(
     "/stations",
     response_model=StationRead,
@@ -378,6 +430,26 @@ def update_station(
     service = MasterService(db)
     try:
         return service.update_station(station_id, payload, actor=session)
+    except ValueError as exc:
+        message = str(exc)
+        status_code = status.HTTP_404_NOT_FOUND if message.endswith("not found") else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=status_code, detail=message) from exc
+
+
+@router.delete(
+    "/stations/{station_id}",
+    response_model=StationDeleteRead,
+    dependencies=[Depends(require_permission("manage"))],
+)
+def delete_station(
+    station_id: int,
+    customer_id: int = Query(...),
+    session: SessionContext = Depends(require_permission("manage")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    try:
+        return MasterService(db).delete_station(station_id, customer_id=customer_id, actor=session)
     except ValueError as exc:
         message = str(exc)
         status_code = status.HTTP_404_NOT_FOUND if message.endswith("not found") else status.HTTP_400_BAD_REQUEST

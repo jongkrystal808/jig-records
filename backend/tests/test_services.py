@@ -17,7 +17,7 @@ from backend.app.core.errors import register_error_handlers
 from backend.app.models import Base
 from backend.app.models.audit import AuditLog
 from backend.app.models.inventory import FixtureStockLevel, FixtureStockSummary, MaterialTransaction, MaterialTransactionItem
-from backend.app.models.production import FixtureRequirement
+from backend.app.models.production import FixtureRequirement, MachineCapacitySummary
 from backend.app.routers import api_router
 from backend.app.repositories.master_repository import MasterRepository
 from backend.app.schemas.common import CsvImportPayload
@@ -388,6 +388,66 @@ class MasterServiceTests(ServiceTestCase):
             ),
             0,
         )
+
+    def test_delete_model_removes_related_mapping_and_requirements(self) -> None:
+        bundle = self.seed_customer_bundle()
+        customer_id = bundle["customer"].id
+        self.production_service.create_model_station(
+            ModelStationCreate(
+                customer_id=customer_id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+            )
+        )
+        self.production_service.create_fixture_requirement(
+            FixtureRequirementCreate(
+                customer_id=customer_id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+                fixture_id=bundle["fixture_a"].id,
+                required_qty=2,
+            )
+        )
+        self.db.add(MachineCapacitySummary(station_id=bundle["station"].id, max_open_station_count=4, bottleneck_fixture_code="FX-A"))
+        self.db.commit()
+
+        result = self.master_service.delete_model(bundle["model"].id, customer_id=customer_id)
+
+        self.assertEqual(result.model_code, "M-001")
+        self.assertEqual(result.deleted_model_station_count, 1)
+        self.assertEqual(result.deleted_requirement_count, 1)
+        self.assertEqual(result.deleted_capacity_summary_count, 1)
+        self.assertIsNone(self.repo.get_model(bundle["model"].id, customer_id=customer_id))
+
+    def test_delete_station_removes_related_mapping_and_requirements(self) -> None:
+        bundle = self.seed_customer_bundle()
+        customer_id = bundle["customer"].id
+        self.production_service.create_model_station(
+            ModelStationCreate(
+                customer_id=customer_id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+            )
+        )
+        self.production_service.create_fixture_requirement(
+            FixtureRequirementCreate(
+                customer_id=customer_id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+                fixture_id=bundle["fixture_a"].id,
+                required_qty=1,
+            )
+        )
+        self.db.add(MachineCapacitySummary(station_id=bundle["station"].id, max_open_station_count=3, bottleneck_fixture_code="FX-A"))
+        self.db.commit()
+
+        result = self.master_service.delete_station(bundle["station"].id, customer_id=customer_id)
+
+        self.assertEqual(result.station_code, "ST-001")
+        self.assertEqual(result.deleted_model_station_count, 1)
+        self.assertEqual(result.deleted_requirement_count, 1)
+        self.assertEqual(result.deleted_capacity_summary_count, 1)
+        self.assertIsNone(self.repo.get_station(bundle["station"].id, customer_id=customer_id))
 
     def test_fixture_quality_report_flags_expected_issues(self) -> None:
         original_image_dir = settings.fixture_image_dir
@@ -1305,6 +1365,65 @@ class ProductionApiTests(ServiceTestCase):
         self.assertEqual(deleted.json()["fixture_code"], "FX-A")
         self.assertFalse(deleted.json()["transaction_records_deleted"])
         self.assertIsNone(self.repo.get_fixture(bundle["fixture_a"].id))
+
+    def test_only_admin_can_delete_model_and_station(self) -> None:
+        bundle = self.seed_customer_bundle()
+        self.production_service.create_model_station(
+            ModelStationCreate(
+                customer_id=bundle["customer"].id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+            )
+        )
+        self.repo.replace_allowed_users_for_customer(bundle["customer"].id, [self.admin["id"]])
+        scoped_user = self.auth_service.create_user(
+            UserCreate(
+                username="model-station-editor",
+                password="secret123",
+                display_name="Model Station Editor",
+                role="user",
+                is_active=True,
+                allowed_customer_ids=[],
+            )
+        )
+        self.repo.replace_allowed_users_for_customer(bundle["customer"].id, [self.admin["id"], scoped_user["id"]])
+        self.db.commit()
+        scoped_token = create_session_token(mode="user", user=self.repo.get_user(scoped_user["id"]))
+        scoped_headers = {"Authorization": f"Bearer {scoped_token}"}
+
+        forbidden_model = self.client.delete(
+            f"/api/v2/master/models/{bundle['model'].id}",
+            params={"customer_id": bundle["customer"].id},
+            headers=scoped_headers,
+        )
+        self.assertEqual(forbidden_model.status_code, 403)
+
+        forbidden_station = self.client.delete(
+            f"/api/v2/master/stations/{bundle['station'].id}",
+            params={"customer_id": bundle["customer"].id},
+            headers=scoped_headers,
+        )
+        self.assertEqual(forbidden_station.status_code, 403)
+
+        deleted_model = self.client.delete(
+            f"/api/v2/master/models/{bundle['model'].id}",
+            params={"customer_id": bundle["customer"].id},
+            headers=self._auth_headers(),
+        )
+        self.assertEqual(deleted_model.status_code, 200)
+        self.assertEqual(deleted_model.json()["model_code"], "M-001")
+
+        recreated_model = self.repo.create_model(customer_id=bundle["customer"].id, code="M-NEW", name="Model New")
+        recreated_station = self.repo.create_station(customer_id=bundle["customer"].id, code="ST-NEW", name="Station New")
+        self.db.commit()
+
+        deleted_station = self.client.delete(
+            f"/api/v2/master/stations/{recreated_station.id}",
+            params={"customer_id": bundle["customer"].id},
+            headers=self._auth_headers(),
+        )
+        self.assertEqual(deleted_station.status_code, 200)
+        self.assertEqual(deleted_station.json()["station_code"], "ST-NEW")
 
 
 

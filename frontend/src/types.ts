@@ -20,8 +20,16 @@ export interface Fixture {
   min_stock_qty: number;
   description: string | null;
   is_active: boolean;
+  has_image: boolean;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface FixtureImageUploadResult {
+  fixture_id: number;
+  fixture_code: string;
+  has_image: boolean;
+  fixture: Fixture;
 }
 
 export interface FixtureQualityRow {
@@ -57,12 +65,28 @@ export interface MachineModel {
   is_active: boolean;
 }
 
+export interface MachineModelDeleteResult {
+  model_id: number;
+  model_code: string;
+  deleted_model_station_count: number;
+  deleted_requirement_count: number;
+  deleted_capacity_summary_count: number;
+}
+
 export interface Station {
   id: number;
   customer_id: number;
   code: string;
   name: string;
   is_active: boolean;
+}
+
+export interface StationDeleteResult {
+  station_id: number;
+  station_code: string;
+  deleted_model_station_count: number;
+  deleted_requirement_count: number;
+  deleted_capacity_summary_count: number;
 }
 
 export interface AppUser {

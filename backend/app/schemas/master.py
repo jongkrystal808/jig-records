@@ -67,6 +67,14 @@ class FixtureRead(TimestampedResponse):
     min_stock_qty: int
     description: str | None
     is_active: bool
+    has_image: bool
+
+
+class FixtureImageUploadRead(BaseModel):
+    fixture_id: int
+    fixture_code: str
+    has_image: bool
+    fixture: FixtureRead
 
 
 class FixtureDeleteRead(BaseModel):
@@ -125,6 +133,14 @@ class MachineModelRead(TimestampedResponse):
     is_active: bool
 
 
+class MachineModelDeleteRead(BaseModel):
+    model_id: int
+    model_code: str
+    deleted_model_station_count: int
+    deleted_requirement_count: int
+    deleted_capacity_summary_count: int
+
+
 class StationCreate(BaseModel):
     customer_id: int
     code: str = Field(min_length=1, max_length=60)
@@ -144,3 +160,11 @@ class StationRead(TimestampedResponse):
     code: str
     name: str
     is_active: bool
+
+
+class StationDeleteRead(BaseModel):
+    station_id: int
+    station_code: str
+    deleted_model_station_count: int
+    deleted_requirement_count: int
+    deleted_capacity_summary_count: int

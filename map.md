@@ -90,7 +90,7 @@
   - admin 收退料帳目案件詳細 / 撤回 / 重算：`frontend/src/components/master/TransactionAccountDetailPanel.vue`
   - admin 治具資料品質：`frontend/src/components/master/FixtureQualityPanel.vue`
   - route 對應：`/master/fixtures`、`/master/models`、`/master/stations`、`/master/customers`、`/master/users`、`/master/ledger`、`/master/quality`
-  - admin 治具永久刪除 / 歷史紀錄選擇：`MasterPage.vue`、`MasterDetailPanel.vue`、`frontend/src/api/masterClient.ts`
+  - admin 主資料永久刪除（治具 / 機種 / 站點）：`MasterPage.vue`、`MasterDetailPanel.vue`、`frontend/src/api/masterClient.ts`
   - 保留歷史時前端交易型別允許 `fixture_id: null`：`frontend/src/types.ts`
 
 - 改產能頁
@@ -273,6 +273,7 @@
   - `frontend/src/components/app/AppTopbar.vue`
   - `frontend/src/components/app/AppMobileDrawer.vue`
   - `frontend/src/onboarding.ts`
+  - 收斂後的 flow 卡片與步驟合併也在 `frontend/src/onboarding.ts`
 
 - 改 migration compatibility / schema patch 退場
   - runtime gate：`backend/app/core/migrations.py`

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { api } from "@/api";
+import { fixtureImageUrlByCode } from "@/api";
 import { authSession, customers, onboardingActive, onboardingPickerOpen, onboardingStepIndex, selectedCustomerId } from "@/appState";
 import MasterDetailPanel from "@/components/master/MasterDetailPanel.vue";
 import MasterListPanel from "@/components/master/MasterListPanel.vue";
@@ -11,10 +12,20 @@ import TransactionAccountDetailPanel from "@/components/master/TransactionAccoun
 import TransactionAccountListPanel from "@/components/master/TransactionAccountListPanel.vue";
 import UiSummaryCards from "@/components/UiSummaryCards.vue";
 import { pushToast } from "@/toastState";
-import type { AppUser, Customer, Fixture, FixtureQualityReport, MachineModel, MaterialTransaction, Station } from "@/types";
+import type { AppUser, Customer, Fixture, FixtureQualityReport, MachineModel, MaterialTransaction, ModelStation, Station } from "@/types";
 import { fallbackText } from "@/utils/display";
 
 type MasterTab = "fixture" | "model" | "station" | "customer" | "user" | "ledger" | "quality";
+
+const QUALITY_ISSUE_LABELS: Record<string, string> = {
+  missing_name: "沒有名稱",
+  missing_storage_location: "沒有儲位",
+  missing_image: "沒有圖片",
+  missing_min_stock_qty: "沒有最低水位",
+  missing_model_relation: "沒有任何機種關聯",
+  stock_mismatch: "Identifier 庫存與總庫存不一致",
+  missing_storage_and_min_stock: "沒有儲位 / 沒有最低水位"
+};
 
 const router = useRouter();
 const route = useRoute();
@@ -27,15 +38,30 @@ const customerRows = ref<Customer[]>([]);
 const customerAssignedUsers = ref<AppUser[]>([]);
 const ledgerTransactions = ref<MaterialTransaction[]>([]);
 const fixtureQualityReport = ref<FixtureQualityReport | null>(null);
+const qualityQuickEditOpen = ref(false);
+const qualityQuickEditIssueCode = ref<string | null>(null);
+const qualityQuickEditFixtureId = ref<number | null>(null);
+const qualityQuickEditForm = ref(makeEmptyFixtureForm());
+const qualityQuickEditSaving = ref(false);
+const qualityRelationSaving = ref(false);
+const qualityModelStations = ref<ModelStation[]>([]);
+const qualityRelationModelId = ref<number | null>(null);
+const qualityRelationStationId = ref<number | null>(null);
+const qualityRelationRequiredQty = ref(1);
+const qualityImageInput = ref<HTMLInputElement | null>(null);
+const qualityImageFile = ref<File | null>(null);
+const qualityImageUploading = ref(false);
+const qualityImageVersion = ref(Date.now());
 
 const activeTab = ref<MasterTab>("fixture");
 const keyword = ref("");
 const statusFilter = ref<"all" | "active" | "inactive">("all");
 const loading = ref(false);
 const saving = ref(false);
-const fixtureDeleteDialogOpen = ref(false);
+const hardDeleteDialogOpen = ref(false);
 const deleteFixtureTransactions = ref(false);
-const fixtureDeleting = ref(false);
+const hardDeleting = ref(false);
+const hardDeleteTargetType = ref<"fixture" | "model" | "station" | null>(null);
 const listPage = ref(1);
 const listPageSize = 10;
 const ledgerKeyword = ref("");
@@ -111,6 +137,19 @@ function makeEmptyUserForm() {
     is_active: true,
     password: "",
     reset_password: ""
+  };
+}
+
+function makeFixtureFormFromRow(row: Fixture) {
+  return {
+    code: row.code,
+    name: row.name,
+    responsible_user_id: row.responsible_user_id,
+    line_storage_location: row.line_storage_location ?? "",
+    department_storage_location: row.department_storage_location ?? "",
+    min_stock_qty: row.min_stock_qty,
+    description: row.description ?? "",
+    is_active: row.is_active
   };
 }
 
@@ -253,6 +292,7 @@ const emptyStateMessage = computed(() => {
 });
 
 const selectedFixture = computed(() => fixtures.value.find((row) => row.id === selectedFixtureId.value) ?? null);
+const qualityQuickEditFixture = computed(() => fixtures.value.find((row) => row.id === qualityQuickEditFixtureId.value) ?? null);
 const selectedModel = computed(() => models.value.find((row) => row.id === selectedModelId.value) ?? null);
 const selectedStation = computed(() => stations.value.find((row) => row.id === selectedStationId.value) ?? null);
 const selectedUser = computed(() => users.value.find((row) => row.id === selectedUserId.value) ?? null);
@@ -419,6 +459,51 @@ const selectedActivatableRow = computed(() => {
 });
 
 const toggleActionLabel = computed(() => (selectedActivatableRow.value?.is_active ?? true ? "停用" : "恢復使用"));
+const canDeleteMasterEntity = computed(
+  () => canManageUsers.value && (activeTab.value === "fixture" || activeTab.value === "model" || activeTab.value === "station")
+);
+const hardDeleteTargetCode = computed(() => {
+  if (hardDeleteTargetType.value === "fixture") return selectedFixture.value?.code ?? "";
+  if (hardDeleteTargetType.value === "model") return selectedModel.value?.code ?? "";
+  if (hardDeleteTargetType.value === "station") return selectedStation.value?.code ?? "";
+  return "";
+});
+const hardDeleteDialogTitle = computed(() => {
+  if (hardDeleteTargetType.value === "fixture") return `永久刪除治具 ${hardDeleteTargetCode.value}`;
+  if (hardDeleteTargetType.value === "model") return `永久刪除機種 ${hardDeleteTargetCode.value}`;
+  if (hardDeleteTargetType.value === "station") return `永久刪除站點 ${hardDeleteTargetCode.value}`;
+  return "永久刪除主資料";
+});
+const hardDeleteDialogIntro = computed(() => {
+  if (hardDeleteTargetType.value === "fixture") {
+    return "治具主檔、庫存摘要與產能需求會永久刪除。請選擇歷史收退料記錄的處理方式。";
+  }
+  if (hardDeleteTargetType.value === "model") {
+    return "將一併刪除關聯的機種站點對應、站點治具需求與受影響產能摘要。是否確定刪除？";
+  }
+  if (hardDeleteTargetType.value === "station") {
+    return "將一併刪除關聯的機種站點對應、站點治具需求與該站點產能摘要。是否確定刪除？";
+  }
+  return "";
+});
+const qualityQuickEditIssueLabel = computed(() => {
+  if (!qualityQuickEditIssueCode.value) return "";
+  return QUALITY_ISSUE_LABELS[qualityQuickEditIssueCode.value] ?? qualityQuickEditIssueCode.value;
+});
+const qualityQuickEditTitle = computed(() => {
+  const fixtureCode = qualityQuickEditFixture.value?.code ?? "";
+  return fixtureCode ? `${fixtureCode} - ${qualityQuickEditIssueLabel.value}` : qualityQuickEditIssueLabel.value;
+});
+const qualityRelationStationOptions = computed(() => {
+  return stations.value;
+});
+const qualityImageUrl = computed(() => {
+  const fixtureCode = qualityQuickEditFixture.value?.code;
+  if (!fixtureCode || !qualityQuickEditFixture.value?.has_image) {
+    return "";
+  }
+  return `${fixtureImageUrlByCode(fixtureCode)}?v=${qualityImageVersion.value}`;
+});
 
 // Keep the page responsible only for counts; layout now lives in UiSummaryCards.
 const summaryCards = computed(() => [
@@ -696,29 +781,43 @@ function selectRow(id: number): void {
   syncEditorFromSelection();
 }
 
-function openFixtureFromQuality(fixtureId: number): void {
-  if (!confirmDiscardChanges("目前表單有未儲存的修改，切換到治具詳細資料後將會捨棄。要繼續嗎？")) {
+async function openIssueEditorFromQuality(fixtureId: number, issueCode: string): Promise<void> {
+  const editorIssueCode =
+    issueCode === "missing_storage_location" || issueCode === "missing_min_stock_qty"
+      ? "missing_storage_and_min_stock"
+      : issueCode;
+  if (editorIssueCode === "missing_model_relation") {
     return;
   }
-  activeTab.value = "fixture";
-  keyword.value = "";
-  statusFilter.value = "all";
-  listPage.value = 1;
-  selectedFixtureId.value = fixtureId;
-  syncEditorFromSelection();
+  const fixture = fixtures.value.find((row) => row.id === fixtureId);
+  if (!fixture) {
+    pushToast("找不到要修正的治具資料。", "warning");
+    return;
+  }
+  qualityQuickEditFixtureId.value = fixtureId;
+  qualityQuickEditIssueCode.value = editorIssueCode;
+  qualityQuickEditForm.value = makeFixtureFormFromRow(fixture);
+  qualityRelationRequiredQty.value = 1;
+  qualityQuickEditOpen.value = true;
 }
 
-async function openSearchFixtureFromQuality(fixtureCode: string): Promise<void> {
-  if (!confirmDiscardChanges("目前表單有未儲存的修改，切換到查詢頁後將會捨棄。要繼續嗎？")) {
-    return;
+function closeQualityQuickEdit(): void {
+  qualityQuickEditOpen.value = false;
+  qualityQuickEditIssueCode.value = null;
+  qualityQuickEditFixtureId.value = null;
+  qualityQuickEditForm.value = makeEmptyFixtureForm();
+  qualityRelationModelId.value = null;
+  qualityRelationStationId.value = null;
+  qualityRelationRequiredQty.value = 1;
+  qualityImageFile.value = null;
+  if (qualityImageInput.value) {
+    qualityImageInput.value.value = "";
   }
-  await router.push({
-    name: "search",
-    query: {
-      mode: "fixture",
-      q: fixtureCode,
-    },
-  });
+}
+
+function updateQualityImageFile(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  qualityImageFile.value = input.files?.[0] ?? null;
 }
 
 function reloadSelection(): void {
@@ -726,6 +825,97 @@ function reloadSelection(): void {
     return;
   }
   syncEditorFromSelection();
+}
+
+async function saveQualityQuickEdit(): Promise<void> {
+  if (!selectedCustomerId.value || !qualityQuickEditFixtureId.value) {
+    pushToast("請先選擇客戶與治具。", "warning");
+    return;
+  }
+  qualityQuickEditSaving.value = true;
+  try {
+    await api.updateFixture(qualityQuickEditFixtureId.value, {
+      customer_id: selectedCustomerId.value,
+      responsible_user_id: qualityQuickEditForm.value.responsible_user_id,
+      code: qualityQuickEditForm.value.code.trim(),
+      name: qualityQuickEditForm.value.name.trim(),
+      line_storage_location: qualityQuickEditForm.value.line_storage_location.trim() || undefined,
+      department_storage_location: qualityQuickEditForm.value.department_storage_location.trim() || undefined,
+      min_stock_qty: qualityQuickEditForm.value.min_stock_qty,
+      description: qualityQuickEditForm.value.description.trim() || undefined,
+      is_active: qualityQuickEditForm.value.is_active
+    });
+    await loadData(false, { preserveListPage: true, preserveLedgerPage: true });
+    pushToast(`治具 ${qualityQuickEditForm.value.code} 已更新。`, "success");
+    closeQualityQuickEdit();
+  } catch (err) {
+    pushToast(err instanceof Error ? err.message : "更新治具失敗", "error");
+  } finally {
+    qualityQuickEditSaving.value = false;
+  }
+}
+
+async function saveQualityRelation(): Promise<void> {
+  if (!selectedCustomerId.value || !qualityQuickEditFixtureId.value) {
+    pushToast("請先選擇客戶與治具。", "warning");
+    return;
+  }
+  if (!qualityRelationModelId.value || !qualityRelationStationId.value) {
+    pushToast("請先選擇機種與站點。", "warning");
+    return;
+  }
+  qualityRelationSaving.value = true;
+  try {
+    const existingMapping = qualityModelStations.value.find(
+      (row) => row.model_id === qualityRelationModelId.value && row.station_id === qualityRelationStationId.value
+    );
+    if (!existingMapping) {
+      const createdMapping = await api.createModelStation({
+        customer_id: selectedCustomerId.value,
+        model_id: qualityRelationModelId.value,
+        station_id: qualityRelationStationId.value
+      });
+      qualityModelStations.value = [...qualityModelStations.value, createdMapping];
+    }
+    await api.createFixtureRequirement({
+      customer_id: selectedCustomerId.value,
+      model_id: qualityRelationModelId.value,
+      station_id: qualityRelationStationId.value,
+      fixture_id: qualityQuickEditFixtureId.value,
+      required_qty: qualityRelationRequiredQty.value
+    });
+    await loadData(false, { preserveListPage: true, preserveLedgerPage: true });
+    pushToast("已補上第一筆機種站點治具需求。", "success");
+    closeQualityQuickEdit();
+  } catch (err) {
+    pushToast(err instanceof Error ? err.message : "建立治具關聯失敗", "error");
+  } finally {
+    qualityRelationSaving.value = false;
+  }
+}
+
+async function uploadQualityImage(): Promise<void> {
+  if (!selectedCustomerId.value || !qualityQuickEditFixtureId.value) {
+    pushToast("請先選擇客戶與治具。", "warning");
+    return;
+  }
+  if (!qualityImageFile.value) {
+    pushToast("請先選擇要上傳的圖片。", "warning");
+    return;
+  }
+  qualityImageUploading.value = true;
+  try {
+    const result = await api.uploadFixtureImage(qualityQuickEditFixtureId.value, selectedCustomerId.value, qualityImageFile.value);
+    qualityImageVersion.value = Date.now();
+    qualityQuickEditForm.value = makeFixtureFormFromRow(result.fixture);
+    await loadData(false, { preserveListPage: true, preserveLedgerPage: true });
+    pushToast(`治具 ${result.fixture_code} 圖片已更新。`, "success");
+    closeQualityQuickEdit();
+  } catch (err) {
+    pushToast(err instanceof Error ? err.message : "上傳治具圖片失敗", "error");
+  } finally {
+    qualityImageUploading.value = false;
+  }
 }
 
 function toggleAssignedUser(userId: number, checked: boolean): void {
@@ -943,46 +1133,92 @@ async function toggleCurrentActive(): Promise<void> {
   }
 }
 
-function openFixtureDeleteDialog(): void {
-  if (!canManageUsers.value || !selectedFixtureId.value) {
-    pushToast("只有管理員可以永久刪除治具。", "warning");
+function openHardDeleteDialog(): void {
+  if (!canManageUsers.value) {
+    pushToast("只有管理員可以永久刪除主資料。", "warning");
+    return;
+  }
+  if (activeTab.value === "fixture" && selectedFixtureId.value) {
+    hardDeleteTargetType.value = "fixture";
+  } else if (activeTab.value === "model" && selectedModelId.value) {
+    hardDeleteTargetType.value = "model";
+  } else if (activeTab.value === "station" && selectedStationId.value) {
+    hardDeleteTargetType.value = "station";
+  } else {
+    pushToast(`請先選擇要刪除的${tabTitleMap[activeTab.value]}。`, "warning");
     return;
   }
   deleteFixtureTransactions.value = false;
-  fixtureDeleteDialogOpen.value = true;
+  hardDeleteDialogOpen.value = true;
 }
 
-function closeFixtureDeleteDialog(): void {
-  if (fixtureDeleting.value) {
+function closeHardDeleteDialog(): void {
+  if (hardDeleting.value) {
     return;
   }
-  fixtureDeleteDialogOpen.value = false;
+  hardDeleteDialogOpen.value = false;
+  hardDeleteTargetType.value = null;
 }
 
-async function confirmFixtureDeletion(): Promise<void> {
-  const fixtureId = selectedFixtureId.value;
+async function confirmHardDeletion(): Promise<void> {
   const customerId = selectedCustomerId.value;
-  if (!fixtureId || !customerId) {
-    pushToast("請先選擇要刪除的治具與客戶。", "warning");
+  if (!customerId || !hardDeleteTargetType.value) {
+    pushToast("請先選擇要刪除的主資料與客戶。", "warning");
     return;
   }
 
-  fixtureDeleting.value = true;
+  hardDeleting.value = true;
   saving.value = true;
   try {
-    const result = await api.deleteFixture(fixtureId, customerId, deleteFixtureTransactions.value);
-    fixtureDeleteDialogOpen.value = false;
-    selectedFixtureId.value = null;
-    await loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true });
-    syncEditorFromSelection();
-    const recordMessage = result.transaction_records_deleted
-      ? `已刪除 ${result.transaction_item_count} 筆相關收退料明細。`
-      : `已保留 ${result.transaction_item_count} 筆相關收退料歷史。`;
-    pushToast(`治具 ${result.fixture_code} 已永久刪除。${recordMessage}`, "success");
+    if (hardDeleteTargetType.value === "fixture") {
+      const fixtureId = selectedFixtureId.value;
+      if (!fixtureId) {
+        pushToast("請先選擇要刪除的治具。", "warning");
+        return;
+      }
+      const result = await api.deleteFixture(fixtureId, customerId, deleteFixtureTransactions.value);
+      selectedFixtureId.value = null;
+      await loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true });
+      syncEditorFromSelection();
+      const recordMessage = result.transaction_records_deleted
+        ? `已刪除 ${result.transaction_item_count} 筆相關收退料明細。`
+        : `已保留 ${result.transaction_item_count} 筆相關收退料歷史。`;
+      pushToast(`治具 ${result.fixture_code} 已永久刪除。${recordMessage}`, "success");
+    } else if (hardDeleteTargetType.value === "model") {
+      const modelId = selectedModelId.value;
+      if (!modelId) {
+        pushToast("請先選擇要刪除的機種。", "warning");
+        return;
+      }
+      const result = await api.deleteModel(modelId, customerId);
+      selectedModelId.value = null;
+      await loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true });
+      syncEditorFromSelection();
+      pushToast(
+        `機種 ${result.model_code} 已永久刪除。同步刪除 ${result.deleted_model_station_count} 筆機種站點對應、${result.deleted_requirement_count} 筆治具需求、${result.deleted_capacity_summary_count} 筆產能摘要。`,
+        "success"
+      );
+    } else if (hardDeleteTargetType.value === "station") {
+      const stationId = selectedStationId.value;
+      if (!stationId) {
+        pushToast("請先選擇要刪除的站點。", "warning");
+        return;
+      }
+      const result = await api.deleteStation(stationId, customerId);
+      selectedStationId.value = null;
+      await loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true });
+      syncEditorFromSelection();
+      pushToast(
+        `站點 ${result.station_code} 已永久刪除。同步刪除 ${result.deleted_model_station_count} 筆機種站點對應、${result.deleted_requirement_count} 筆治具需求、${result.deleted_capacity_summary_count} 筆產能摘要。`,
+        "success"
+      );
+    }
+    hardDeleteDialogOpen.value = false;
+    hardDeleteTargetType.value = null;
   } catch (err) {
-    pushToast(err instanceof Error ? err.message : "治具刪除失敗", "error");
+    pushToast(err instanceof Error ? err.message : "主資料刪除失敗", "error");
   } finally {
-    fixtureDeleting.value = false;
+    hardDeleting.value = false;
     saving.value = false;
   }
 }
@@ -1271,6 +1507,12 @@ watch(
   },
   { immediate: true }
 );
+watch(qualityRelationStationOptions, (rows) => {
+  if (rows.some((row) => row.id === qualityRelationStationId.value)) {
+    return;
+  }
+  qualityRelationStationId.value = rows[0]?.id ?? null;
+});
 watch(selectedCustomerId, async () => {
   await loadData();
   syncEditorFromSelection();
@@ -1339,8 +1581,7 @@ onBeforeUnmount(() => {
         <FixtureQualityPanel
           :report="fixtureQualityReport"
           :loading="loading"
-          @open-fixture="openFixtureFromQuality"
-          @open-search-fixture="openSearchFixtureFromQuality"
+          @open-issue-editor="openIssueEditorFromQuality"
         />
       </template>
 
@@ -1385,7 +1626,7 @@ onBeforeUnmount(() => {
         :toggle-action-label="toggleActionLabel"
         :can-manage-customers="canManageCustomers"
         :can-manage-users="canManageUsers"
-        :can-delete-fixture="canManageUsers"
+        :can-delete-master-entity="canDeleteMasterEntity"
         :selected-fixture-id="selectedFixtureId"
         :selected-user-id="selectedUserId"
         :selected-customer-scope-count="selectedCustomerScopeCount"
@@ -1402,7 +1643,7 @@ onBeforeUnmount(() => {
         :on-reload-selection="reloadSelection"
         :on-save-current="saveCurrent"
         :on-toggle-current-active="toggleCurrentActive"
-        :on-request-delete-fixture="openFixtureDeleteDialog"
+        :on-request-delete-entity="openHardDeleteDialog"
         :on-reset-user-password="resetUserPassword"
         :on-toggle-assigned-user="toggleAssignedUser"
         :on-has-assigned-user="hasAssignedUser"
@@ -1435,18 +1676,130 @@ onBeforeUnmount(() => {
       </template>
     </section>
 
-    <div v-if="fixtureDeleteDialogOpen" class="ui-modal-backdrop fixture-delete-backdrop" role="presentation" @click.self="closeFixtureDeleteDialog">
+    <div v-if="qualityQuickEditOpen" class="ui-modal-backdrop quality-issue-backdrop" role="presentation" @click.self="closeQualityQuickEdit">
+      <section class="ui-modal-card quality-issue-dialog" role="dialog" aria-modal="true" aria-labelledby="quality-issue-title">
+        <header class="quality-issue-head">
+          <div>
+            <p class="fixture-delete-eyebrow">治具資料品質</p>
+            <h3 id="quality-issue-title">{{ qualityQuickEditTitle }}</h3>
+          </div>
+          <button class="fixture-delete-close" type="button" :disabled="qualityQuickEditSaving || qualityRelationSaving || qualityImageUploading" aria-label="關閉" @click="closeQualityQuickEdit">×</button>
+        </header>
+
+        <div class="quality-issue-body">
+          <p class="quality-issue-intro">
+            點擊品質問題後可直接在這裡修正，不需要先跳頁。
+          </p>
+
+          <template v-if="qualityQuickEditIssueCode === 'missing_name'">
+            <label class="quality-field">
+              <span>治具名稱 *</span>
+              <input v-model="qualityQuickEditForm.name" />
+            </label>
+          </template>
+
+          <template v-else-if="qualityQuickEditIssueCode === 'missing_storage_and_min_stock'">
+            <label class="quality-field">
+              <span>產線儲位</span>
+              <input v-model="qualityQuickEditForm.line_storage_location" placeholder="A-01-03" />
+            </label>
+            <label class="quality-field">
+              <span>部門儲位</span>
+              <input v-model="qualityQuickEditForm.department_storage_location" placeholder="RD-SHELF-3" />
+            </label>
+            <label class="quality-field">
+              <span>最低水位</span>
+              <input v-model.number="qualityQuickEditForm.min_stock_qty" type="number" min="0" />
+            </label>
+          </template>
+
+          <template v-else-if="qualityQuickEditIssueCode === 'missing_model_relation'">
+            <p class="quality-helper">直接補上第一筆機種 / 站點 / 治具需求；若缺少 mapping，會一併建立。</p>
+            <label class="quality-field">
+              <span>機種 *</span>
+              <select v-model="qualityRelationModelId">
+                <option :value="null">請選擇機種</option>
+                <option v-for="row in models" :key="row.id" :value="row.id">{{ row.code }} / {{ row.name }}</option>
+              </select>
+            </label>
+            <label class="quality-field">
+              <span>站點 *</span>
+              <select v-model="qualityRelationStationId">
+                <option :value="null">請選擇站點</option>
+                <option v-for="row in qualityRelationStationOptions" :key="row.id" :value="row.id">{{ row.code }} / {{ row.name }}</option>
+              </select>
+            </label>
+            <label class="quality-field">
+              <span>需求數量 *</span>
+              <input v-model.number="qualityRelationRequiredQty" type="number" min="1" />
+            </label>
+          </template>
+
+          <template v-else-if="qualityQuickEditIssueCode === 'missing_image'">
+            <p class="quality-helper">直接上傳治具圖片；成功後會即時刷新品質結果。</p>
+            <div v-if="qualityImageUrl" class="quality-image-preview">
+              <img :src="qualityImageUrl" :alt="`${qualityQuickEditFixture?.code || 'fixture'} image`" />
+            </div>
+            <label class="quality-field">
+              <span>選擇圖片 *</span>
+              <input ref="qualityImageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="updateQualityImageFile" />
+            </label>
+            <p class="quality-helper">支援 PNG / JPG / WEBP / GIF，大小上限 5 MB。</p>
+          </template>
+
+          <template v-else-if="qualityQuickEditIssueCode === 'stock_mismatch'">
+            <p class="quality-helper">
+              這個異常來自交易明細與庫存摘要不一致，不是治具主檔欄位缺漏。請到收退料帳目管理做重算或撤回；這裡先不自動跳頁。
+            </p>
+            <button class="outline-btn" type="button" @click="switchTab('ledger')">前往收退料帳目管理</button>
+          </template>
+        </div>
+
+        <footer class="quality-issue-actions">
+          <button class="outline-btn" type="button" :disabled="qualityQuickEditSaving || qualityRelationSaving" @click="closeQualityQuickEdit">關閉</button>
+          <button
+            v-if="qualityQuickEditIssueCode === 'missing_name' || qualityQuickEditIssueCode === 'missing_storage_and_min_stock'"
+            class="fixture-delete-confirm"
+            type="button"
+            :disabled="qualityQuickEditSaving"
+            @click="saveQualityQuickEdit"
+          >
+            {{ qualityQuickEditSaving ? "儲存中..." : "直接更新治具" }}
+          </button>
+          <button
+            v-else-if="qualityQuickEditIssueCode === 'missing_image'"
+            class="fixture-delete-confirm"
+            type="button"
+            :disabled="qualityImageUploading || !qualityImageFile"
+            @click="uploadQualityImage"
+          >
+            {{ qualityImageUploading ? "上傳中..." : "上傳圖片" }}
+          </button>
+          <button
+            v-else-if="qualityQuickEditIssueCode === 'missing_model_relation'"
+            class="fixture-delete-confirm"
+            type="button"
+            :disabled="qualityRelationSaving"
+            @click="saveQualityRelation"
+          >
+            {{ qualityRelationSaving ? "建立中..." : "建立第一筆關聯" }}
+          </button>
+        </footer>
+      </section>
+    </div>
+
+    <div v-if="hardDeleteDialogOpen" class="ui-modal-backdrop fixture-delete-backdrop" role="presentation" @click.self="closeHardDeleteDialog">
       <section class="ui-modal-card fixture-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="fixture-delete-title">
         <header class="fixture-delete-dialog-head">
           <div>
             <p class="fixture-delete-eyebrow">Admin only</p>
-            <h3 id="fixture-delete-title">永久刪除治具 {{ selectedFixture?.code }}</h3>
+            <h3 id="fixture-delete-title">{{ hardDeleteDialogTitle }}</h3>
           </div>
-          <button class="fixture-delete-close" type="button" :disabled="fixtureDeleting" aria-label="關閉" @click="closeFixtureDeleteDialog">×</button>
+          <button class="fixture-delete-close" type="button" :disabled="hardDeleting" aria-label="關閉" @click="closeHardDeleteDialog">×</button>
         </header>
-        <p class="fixture-delete-intro">治具主檔、庫存摘要與產能需求會永久刪除。請選擇歷史收退料記錄的處理方式。</p>
+        <p class="fixture-delete-intro">{{ hardDeleteDialogIntro }}</p>
 
-        <div class="fixture-delete-options">
+        <div v-if="hardDeleteTargetType === 'fixture'" class="fixture-delete-options">
           <label :class="{ selected: !deleteFixtureTransactions }">
             <input v-model="deleteFixtureTransactions" type="radio" :value="false" />
             <span>
@@ -1468,9 +1821,13 @@ onBeforeUnmount(() => {
           相關收退料明細將永久刪除，且無法透過帳目管理復原。
         </p>
 
+        <p v-else-if="hardDeleteTargetType === 'model' || hardDeleteTargetType === 'station'" class="fixture-delete-warning">
+          將一併刪除關聯資料，且無法復原。
+        </p>
+
         <footer class="fixture-delete-dialog-actions">
-          <button class="outline-btn" type="button" :disabled="fixtureDeleting" @click="closeFixtureDeleteDialog">取消</button>
-          <button class="fixture-delete-confirm" type="button" :disabled="fixtureDeleting" @click="confirmFixtureDeletion">{{ fixtureDeleting ? "刪除中..." : "確認永久刪除" }}</button>
+          <button class="outline-btn" type="button" :disabled="hardDeleting" @click="closeHardDeleteDialog">取消</button>
+          <button class="fixture-delete-confirm" type="button" :disabled="hardDeleting" @click="confirmHardDeletion">{{ hardDeleting ? "刪除中..." : "確認永久刪除" }}</button>
         </footer>
       </section>
     </div>
@@ -1683,15 +2040,11 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.detail-panel,
-.list-panel {
+.detail-panel {
   display: grid;
   min-height: 0;
   gap: 8px;
   overflow: auto;
-}
-
-.detail-panel {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
@@ -1702,7 +2055,11 @@ onBeforeUnmount(() => {
 }
 
 .list-panel {
-  grid-template-rows: auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 8px;
+  overflow: hidden;
 }
 
 .panel-head {
@@ -1931,7 +2288,7 @@ textarea {
   transform: translateY(-1px);
 }
 
-.outline-btn:hover, 
+.outline-btn:hover,
 .tab-btn:hover {
   border-color: #c0cad9;
   box-shadow: 0 4px 12px rgba(28, 47, 84, 0.08);
@@ -2018,7 +2375,21 @@ textarea {
   padding: 18px;
 }
 
+.quality-issue-dialog {
+  width: min(560px, calc(100vw - 28px));
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
 .fixture-delete-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.quality-issue-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -2045,9 +2416,54 @@ textarea {
   font-size: 18px;
 }
 
+.quality-issue-dialog h3 {
+  margin: 0;
+  color: #29374f;
+  font-size: 18px;
+}
+
 .fixture-delete-intro {
   color: #5c6b82;
   line-height: 1.6;
+}
+
+.quality-issue-intro,
+.quality-helper {
+  margin: 0;
+  color: #5c6b82;
+  line-height: 1.6;
+}
+
+.quality-issue-body {
+  display: grid;
+  gap: 12px;
+}
+
+.quality-field {
+  display: grid;
+  gap: 6px;
+}
+
+.quality-field span {
+  color: #56657f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.quality-image-preview {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  border: 1px dashed #cfd7e6;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.quality-image-preview img {
+  max-width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  border-radius: 8px;
 }
 
 .fixture-delete-close {
@@ -2106,6 +2522,13 @@ textarea {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.quality-issue-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .fixture-delete-confirm {
@@ -2234,4 +2657,3 @@ textarea {
   }
 }
 </style>
-

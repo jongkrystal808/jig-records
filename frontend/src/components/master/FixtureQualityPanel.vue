@@ -11,7 +11,16 @@ const ISSUE_LABELS: Record<string, string> = {
   missing_image: "沒有圖片",
   missing_min_stock_qty: "沒有最低水位",
   missing_model_relation: "沒有任何機種關聯",
-  stock_mismatch: "Identifier 庫存與總庫存不一致"
+  stock_mismatch: "Identifier 庫存與總庫存不一致",
+  missing_storage_and_min_stock: "沒有儲位 / 沒有最低水位"
+};
+
+const ISSUE_FILTER_LABELS: Record<string, string> = {
+  missing_name: ISSUE_LABELS.missing_name,
+  missing_storage_and_min_stock: ISSUE_LABELS.missing_storage_and_min_stock,
+  missing_image: ISSUE_LABELS.missing_image,
+  missing_model_relation: ISSUE_LABELS.missing_model_relation,
+  stock_mismatch: ISSUE_LABELS.stock_mismatch
 };
 
 const props = defineProps<{
@@ -20,21 +29,46 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  openFixture: [fixtureId: number];
-  openSearchFixture: [fixtureCode: string];
+  openIssueEditor: [fixtureId: number, issueCode: string];
 }>();
 
-const selectedIssueCode = ref<"all" | keyof typeof ISSUE_LABELS>("all");
+const selectedIssueCode = ref<"all" | keyof typeof ISSUE_FILTER_LABELS>("all");
+
+function rowMatchesIssueFilter(row: FixtureQualityReport["rows"][number], issueCode: string): boolean {
+  if (issueCode === "missing_storage_and_min_stock") {
+    return row.issue_codes.includes("missing_storage_location") || row.issue_codes.includes("missing_min_stock_qty");
+  }
+  return row.issue_codes.includes(issueCode);
+}
+
+function displayIssueCodes(row: FixtureQualityReport["rows"][number]): string[] {
+  const issueCodes = row.issue_codes.filter(
+    (issueCode) => issueCode !== "missing_storage_location" && issueCode !== "missing_min_stock_qty"
+  );
+  if (row.issue_codes.includes("missing_storage_location") || row.issue_codes.includes("missing_min_stock_qty")) {
+    issueCodes.unshift("missing_storage_and_min_stock");
+  }
+  return issueCodes;
+}
+
 const filteredRows = computed(() => {
   const rows = props.report?.rows ?? [];
   if (selectedIssueCode.value === "all") {
     return rows;
   }
-  return rows.filter((row) => row.issue_codes.includes(selectedIssueCode.value));
+  return rows.filter((row) => rowMatchesIssueFilter(row, selectedIssueCode.value));
 });
+
+const missingStorageOrMinStockCount = computed(
+  () => props.report?.rows.filter((row) => rowMatchesIssueFilter(row, "missing_storage_and_min_stock")).length ?? 0
+);
 
 function issueLabel(issueCode: string): string {
   return ISSUE_LABELS[issueCode] ?? issueCode;
+}
+
+function isIssueClickable(issueCode: string): boolean {
+  return issueCode !== "missing_model_relation";
 }
 
 function exportCsv(): void {
@@ -49,7 +83,7 @@ function exportCsv(): void {
       String(row.identifier_stock_qty),
       String(row.related_model_count),
       row.has_image ? "有" : "缺",
-      row.issue_codes.map((issueCode) => issueLabel(issueCode)).join(" / ")
+      displayIssueCodes(row).map((issueCode) => issueLabel(issueCode)).join(" / ")
     ].map((value) => `"${String(value).replace(/"/g, '""')}"`)
   );
   const content = [header, ...csvRows].map((row) => row.join(",")).join("\n");
@@ -63,14 +97,10 @@ function exportCsv(): void {
 }
 
 function handleIssueClick(row: FixtureQualityReport["rows"][number], issueCode: string): void {
-  if (issueCode === "missing_image") {
+  if (!isIssueClickable(issueCode)) {
     return;
   }
-  if (issueCode === "missing_model_relation") {
-    emit("openSearchFixture", row.fixture_code);
-    return;
-  }
-  emit("openFixture", row.fixture_id);
+  emit("openIssueEditor", row.fixture_id, issueCode);
 }
 </script>
 
@@ -85,7 +115,7 @@ function handleIssueClick(row: FixtureQualityReport["rows"][number], issueCode: 
         <div class="panel-actions">
           <select v-model="selectedIssueCode" class="issue-filter">
             <option value="all">全部問題</option>
-            <option v-for="(label, issueCode) in ISSUE_LABELS" :key="issueCode" :value="issueCode">{{ label }}</option>
+            <option v-for="(label, issueCode) in ISSUE_FILTER_LABELS" :key="issueCode" :value="issueCode">{{ label }}</option>
           </select>
           <button class="outline-btn small" type="button" :disabled="filteredRows.length === 0" @click="exportCsv">匯出 CSV</button>
         </div>
@@ -101,16 +131,12 @@ function handleIssueClick(row: FixtureQualityReport["rows"][number], issueCode: 
           <strong>{{ report?.missing_name_count ?? 0 }}</strong>
         </div>
         <div class="quality-card">
-          <span>沒有儲位</span>
-          <strong>{{ report?.missing_storage_location_count ?? 0 }}</strong>
+          <span>沒有儲位 / 沒有最低水位</span>
+          <strong>{{ missingStorageOrMinStockCount }}</strong>
         </div>
         <div class="quality-card">
           <span>沒有圖片</span>
           <strong>{{ report?.missing_image_count ?? 0 }}</strong>
-        </div>
-        <div class="quality-card">
-          <span>沒有最低水位</span>
-          <strong>{{ report?.missing_min_stock_qty_count ?? 0 }}</strong>
         </div>
         <div class="quality-card">
           <span>沒有任何機種關聯</span>
@@ -149,16 +175,19 @@ function handleIssueClick(row: FixtureQualityReport["rows"][number], issueCode: 
               <td>{{ row.has_image ? "有" : "缺" }}</td>
               <td>
                 <div class="issue-list">
-                  <button
-                    v-for="issueCode in row.issue_codes"
-                    :key="`${row.fixture_id}-${issueCode}`"
-                    class="issue-pill"
-                    :class="{ clickable: issueCode !== 'missing_image' }"
-                    type="button"
-                    @click="handleIssueClick(row, issueCode)"
-                  >
-                    {{ issueLabel(issueCode) }}
-                  </button>
+                  <template v-for="issueCode in displayIssueCodes(row)" :key="`${row.fixture_id}-${issueCode}`">
+                    <button
+                      v-if="isIssueClickable(issueCode)"
+                      class="issue-pill clickable"
+                      type="button"
+                      @click="handleIssueClick(row, issueCode)"
+                    >
+                      {{ issueLabel(issueCode) }}
+                    </button>
+                    <span v-else class="issue-pill">
+                      {{ issueLabel(issueCode) }}
+                    </span>
+                  </template>
                 </div>
               </td>
             </tr>
@@ -201,7 +230,7 @@ function handleIssueClick(row: FixtureQualityReport["rows"][number], issueCode: 
 
 .quality-summary {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 

@@ -439,17 +439,18 @@
   - import / export / template download
   - summary metrics
   - admin 治具資料品質報表
-  - admin 治具永久刪除 dialog state 與送出 orchestration
+  - admin 主資料永久刪除 dialog state 與送出 orchestration
   - 刪除完成後重載 fixtures / quality / models / stations 並清除選取
 
 - `MasterListPanel.vue`
   - tab 清單
   - 搜尋 / 篩選
   - 分頁列表
+  - 頁數提示 / 總筆數 / 翻頁動作固定在表格上方
 
 - `MasterDetailPanel.vue`
   - fixture / model / station / customer / user detail form
-  - admin-only 治具永久刪除入口
+  - admin-only 主資料永久刪除入口（治具 / 機種 / 站點）
   - 透過 props 將刪除請求交回 `MasterPage.vue`
 
 ### 主要功能
@@ -464,6 +465,7 @@
 - 從資料維護頁重新啟動新手導覽
 
 - admin 可永久刪除治具，並選擇保留或刪除該治具的收/退料紀錄
+- admin 也可永久刪除機種與站點，刪除前會提示關聯 `mapping / requirement / capacity summary` 將一併刪除
 - 保留歷史為預設建議選項；刪除歷史不影響混合交易中的其他治具明細
 ### API 對應
 
@@ -484,9 +486,9 @@
   - `api.downloadFixtureTemplateCsv`
 
 - model tab
-  - `api.deleteFixture(fixtureId, customerId, deleteTransactions)`
   - `api.createModel`
   - `api.updateModel`
+  - `api.deleteModel`
   - `api.exportModelsCsv`
   - `api.importModelsCsv`
   - `api.downloadModelTemplateCsv`
@@ -494,6 +496,7 @@
 - station tab
   - `api.createStation`
   - `api.updateStation`
+  - `api.deleteStation`
   - `api.exportStationsCsv`
   - `api.importStationsCsv`
   - `api.downloadStationTemplateCsv`
@@ -526,10 +529,14 @@
 
 - 改列表、搜尋、分頁欄位
   - `frontend/src/components/master/MasterListPanel.vue`
+  - 主資料清單的頁數提示 / 總筆數 / 翻頁動作目前在表格上方
 
 - 改 detail 編輯表單
   - `frontend/src/components/master/MasterDetailPanel.vue`
   - admin-only 永久刪除按鈕與危險區塊也在此檔
+
+- 改帳目管理清單的頁數提示 / 總筆數 / 翻頁動作
+  - `frontend/src/components/master/TransactionAccountListPanel.vue`
 
 - 改治具資料品質表、問題篩選、CSV 匯出、點回治具編輯、問題類型跳轉規則
   - `frontend/src/components/master/FixtureQualityPanel.vue`
@@ -642,6 +649,7 @@
 
 - `frontend/src/onboarding.ts`
   - 導覽 flow 定義與跨頁流程
+  - 目前已合併成四張教學卡，包含 `批次收 / 退料 & 收退料總檢視`、`治具 / 機種 / 站點主資料`、`機種站點對應 & 站點治具需求`
 
 - `frontend/src/components/common/OnboardingFlowPicker.vue`
   - 教學分類選單

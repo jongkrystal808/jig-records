@@ -111,6 +111,17 @@ export const masterApi = {
   updateModel(modelId: number, payload: { customer_id: number; code: string; name: string; is_active: boolean }) {
     return request<MachineModel>(`/master/models/${modelId}`, { method: "PUT", body: JSON.stringify(payload) });
   },
+  deleteModel(modelId: number, customerId: number) {
+    return request<{
+      model_id: number;
+      model_code: string;
+      deleted_model_station_count: number;
+      deleted_requirement_count: number;
+      deleted_capacity_summary_count: number;
+    }>(`/master/models/${modelId}?customer_id=${customerId}`, {
+      method: "DELETE"
+    });
+  },
   listStations(customerId?: number) {
     const params = new URLSearchParams();
     setOptionalParam(params, "customer_id", customerId);
@@ -140,5 +151,16 @@ export const masterApi = {
   },
   updateStation(stationId: number, payload: { customer_id: number; code: string; name: string; is_active: boolean }) {
     return request<Station>(`/master/stations/${stationId}`, { method: "PUT", body: JSON.stringify(payload) });
+  },
+  deleteStation(stationId: number, customerId: number) {
+    return request<{
+      station_id: number;
+      station_code: string;
+      deleted_model_station_count: number;
+      deleted_requirement_count: number;
+      deleted_capacity_summary_count: number;
+    }>(`/master/stations/${stationId}?customer_id=${customerId}`, {
+      method: "DELETE"
+    });
   }
 };

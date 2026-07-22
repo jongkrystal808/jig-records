@@ -1,0 +1,1 @@
+mysql+pymysql://fixture_user:fixture_pass@db:3306/fixture_m_lite?charset=utf8mb4

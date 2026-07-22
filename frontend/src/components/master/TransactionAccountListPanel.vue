@@ -27,6 +27,14 @@ function summarizeQuantity(row: MaterialTransaction): number {
   <article class="panel list-panel">
     <UiSectionHeader class="panel-head" title="收退料帳目管理" :description="`${rows.length} 筆案件`" />
 
+    <div v-if="rows.length > 0" class="list-footer">
+      <span>第 {{ page }} / {{ totalPages }} 頁，共 {{ rows.length }} 筆案件</span>
+      <div class="pager-actions">
+        <button class="outline-btn small" type="button" :disabled="loading || page <= 1" @click="onPreviousPage">上一頁</button>
+        <button class="outline-btn small" type="button" :disabled="loading || page >= totalPages" @click="onNextPage">下一頁</button>
+      </div>
+    </div>
+
     <div class="list-toolbar">
       <input
         :value="keyword"
@@ -82,14 +90,6 @@ function summarizeQuantity(row: MaterialTransaction): number {
           </tr>
         </tbody>
       </table>
-    </div>
-
-    <div v-if="rows.length > 0" class="list-footer">
-      <span>第 {{ page }} / {{ totalPages }} 頁</span>
-      <div class="pager-actions">
-        <button class="outline-btn small" type="button" :disabled="loading || page <= 1" @click="onPreviousPage">上一頁</button>
-        <button class="outline-btn small" type="button" :disabled="loading || page >= totalPages" @click="onNextPage">下一頁</button>
-      </div>
     </div>
   </article>
 </template>

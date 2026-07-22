@@ -19,7 +19,7 @@ const emit = defineEmits<{
 
 <template>
   <teleport to="body">
-    <div v-if="batchModalOpen" class="ui-modal-backdrop" @click.self="emit('closeBatch')">
+    <div v-if="batchModalOpen" class="ui-modal-backdrop">
       <div class="ui-modal-card" data-tour="inventory-batch-panel">
         <div class="modal-head">
           <div>
@@ -37,7 +37,7 @@ const emit = defineEmits<{
         />
       </div>
     </div>
-    <div v-if="exportModalOpen" class="ui-modal-backdrop" @click.self="emit('closeExport')">
+    <div v-if="exportModalOpen" class="ui-modal-backdrop">
       <div class="ui-modal-card ui-modal-card--narrow" data-tour="inventory-export-panel">
         <InventoryExportPanel :customer-id="customerId" @close="emit('closeExport')" />
       </div>

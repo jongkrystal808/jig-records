@@ -165,6 +165,8 @@
 - `POST /master/fixtures`
 - `PUT /master/fixtures/{fixture_id}`
 - `DELETE /master/fixtures/{fixture_id}?customer_id=...&delete_transactions=false`
+- `DELETE /master/models/{model_id}?customer_id=...`
+- `DELETE /master/stations/{station_id}?customer_id=...`
 - `GET /master/fixtures/export`
 - `GET /master/fixtures/template`
 - `POST /master/fixtures/import`
@@ -190,6 +192,9 @@
 - `delete_transactions=false`：保留 transaction item，將 `fixture_id` 設為 `NULL` 並保存治具 code/name snapshot
 - `delete_transactions=true`：只刪除該治具 item；混合交易保留其他 item，空交易才刪除 parent
 - 刪除流程由 `MasterService` 在單一 transaction 內協調 inventory history、requirements、stock level/summary、capacity cache 與 audit
+- 機種永久刪除同樣限定 `manage`（admin），並會同步刪除相關 `model_stations`、`fixture_requirements`、受影響 `machine_capacity_summary`
+- 站點永久刪除同樣限定 `manage`（admin），並會同步刪除相關 `model_stations`、`fixture_requirements`、該站點 `machine_capacity_summary`
+- 機種/站點刪除 response 會回傳實際刪除的 mapping / requirement / capacity summary 筆數
 - `fixtures.code` 的 `(customer_id, code)` 唯一鍵在刪除後可重新使用
 - 回傳 `FixtureDeleteRead` 提供受影響 item/transaction/requirement 數量
 - `fixtures.code` 使用 `(customer_id, code)` 唯一鍵

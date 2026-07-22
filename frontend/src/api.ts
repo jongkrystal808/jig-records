@@ -1,7 +1,7 @@
 import { auditApi } from "./api/auditClient";
 import { authApi } from "./api/authClient";
 import { inventoryApi } from "./api/inventoryClient";
-import { fetchFixtureImageObjectUrl, fixtureImageUrlByCode } from "./api/mediaClient";
+import { fetchFixtureImageObjectUrl, fixtureImageUrlByCode, mediaApi } from "./api/mediaClient";
 import { masterApi } from "./api/masterClient";
 import { productionApi } from "./api/productionClient";
 import { searchApi } from "./api/searchClient";
@@ -10,6 +10,7 @@ import { searchApi } from "./api/searchClient";
 export const api = {
   ...auditApi,
   ...authApi,
+  ...mediaApi,
   ...masterApi,
   ...inventoryApi,
   ...productionApi,

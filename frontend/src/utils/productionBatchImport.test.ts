@@ -29,7 +29,8 @@ function makeCollections(): ProductionBatchCollections {
         department_storage_location: null,
         min_stock_qty: 0,
         description: null,
-        is_active: true
+        is_active: true,
+        has_image: false
       } satisfies Fixture
     ]
   };

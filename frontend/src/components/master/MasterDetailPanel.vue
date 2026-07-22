@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from "vue";
+
 import UiFormActions from "@/components/UiFormActions.vue";
 import UiSectionHeader from "@/components/UiSectionHeader.vue";
 import UiStatusPill from "@/components/UiStatusPill.vue";
@@ -17,7 +19,7 @@ const props = defineProps<{
   toggleActionLabel: string;
   canManageCustomers: boolean;
   canManageUsers: boolean;
-  canDeleteFixture: boolean;
+  canDeleteMasterEntity: boolean;
   selectedFixtureId: number | null;
   selectedUserId: number | null;
   selectedCustomerScopeCount: number;
@@ -62,11 +64,33 @@ const props = defineProps<{
   onReloadSelection: () => void;
   onSaveCurrent: () => void | Promise<void>;
   onToggleCurrentActive: () => void | Promise<void>;
-  onRequestDeleteFixture: () => void;
+  onRequestDeleteEntity: () => void;
   onResetUserPassword: () => void | Promise<void>;
   onToggleAssignedUser: (userId: number, checked: boolean) => void;
   onHasAssignedUser: (userId: number) => boolean;
 }>();
+
+const hardDeleteMeta = computed(() => {
+  if (props.activeTab === "fixture") {
+    return {
+      title: "永久刪除治具",
+      description: "此操作不可復原，執行前可選擇是否一併刪除相關收退料記錄。"
+    };
+  }
+  if (props.activeTab === "model") {
+    return {
+      title: "永久刪除機種",
+      description: "此操作不可復原，會一併刪除相關機種站點對應、站點治具需求與受影響產能摘要。"
+    };
+  }
+  if (props.activeTab === "station") {
+    return {
+      title: "永久刪除站點",
+      description: "此操作不可復原，會一併刪除相關機種站點對應、站點治具需求與該站點產能摘要。"
+    };
+  }
+  return null;
+});
 </script>
 
 <template>
@@ -188,12 +212,12 @@ const props = defineProps<{
         @cancel="onStartCreate"
         @delete="onToggleCurrentActive"
       />
-      <div v-if="activeTab === 'fixture' && canDeleteFixture && !isCreateMode" class="fixture-delete-zone">
+      <div v-if="hardDeleteMeta && canDeleteMasterEntity && !isCreateMode" class="fixture-delete-zone">
         <div>
-          <strong>永久刪除治具</strong>
-          <small>此操作不可復原，執行前可選擇是否一併刪除相關收退料記錄。</small>
+          <strong>{{ hardDeleteMeta.title }}</strong>
+          <small>{{ hardDeleteMeta.description }}</small>
         </div>
-        <button class="fixture-delete-btn" type="button" :disabled="saving" @click="onRequestDeleteFixture">永久刪除</button>
+        <button class="fixture-delete-btn" type="button" :disabled="saving" @click="onRequestDeleteEntity">永久刪除</button>
       </div>
 
     </form>

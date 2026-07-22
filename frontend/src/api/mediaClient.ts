@@ -1,4 +1,6 @@
-import { API_ROOT, requestBlob } from "@/api/core";
+import type { FixtureImageUploadResult } from "@/types";
+
+import { API_ROOT, request, requestBlob } from "@/api/core";
 
 export function fixtureImageUrlByCode(fixtureCode: string): string {
   return `${API_ROOT}/master/fixtures/${encodeURIComponent(fixtureCode)}/image`;
@@ -11,3 +13,14 @@ export async function fetchFixtureImageObjectUrl(fixtureCode: string): Promise<s
   });
   return URL.createObjectURL(blob);
 }
+
+export const mediaApi = {
+  uploadFixtureImage(fixtureId: number, customerId: number, file: File) {
+    const formData = new FormData();
+    formData.append("image", file);
+    return request<FixtureImageUploadResult>(`/master/fixtures/${fixtureId}/image?customer_id=${encodeURIComponent(String(customerId))}`, {
+      method: "POST",
+      body: formData
+    });
+  }
+};

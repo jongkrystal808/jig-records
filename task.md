@@ -60,6 +60,7 @@
 - 目前 `App.vue` 已改為頂部 shell，不再使用左側常駐導覽；頂欄包含登入狀態、客戶切換、今日統計、全域 `收/退料` 與 `收退料資訊匯出` 入口，以及 `更多功能` 選單。
 - 目前 shell 仍沒有桌面版 mini sidebar；手機版則維持漢堡選單 / overlay 導覽。
 - 新手教學入口已搬到全域 shell：桌面版在 `AppTopbar`，手機版在 `AppMobileDrawer`；教學啟動方式改為開啟 flow picker，而不是綁在 `SearchWorkspacePage` 浮動按鈕。
+- 新手教學 flow 已再收斂成四張卡：`查詢工作台`、`批次收 / 退料 & 收退料總檢視`、`治具 / 機種 / 站點主資料`、`機種站點對應 & 站點治具需求`。
 - `SearchWorkspacePage` 已移除 `相近編號` 提示框，查詢首頁目前只保留最近收 / 退料治具快捷入口與結果區導向流程。
 - `MasterPage` 已有前端分頁；`SearchWorkspacePage` 也已改為 bounded search contract + `load more`。
 - `SearchWorkspacePage` 目前仍沒有可收合的篩選區。
@@ -99,8 +100,11 @@
 - 現行權限與資料行為以 backend router/service/repository 為準；架構文件若有落差需回頭依程式校正。
 - `admin` 已可在治具維護頁永久刪除治具，API 為 `DELETE /api/v2/master/fixtures/{fixture_id}`。
 - 刪除時可選擇保留或刪除該治具的收/退料明細；保留時以治具代碼/名稱快照維持歷史查詢與匯出，刪除時只移除該治具明細，混合交易的其他治具明細不受影響。
+- `admin` 也已可在資料維護頁永久刪除機種與站點，API 為 `DELETE /api/v2/master/models/{model_id}` 與 `DELETE /api/v2/master/stations/{station_id}`。
+- 機種/站點永久刪除前會明確提示將一併刪除的關聯資料；刪除時會同步清掉 `model_stations`、`fixture_requirements` 與受影響 `machine_capacity_summary`。
 - 目標 MySQL 已升級至 Alembic `0014_fixture_deletion`，transaction item 的 `fixture_id` 可為空並使用 `ON DELETE SET NULL`。
 - 現行 backend customer scope 對 `admin` 與 `user` 都依 `user_customers` 指派；`manage` 權限不會略過客戶範圍。
+- `資料維護` 主清單與 `收退料帳目管理` 清單已把頁數提示、總筆數提示與翻頁動作移到清單最上方，不再放在表格底部。
 
 ## Phase 0-4 Approved Update
 

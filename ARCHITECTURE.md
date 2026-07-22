@@ -155,6 +155,7 @@ Application shell notes:
 - `/inventory` remains the operation-focused receipt/return page
 - `/inventory/overview` remains a full-page route, and its primary entry is the top-bar `更多功能` menu
 - `MasterPage` tabs now map to explicit routes: `/master/fixtures`, `/master/models`, `/master/stations`, `/master/customers`, `/master/users`, `/master/ledger`, `/master/quality`
+- master-data list panels now surface `current page / total pages / total rows` and paging actions above the list table, instead of below it
 - guest users do not see `資料維護`, and router guard blocks direct `/master` access
 - the current shell is a top bar rather than a left sidebar
 - the top bar surfaces login state, customer switch, today receipt/return totals, and low-stock count
@@ -167,6 +168,7 @@ Application shell notes:
 - the root shell now owns the onboarding picker and reuses `data-tour` anchors rendered across multiple pages
 - onboarding state is stored in lightweight reactive app state and uses route-aware step syncing
 - onboarding is now grouped into selectable flows so users can choose a page- or tab-specific tutorial instead of replaying one long linear tour
+- the onboarding picker is currently consolidated into four flows: `查詢工作台`, `批次收 / 退料 & 收退料總檢視`, `治具 / 機種 / 站點主資料`, and `機種站點對應 & 站點治具需求`
 - the root shell also owns a versioned release-notice modal, with copy defined in `frontend/src/releaseNotice.ts`
 - release-note dismissal is now one-time per version per browser via `localStorage`, rather than once per account
 
@@ -216,6 +218,8 @@ Includes:
 - Admin-only fixture data-quality workspace for integrity review of master data, image coverage, model linkage, and stock consistency
 - Issue-specific navigation rules from the quality workspace into fixture maintenance or search results
 - Admin-only permanent fixture deletion with an explicit preserve/delete transaction-history choice
+- Admin-only permanent model deletion with an explicit warning that related model-station mappings, fixture requirements, and affected capacity summaries will be removed together
+- Admin-only permanent station deletion with an explicit warning that related model-station mappings, fixture requirements, and affected capacity summaries will be removed together
 
 API prefix:
 
@@ -816,6 +820,7 @@ More functions dropdown:
 Content area:
 - Search workspace / inventory / master / production
 - Summary cards pinned near page top
+- List-level page count, row count, and paging actions are pinned above each list table
 - Detail panels scroll inside their own containers
 
 Responsive shell notes:
@@ -890,8 +895,11 @@ Master/Auth API notes:
 - `GET /api/v2/master/customers` returns only accessible customers for the current session
 - `GET /api/v2/master/customers/{customer_id}/users` returns the responsible-user candidate set for that customer
 - `DELETE /api/v2/master/fixtures/{fixture_id}` requires `manage` permission and an assigned `customer_id` scope
+- `DELETE /api/v2/master/models/{model_id}` requires `manage` permission and an assigned `customer_id` scope
+- `DELETE /api/v2/master/stations/{station_id}` requires `manage` permission and an assigned `customer_id` scope
 - `delete_transactions=false` preserves receipt/return history by detaching the fixture FK and keeping code/name snapshots
 - `delete_transactions=true` removes only that fixture's item rows and removes a parent transaction only when no other items remain
+- model/station hard-delete responses return the number of deleted `model_stations`, `fixture_requirements`, and `machine_capacity_summary` rows so the frontend can show a precise confirmation result
 
 Search API notes:
 

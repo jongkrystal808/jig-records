@@ -2,11 +2,9 @@ export type TourPlacement = "top" | "bottom" | "left" | "right";
 
 export type OnboardingFlowId =
   | "search-basics"
-  | "inventory-batch"
-  | "inventory-overview"
+  | "inventory-workflow"
   | "master-basics"
-  | "production-mapping"
-  | "production-requirements";
+  | "production-workflow";
 
 export interface OnboardingStepNote {
   /** "warning" 用在不可逆或需要特別小心的操作；"info" 用在一般補充說明 */
@@ -69,7 +67,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='search-onboarding-entry']",
         title: "右下角固定保留教學入口",
-        description: "要看教學時，從這個入口打開教學選單即可。之後若要重看其他教學分類，也從這裡重新開啟。",
+        description: "點這裡開啟教學選單，之後想重看其他教學也從這裡進。",
         placement: "bottom"
       },
       {
@@ -89,7 +87,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='search-query-field']",
         title: "查詢欄支援代碼與名稱",
-        description: "可直接輸入治具編號、治具名稱、機種代碼或機種名稱。先查到主體，再決定要看圖片、歷史收退料或站點需求。",
+        description: "可輸入治具或機種的編號、代碼、名稱，查到後再決定要看哪個區塊。",
         placement: "bottom"
       },
       {
@@ -97,7 +95,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='search-section-chips']",
         title: "查到資料後，用區塊籤控制畫面內容",
-        description: "新手不需要一次看全部，先開自己現在要的區塊即可，其餘區塊隨時可以切回來看：",
+        description: "先開你現在需要的區塊，其餘隨時可以切換：",
         bullets: [
           "總覽：基本資訊與目前狀態",
           "圖片：治具或機種相關照片",
@@ -111,10 +109,10 @@ export const onboardingFlows: OnboardingFlow[] = [
     ]
   },
   {
-    id: "inventory-batch",
+    id: "inventory-workflow",
     sectionLabel: "收退料",
-    label: "批次收 / 退料",
-    summary: "說明批次貼上格式、未知治具處理、解析預覽與正式送出流程。",
+    label: "批次收 / 退料 & 收退料總檢視",
+    summary: "同一套教學先走批次收退料，再接到歷史總檢視與篩選查詢。",
     requiresInventoryAccess: true,
     steps: [
       {
@@ -122,7 +120,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='inventory-entry-trigger']",
         title: "收退料從這個全域入口開啟",
-        description: "不需要先切頁。從首頁頂部直接打開收 / 退料視窗，就能在任何頁面快速處理批次資料。",
+        description: "從首頁頂部直接開啟，不用先切頁就能處理批次資料。",
         placement: "bottom"
       },
       {
@@ -130,10 +128,10 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='inventory-batch-panel'] [data-tour='inventory-mode-switch']",
         title: "先切換收料或退料模式",
-        description: "貼資料前先確認方向。收料會把數量加回庫存，退料會把數量扣回去；單號與備註也會一起記錄到交易歷史。",
+        description: "收料會加庫存，退料會扣庫存；單號與備註會一併記錄。",
         note: {
           tone: "warning",
-          text: "模式選錯會讓庫存數量往反方向變動，貼資料前務必再確認一次目前是收料還是退料。"
+          text: "方向選錯會讓庫存往反方向變動，貼資料前再確認一次。"
         },
         placement: "bottom",
         openBatchModal: true
@@ -143,7 +141,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='inventory-batch-panel']",
         title: "整個批次操作都在這個面板完成",
-        description: "上方填單號與備註，中間貼批次內容，下方看解析結果與異常處理。送出前不需要切去別頁確認。",
+        description: "上方填單號備註，中間貼資料，下方看解析結果，全程不用切頁。",
         placement: "right",
         openBatchModal: true
       },
@@ -156,7 +154,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         bullets: [
           "兩行一組：第一行治具代碼-datecode/編號，第二行數量",
           "單行表格式：治具代碼、datecode/編號、數量用 Tab 分開",
-          "datecode/編號若是 1 到 4 碼純數字，系統會自動左補零成 4 碼；其餘值按原樣保留"
+          "1-4 碼純數字會自動左補零成 4 碼，其餘保留原樣"
         ],
         example: [
           { label: "兩行格式", value: "JIG-0012-0088\n5" },
@@ -197,28 +195,20 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='inventory-batch-panel'] [data-tour='inventory-submit-action']",
         title: "確認單號與待處理列都清乾淨後再送出",
-        description: "畫面上只要還有 `needs-confirm`、`needs-add` 或 `error`，系統就不會放行。先把異常列處理完，再按送出收料或送出退料寫入正式記錄。",
+        description: "還有 needs-confirm、needs-add 或 error 時系統不會放行，處理完才能送出。",
         note: {
           tone: "warning",
-          text: "送出後會直接寫入正式收退料紀錄與庫存數量，沒有一鍵復原，如果送錯需要另外手動調整，建議送出前再核對一次單號與數量。"
+          text: "送出即寫入正式紀錄與庫存，無法一鍵復原，請先核對單號與數量。"
         },
         placement: "top",
         openBatchModal: true
-      }
-    ]
-  },
-  {
-    id: "inventory-overview",
-    sectionLabel: "收退料",
-    label: "收退料總檢視",
-    summary: "從首頁入口到總檢視篩選條件，專看歷史收退料紀錄。",
-    steps: [
+      },
       {
         id: "overview-menu",
         route: "/search",
         target: "[data-tour='home-more-menu-trigger']",
-        title: "總檢視入口收在更多功能",
-        description: "若不是立即做收退料，而是要查歷史記錄、單號或 datecode/編號，就先從首頁打開更多功能。",
+        title: "查歷史時改走更多功能的總檢視入口",
+        description: "批次收退料是立即作業；要回頭查歷史異動，從這裡進總檢視。",
         placement: "bottom",
         openMoreMenu: true
       },
@@ -227,7 +217,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='home-overview-entry']",
         title: "從這裡進入收退料總檢視",
-        description: "這個入口會帶你到專門查歷史收退料的頁面，適合查某個治具、某段日期或某張單號的過往異動。",
+        description: "進入專門查歷史收退料的頁面，可查治具、日期、識別碼或單號的過往異動。",
         placement: "left",
         openMoreMenu: true
       },
@@ -236,7 +226,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/inventory/overview",
         target: "[data-tour='overview-page-head']",
         title: "總檢視頁面集中看全部歷史記錄",
-        description: "進來後先確認目前客戶與查詢範圍。這裡的列表不是單一治具畫面，而是整個客戶底下的收退料總表。",
+        description: "先確認客戶與查詢範圍，這是整個客戶的收退料總表，不是單一治具畫面。",
         placement: "bottom"
       },
       {
@@ -244,7 +234,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/inventory/overview",
         target: "[data-tour='overview-filter-form']",
         title: "常用條件都在上方篩選表單",
-        description: "可依日期、單號、治具代碼、datecode/編號等條件縮小結果。如果要追某一筆異常收料，先從日期和治具代碼開始過濾最快。",
+        description: "可用日期、單號、治具代碼與識別碼縮小結果，查異常收退料時建議先縮日期區間。",
         placement: "bottom"
       }
     ]
@@ -252,8 +242,8 @@ export const onboardingFlows: OnboardingFlow[] = [
   {
     id: "master-basics",
     sectionLabel: "主資料維護",
-    label: "治具 / 機種主資料",
-    summary: "說明從更多功能進入後，如何在清單與表單間維護基礎資料。",
+    label: "治具 / 機種 / 站點主資料",
+    summary: "沿用目前教學風格，依序帶你看治具、機種、站點三種主資料的切換與維護方式。",
     requiresMasterAccess: true,
     steps: [
       {
@@ -261,7 +251,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='home-more-menu-trigger']",
         title: "主資料維護同樣從更多功能進入",
-        description: "這個系統把維護入口集中在首頁同一組選單，避免新手要記多個分散頁面。",
+        description: "維護入口統一收在首頁同一個選單。",
         placement: "bottom",
         openMoreMenu: true
       },
@@ -270,52 +260,89 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='home-master-entry']",
         title: "點這裡進入資料維護頁",
-        description: "進去後可以維護治具、機種、站點等主資料。收退料與產能功能都依賴這裡的基礎資料是否正確。",
+        description: "維護治具、機種、站點等主資料，其他功能都依賴這裡的資料是否正確。",
         placement: "left",
         openMoreMenu: true
       },
       {
         id: "master-tabs",
-        route: "/master",
+        route: "/master/fixtures",
         target: "[data-tour='master-tabs']",
-        title: "先選你要維護的主資料類型",
-        description: "上方 tab 決定你目前在維護治具、機種或站點。新增需求前，先確認自己在正確的資料類型下操作。",
+        title: "先在上方切換要維護的主資料類型",
+        description: "主資料不是只有治具，這裡會切換三種核心資料：",
+        bullets: [
+          "治具：管理治具編號、名稱、儲位、最低水位與負責人",
+          "機種：管理機種編號與名稱，供查詢與產能設定共用",
+          "站點：管理站點編號與名稱，供機種站點對應與治具需求使用"
+        ],
         placement: "bottom"
       },
       {
-        id: "master-list",
-        route: "/master",
+        id: "master-fixture-list",
+        route: "/master/fixtures",
         target: "[data-tour='master-list-table']",
-        title: "左邊清單用來挑資料，右邊表單用來改資料",
-        description: "先從清單選一筆資料，右邊才會帶出對應內容。這是整個系統主資料維護最核心的操作模式。",
+        title: "先看治具清單，確認目前有哪些資料",
+        description: "治具分頁會列出編號、名稱、水位與儲位；通常先從左側清單找資料，再決定是新增還是修改。",
         placement: "right"
       },
       {
-        id: "master-detail",
-        route: "/master",
+        id: "master-fixture-detail",
+        route: "/master/fixtures",
         target: "[data-tour='master-detail-form']",
-        title: "在表單完成新增或修改，最後要記得儲存",
-        description: "無論是補治具名稱、機種資訊或站點代碼，最後都要按儲存才會真的寫入。之後收退料與產能頁才會讀到最新設定。",
+        title: "治具表單會維護儲位、水位與負責人等完整資訊",
+        description: "選到治具後，右側表單可修改治具主檔；這些欄位會直接影響查詢頁、收退料與庫存提醒。",
+        placement: "left"
+      },
+      {
+        id: "master-model-tab",
+        route: "/master/models",
+        target: "[data-tour='master-tabs']",
+        title: "切到機種分頁，維護機種主資料",
+        description: "機種主資料比治具精簡，重點是把代碼與名稱維持正確，讓搜尋與產能設定可以對到同一套資料。",
+        placement: "bottom"
+      },
+      {
+        id: "master-model-detail",
+        route: "/master/models",
+        target: "[data-tour='master-detail-form']",
+        title: "機種表單主要管理編號、名稱與啟用狀態",
+        description: "機種建立好之後，後續的機種站點對應與站點治具需求才有正確的主檔可以綁定。",
+        placement: "left"
+      },
+      {
+        id: "master-station-tab",
+        route: "/master/stations",
+        target: "[data-tour='master-tabs']",
+        title: "再切到站點分頁，維護站點主資料",
+        description: "站點是產能頁的基礎字典；如果站點代碼或名稱不完整，後面的 Mapping 與 Requirement 也會一起出錯。",
+        placement: "bottom"
+      },
+      {
+        id: "master-station-detail",
+        route: "/master/stations",
+        target: "[data-tour='master-detail-form']",
+        title: "站點表單完成新增或修改後，一樣要記得儲存",
+        description: "站點資料通常只有編號、名稱與狀態，但它會被多個機種與需求設定共用，所以命名要一致。",
         note: {
           tone: "warning",
-          text: "沒按儲存就切換清單項目或離開頁面，目前表單上的修改會直接遺失。"
+          text: "沒儲存就切換或離開頁面，修改會直接遺失。"
         },
         placement: "left"
       }
     ]
   },
   {
-    id: "production-mapping",
+    id: "production-workflow",
     sectionLabel: "產能管理",
-    label: "機種站點對應",
-    summary: "具體說明先選機種，再把機種綁到站點的操作順序。",
+    label: "機種站點對應 & 站點治具需求",
+    summary: "同一套教學先建立機種站點對應，再接著完成站點治具需求設定。",
     steps: [
       {
         id: "production-menu",
         route: "/search",
         target: "[data-tour='home-more-menu-trigger']",
         title: "產能管理入口也在更多功能",
-        description: "查詢頁只是入口。要設定站點對應與治具需求，先從首頁打開更多功能再進入產能管理。",
+        description: "從首頁更多功能進入產能管理，設定站點對應與治具需求。",
         placement: "bottom",
         openMoreMenu: true
       },
@@ -345,7 +372,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/production/mapping",
         target: "[data-tour='production-filter-row']",
         title: "進來先選機種，再進行下面的綁定",
-        description: "上方機種下拉會決定你現在是在編輯哪一個機種。切換機種後，下方清單與新增表單都會一起跟著換。",
+        description: "上方選機種，決定你在編輯哪一個；切換機種後清單與表單會一起更新。",
         placement: "bottom"
       },
       {
@@ -353,7 +380,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/production/mapping",
         target: "[data-tour='production-mapping-panel']",
         title: "這個區塊專門綁機種與站點",
-        description: "同一機種可對應多個站點。只要某機種會經過某站，就要先在這裡建立對應，後面的治具需求才有依附基礎。",
+        description: "同一機種可對應多個站點，先在這裡建立對應，治具需求才能依附。",
         placement: "top"
       },
       {
@@ -361,7 +388,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/production/mapping",
         target: "[data-tour='production-mapping-form']",
         title: "輸入機種代碼與站點代碼後直接新增",
-        description: "兩個欄位都支援輸入後下拉選擇。選好機種和站點後按 `新增 / 更新`，就完成一筆機種站點綁定。",
+        description: "輸入後可下拉選擇，選好機種站點按「新增 / 更新」即完成綁定。",
         example: [
           { label: "機種代碼", value: "ABC-1200" },
           { label: "站點代碼", value: "ST-05" }
@@ -373,49 +400,41 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/production/mapping",
         target: "[data-tour='production-mapping-list']",
         title: "新增完要看下面清單是否真的出現",
-        description: "表格會列出目前機種已綁定的站點。若有打錯，可直接在這裡編輯或刪除；要大量匯入則用上方的批次貼上匯入。",
+        description: "列出目前機種已綁定的站點，可直接編輯或刪除；大量匯入請用上方批次貼上。",
         placement: "top"
-      }
-    ]
-  },
-  {
-    id: "production-requirements",
-    sectionLabel: "產能管理",
-    label: "站點治具需求",
-    summary: "具體說明先有 Mapping，再在站點上綁治具與需求數量。",
-    steps: [
+      },
       {
-        id: "production-menu",
+        id: "production-requirements-menu",
         route: "/search",
         target: "[data-tour='home-more-menu-trigger']",
         title: "需求設定前，先回到產能管理入口",
-        description: "治具需求是產能頁的另一個分頁，但一樣從首頁更多功能進入，避免新手不知道切去哪裡。",
+        description: "治具需求同樣從首頁更多功能進入產能管理。",
         placement: "bottom",
         openMoreMenu: true
       },
       {
-        id: "production-entry",
+        id: "production-requirements-entry",
         route: "/search",
         target: "[data-tour='home-production-entry']",
         title: "需求設定也從這裡進入產能管理",
-        description: "如果你是從查詢頁直接來設定站點用治具，先進產能頁，再切到 `治具需求` 分頁。",
+        description: "進入產能管理後，切到「治具需求」分頁。",
         placement: "left",
         openMoreMenu: true
       },
       {
-        id: "production-tabs",
+        id: "production-requirements-tabs",
         route: "/production/requirements",
         target: "[data-tour='production-tabs']",
         title: "治具需求之前，先確保 Mapping 已建好",
-        description: "這兩個分頁有先後關係。若 `機種站點對應` 還沒建立，`治具需求` 裡就不會有可選站點可以綁治具。",
+        description: "需先建立機種站點對應，治具需求才有站點可選。",
         placement: "bottom"
       },
       {
-        id: "production-filter-row",
+        id: "production-requirements-filter-row",
         route: "/production/requirements",
         target: "[data-tour='production-filter-row']",
         title: "先選機種，再針對該機種下的站點設定需求",
-        description: "切換機種後，需求表單只會列出這個機種已經綁定好的站點。若站點下拉為空，表示先回 Mapping 補綁定。",
+        description: "切換機種後，表單只列出已綁定的站點；下拉為空請回 Mapping 補綁定。",
         placement: "bottom"
       },
       {
@@ -423,7 +442,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/production/requirements",
         target: "[data-tour='production-requirement-panel']",
         title: "這個區塊負責綁站點、治具與需求數量",
-        description: "每一筆需求都代表某機種在某站點需要幾套治具。這裡設定完，後續產能分析才知道哪個治具可能成為瓶頸。",
+        description: "每筆需求代表某機種在某站點需要幾套治具，設定後產能分析才能抓出瓶頸。",
         placement: "top"
       },
       {
@@ -445,7 +464,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/production/requirements",
         target: "[data-tour='production-requirement-list']",
         title: "新增後在列表核對站點、治具與數量",
-        description: "下方表格就是目前站點的正式需求清單。若數量錯了或綁錯治具，可直接編輯；大量新增則走批次貼上匯入。",
+        description: "下方是該站點的正式需求清單，可直接編輯；大量新增用批次貼上。",
         placement: "top"
       }
     ]

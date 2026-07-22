@@ -38,7 +38,15 @@ const props = defineProps<{
 
 <template>
   <article class="panel list-panel">
-    <UiSectionHeader class="panel-head" :title="`${tabTitle}清單`" :description="`${currentRowsLength} 筆資料`" />
+    <UiSectionHeader class="panel-head" :title="`${tabTitle}清單`" />
+
+    <div v-if="currentRowsLength > 0" class="list-footer">
+      <span>第 {{ listPage }} / {{ listTotalPages }} 頁，共 {{ currentRowsLength }} 筆</span>
+      <div class="pager-actions">
+        <button class="outline-btn small" type="button" :disabled="loading || listPage <= 1" @click="onPreviousPage">上一頁</button>
+        <button class="outline-btn small" type="button" :disabled="loading || listPage >= listTotalPages" @click="onNextPage">下一頁</button>
+      </div>
+    </div>
 
     <div class="list-toolbar" data-tour="master-list-toolbar">
       <input :value="keyword" :placeholder="searchPlaceholder" :disabled="loading" @input="onKeywordChange(($event.target as HTMLInputElement).value)" />
@@ -104,14 +112,6 @@ const props = defineProps<{
         </tbody>
       </table>
     </div>
-
-    <div v-if="currentRowsLength > 0" class="list-footer">
-      <span>第 {{ listPage }} / {{ listTotalPages }} 頁，共 {{ currentRowsLength }} 筆</span>
-      <div class="pager-actions">
-        <button class="outline-btn small" type="button" :disabled="loading || listPage <= 1" @click="onPreviousPage">上一頁</button>
-        <button class="outline-btn small" type="button" :disabled="loading || listPage >= listTotalPages" @click="onNextPage">下一頁</button>
-      </div>
-    </div>
   </article>
 </template>
 
@@ -126,10 +126,11 @@ const props = defineProps<{
 }
 
 .list-panel {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  overflow: auto;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .list-toolbar {
@@ -160,9 +161,10 @@ select {
 }
 
 .table-scroll {
+  flex: 1 1 auto;
   min-width: 0;
-  overflow-x: auto;
   min-height: 0;
+  overflow: auto;
 }
 
 .data-table {

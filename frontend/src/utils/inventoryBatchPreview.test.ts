@@ -13,7 +13,8 @@ const fixture: Fixture = {
   department_storage_location: null,
   min_stock_qty: 3,
   description: null,
-  is_active: true
+  is_active: true,
+  has_image: false
 };
 
 const stockRow: StockSummary = {

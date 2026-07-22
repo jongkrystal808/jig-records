@@ -13,12 +13,14 @@ from backend.app.schemas.master import (
     FixtureQualityReportRead,
     FixtureUpdate,
     MachineModelCreate,
+    MachineModelDeleteRead,
     MachineModelUpdate,
     StationCreate,
+    StationDeleteRead,
     StationUpdate,
 )
 from backend.app.utils.csv_tools import parse_csv_bytes, render_csv_text
-from backend.app.utils.fixture_images import resolve_fixture_image_path
+from backend.app.utils.fixture_images import rename_fixture_image, resolve_fixture_image_path, save_fixture_image
 
 
 def _parse_bool(value: str, *, default: bool = True) -> bool:
@@ -300,6 +302,7 @@ class MasterService:
             payload.line_storage_location,
             payload.department_storage_location,
         )
+        before_code = fixture.code
         try:
             fixture = self.repo.update_fixture(
                 fixture,
@@ -312,6 +315,7 @@ class MasterService:
                 description=payload.description,
                 is_active=payload.is_active,
             )
+            rename_fixture_image(before_code, fixture.code)
             level = self.repo.get_or_create_stock_level(fixture.id)
             if payload.min_stock_qty is not None:
                 level.min_stock_qty = payload.min_stock_qty
@@ -330,6 +334,45 @@ class MasterService:
         except IntegrityError as exc:
             self.db.rollback()
             raise ValueError("fixture code already exists within customer") from exc
+
+    def upload_fixture_image(
+        self,
+        fixture_id: int,
+        *,
+        customer_id: int,
+        content: bytes,
+        content_type: str | None,
+        filename: str | None,
+        actor: SessionContext | None = None,
+    ):
+        fixture = self.repo.get_fixture(fixture_id)
+        if fixture is None or fixture.customer_id != customer_id:
+            raise ValueError(f"fixture {fixture_id} not found")
+        if not content:
+            raise ValueError("fixture image content is empty")
+        if len(content) > 5 * 1024 * 1024:
+            raise ValueError("fixture image exceeds 5 MB limit")
+        try:
+            save_fixture_image(fixture.code, content, content_type=content_type, filename=filename)
+            self.audit.record(
+                customer_id=customer_id,
+                entity_type="fixture",
+                entity_key=fixture.code,
+                action="upload_image",
+                summary=f"上傳治具圖片 {fixture.code}",
+                actor=actor,
+            )
+            self.db.commit()
+            level = self.repo.get_stock_level(fixture.id)
+            return {
+                "fixture_id": fixture.id,
+                "fixture_code": fixture.code,
+                "has_image": True,
+                "fixture": self._serialize_fixture(fixture, 0 if level is None else level.min_stock_qty),
+            }
+        except ValueError:
+            self.db.rollback()
+            raise
 
     def delete_fixture(
         self,
@@ -438,6 +481,44 @@ class MasterService:
             self.db.rollback()
             raise ValueError("model code already exists") from exc
 
+    def delete_model(
+        self,
+        model_id: int,
+        *,
+        customer_id: int,
+        actor: SessionContext | None = None,
+    ) -> MachineModelDeleteRead:
+        model = self.repo.get_model(model_id, customer_id=customer_id)
+        if model is None:
+            raise ValueError(f"model {model_id} not found")
+
+        model_code = model.code
+        model_name = model.name
+        try:
+            delete_stats = self.repo.delete_model(model)
+            self.audit.record(
+                customer_id=customer_id,
+                entity_type="model",
+                entity_key=model_code,
+                action="delete",
+                summary=(
+                    f"永久刪除機種 {model_code} / {model_name}；"
+                    f"刪除 {delete_stats['deleted_model_station_count']} 筆機種站點對應、"
+                    f"{delete_stats['deleted_requirement_count']} 筆治具需求、"
+                    f"{delete_stats['deleted_capacity_summary_count']} 筆產能摘要"
+                ),
+                actor=actor,
+            )
+            self.db.commit()
+            return MachineModelDeleteRead(
+                model_id=model_id,
+                model_code=model_code,
+                **delete_stats,
+            )
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise ValueError("機種仍被其他資料引用，無法刪除") from exc
+
     def create_station(self, payload: StationCreate, actor: SessionContext | None = None):
         customer = self.repo.get_customer(payload.customer_id)
         if customer is None:
@@ -494,6 +575,44 @@ class MasterService:
         except IntegrityError as exc:
             self.db.rollback()
             raise ValueError("station code already exists") from exc
+
+    def delete_station(
+        self,
+        station_id: int,
+        *,
+        customer_id: int,
+        actor: SessionContext | None = None,
+    ) -> StationDeleteRead:
+        station = self.repo.get_station(station_id, customer_id=customer_id)
+        if station is None:
+            raise ValueError(f"station {station_id} not found")
+
+        station_code = station.code
+        station_name = station.name
+        try:
+            delete_stats = self.repo.delete_station(station)
+            self.audit.record(
+                customer_id=customer_id,
+                entity_type="station",
+                entity_key=station_code,
+                action="delete",
+                summary=(
+                    f"永久刪除站點 {station_code} / {station_name}；"
+                    f"刪除 {delete_stats['deleted_model_station_count']} 筆機種站點對應、"
+                    f"{delete_stats['deleted_requirement_count']} 筆治具需求、"
+                    f"{delete_stats['deleted_capacity_summary_count']} 筆產能摘要"
+                ),
+                actor=actor,
+            )
+            self.db.commit()
+            return StationDeleteRead(
+                station_id=station_id,
+                station_code=station_code,
+                **delete_stats,
+            )
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise ValueError("站點仍被其他資料引用，無法刪除") from exc
 
     def export_fixtures_csv(self, customer_id: int) -> str:
         fixtures = self.repo.list_fixtures(customer_id=customer_id)
@@ -694,6 +813,7 @@ class MasterService:
             "min_stock_qty": min_stock_qty,
             "description": fixture.description,
             "is_active": fixture.is_active,
+            "has_image": resolve_fixture_image_path(fixture.code) is not None,
             "created_at": fixture.created_at,
             "updated_at": fixture.updated_at,
         }
