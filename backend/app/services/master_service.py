@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -373,6 +375,70 @@ class MasterService:
         except ValueError:
             self.db.rollback()
             raise
+
+    def upload_fixture_images_batch(
+        self,
+        *,
+        customer_id: int,
+        uploads: list[dict],
+        actor: SessionContext | None = None,
+    ) -> dict:
+        if not uploads:
+            raise ValueError("請至少選擇 1 張圖片")
+        if len(uploads) > 50:
+            raise ValueError("單次最多可上傳 50 張圖片")
+
+        uploaded_count = 0
+        results: list[dict] = []
+
+        for upload in uploads:
+            filename = str(upload.get("filename") or "").strip()
+            content = upload.get("content") or b""
+            content_type = upload.get("content_type")
+            fixture_code = Path(filename).stem.strip() if filename else ""
+
+            if not filename:
+                results.append({"file_name": "", "fixture_code": None, "fixture_id": None, "success": False, "message": "缺少檔名"})
+                continue
+            if not fixture_code:
+                results.append({"file_name": filename, "fixture_code": None, "fixture_id": None, "success": False, "message": "檔名需對應治具編號"})
+                continue
+
+            fixture = self.repo.get_fixture_by_code(fixture_code, customer_id=customer_id)
+            if fixture is None:
+                results.append({"file_name": filename, "fixture_code": fixture_code, "fixture_id": None, "success": False, "message": "找不到對應治具編號"})
+                continue
+            if not content:
+                results.append({"file_name": filename, "fixture_code": fixture.code, "fixture_id": fixture.id, "success": False, "message": "圖片內容不可為空"})
+                continue
+            if len(content) > 5 * 1024 * 1024:
+                results.append({"file_name": filename, "fixture_code": fixture.code, "fixture_id": fixture.id, "success": False, "message": "單檔超過 5 MB"})
+                continue
+
+            try:
+                save_fixture_image(fixture.code, content, content_type=content_type, filename=filename)
+            except ValueError as exc:
+                results.append({"file_name": filename, "fixture_code": fixture.code, "fixture_id": fixture.id, "success": False, "message": str(exc)})
+                continue
+
+            self.audit.record(
+                customer_id=customer_id,
+                entity_type="fixture",
+                entity_key=fixture.code,
+                action="upload_image",
+                summary=f"批次上傳治具圖片 {fixture.code}",
+                actor=actor,
+            )
+            uploaded_count += 1
+            results.append({"file_name": filename, "fixture_code": fixture.code, "fixture_id": fixture.id, "success": True, "message": "上傳成功"})
+
+        self.db.commit()
+        return {
+            "requested_count": len(uploads),
+            "uploaded_count": uploaded_count,
+            "failed_count": len(uploads) - uploaded_count,
+            "results": results,
+        }
 
     def delete_fixture(
         self,

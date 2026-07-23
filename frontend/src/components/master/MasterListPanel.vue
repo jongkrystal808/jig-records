@@ -34,6 +34,14 @@ const props = defineProps<{
   onPreviousPage: () => void;
   onNextPage: () => void;
 }>();
+
+function handleRowKeydown(event: KeyboardEvent, id: number): void {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+  event.preventDefault();
+  props.onSelectRow(id);
+}
 </script>
 
 <template>
@@ -71,7 +79,14 @@ const props = defineProps<{
         </thead>
 
         <tbody v-if="activeTab === 'fixture'">
-          <tr v-for="row in pagedFixtureRows" :key="row.id" :class="{ selected: selectedFixtureId === row.id }" @click="onSelectRow(row.id)">
+          <tr
+            v-for="row in pagedFixtureRows"
+            :key="row.id"
+            :class="{ selected: selectedFixtureId === row.id }"
+            tabindex="0"
+            @click="onSelectRow(row.id)"
+            @keydown="handleRowKeydown($event, row.id)"
+          >
             <td>{{ row.code }}</td><td>{{ row.name }}</td><td>{{ row.min_stock_qty }}</td><td>{{ row.line_storage_location || "-" }}</td><td>{{ row.department_storage_location || "-" }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
           </tr>
           <tr v-if="!loading && currentRowsLength === 0">
@@ -79,7 +94,14 @@ const props = defineProps<{
           </tr>
         </tbody>
         <tbody v-else-if="activeTab === 'model'">
-          <tr v-for="row in pagedModelRows" :key="row.id" :class="{ selected: selectedModelId === row.id }" @click="onSelectRow(row.id)">
+          <tr
+            v-for="row in pagedModelRows"
+            :key="row.id"
+            :class="{ selected: selectedModelId === row.id }"
+            tabindex="0"
+            @click="onSelectRow(row.id)"
+            @keydown="handleRowKeydown($event, row.id)"
+          >
             <td>{{ row.code }}</td><td>{{ row.name }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
           </tr>
           <tr v-if="!loading && currentRowsLength === 0">
@@ -87,7 +109,14 @@ const props = defineProps<{
           </tr>
         </tbody>
         <tbody v-else-if="activeTab === 'station'">
-          <tr v-for="row in pagedStationRows" :key="row.id" :class="{ selected: selectedStationId === row.id }" @click="onSelectRow(row.id)">
+          <tr
+            v-for="row in pagedStationRows"
+            :key="row.id"
+            :class="{ selected: selectedStationId === row.id }"
+            tabindex="0"
+            @click="onSelectRow(row.id)"
+            @keydown="handleRowKeydown($event, row.id)"
+          >
             <td>{{ row.code }}</td><td>{{ row.name }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
           </tr>
           <tr v-if="!loading && currentRowsLength === 0">
@@ -95,7 +124,14 @@ const props = defineProps<{
           </tr>
         </tbody>
         <tbody v-else-if="activeTab === 'customer'">
-          <tr v-for="row in pagedCustomerRows" :key="row.id" :class="{ selected: selectedCustomerRowId === row.id }" @click="onSelectRow(row.id)">
+          <tr
+            v-for="row in pagedCustomerRows"
+            :key="row.id"
+            :class="{ selected: selectedCustomerRowId === row.id }"
+            tabindex="0"
+            @click="onSelectRow(row.id)"
+            @keydown="handleRowKeydown($event, row.id)"
+          >
             <td>{{ row.code }}</td><td>{{ row.name }}</td>
           </tr>
           <tr v-if="!loading && currentRowsLength === 0">
@@ -103,7 +139,14 @@ const props = defineProps<{
           </tr>
         </tbody>
         <tbody v-else>
-          <tr v-for="row in pagedUserRows" :key="row.id" :class="{ selected: selectedUserId === row.id }" @click="onSelectRow(row.id)">
+          <tr
+            v-for="row in pagedUserRows"
+            :key="row.id"
+            :class="{ selected: selectedUserId === row.id }"
+            tabindex="0"
+            @click="onSelectRow(row.id)"
+            @keydown="handleRowKeydown($event, row.id)"
+          >
             <td>{{ row.username }}</td><td>{{ fallbackText(row.email) }}</td><td>{{ row.display_name }}</td><td>{{ row.role }}</td><td><span class="status-pill" :class="row.is_active ? 'active' : 'inactive'">{{ row.is_active ? "啟用中" : "停用" }}</span></td>
           </tr>
           <tr v-if="!loading && currentRowsLength === 0">
@@ -200,6 +243,12 @@ select {
 }
 
 .data-table tbody tr.selected {
+  background: #edf3ff;
+}
+
+.data-table tbody tr:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--blue) 62%, white);
+  outline-offset: -2px;
   background: #edf3ff;
 }
 

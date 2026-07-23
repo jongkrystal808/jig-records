@@ -35,9 +35,10 @@ function buildHeaders(init?: RequestInit, withAuth = true): Headers {
 // Keep transport concerns centralized so domain clients only describe paths and payloads.
 export async function request<T>(path: string, init?: RequestInit, withAuth = true): Promise<T> {
   const headers = buildHeaders(init, withAuth);
+  const { headers: _ignoredHeaders, ...restInit } = init ?? {};
   const response = await fetch(`${API_ROOT}${path}`, {
-    headers,
-    ...init
+    ...restInit,
+    headers
   });
 
   const body = await response.text();
@@ -55,9 +56,10 @@ export async function request<T>(path: string, init?: RequestInit, withAuth = tr
 
 export async function requestText(path: string, init?: RequestInit, withAuth = true): Promise<string> {
   const headers = buildHeaders(init, withAuth);
+  const { headers: _ignoredHeaders, ...restInit } = init ?? {};
   const response = await fetch(`${API_ROOT}${path}`, {
-    headers,
-    ...init
+    ...restInit,
+    headers
   });
   const body = await response.text();
   if (!response.ok) {
@@ -68,9 +70,10 @@ export async function requestText(path: string, init?: RequestInit, withAuth = t
 
 export async function requestBlob(path: string, init?: RequestInit, withAuth = true): Promise<{ blob: Blob; filename: string | null }> {
   const headers = buildHeaders(init, withAuth);
+  const { headers: _ignoredHeaders, ...restInit } = init ?? {};
   const response = await fetch(`${API_ROOT}${path}`, {
-    headers,
-    ...init
+    ...restInit,
+    headers
   });
   if (!response.ok) {
     const body = await response.text();

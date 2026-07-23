@@ -132,16 +132,6 @@ const overviewRows = computed(() =>
     .filter((row) => matchesFixtureKeywords(row.fixture_code, globalFixtureKeywords.value))
 );
 
-function downloadCsv(filename: string, content: string): void {
-  const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
 async function loadData(): Promise<void> {
   const customerId = selectedCustomerId.value ?? undefined;
   try {
@@ -203,19 +193,6 @@ async function resetOverviewFilters(): Promise<void> {
   await loadOverview();
 }
 
-async function exportOverviewCsv(): Promise<void> {
-  if (!selectedCustomerId.value) {
-    pushToast("請先在側邊欄選擇客戶。", "warning");
-    return;
-  }
-  try {
-    const customerId = selectedCustomerId.value ?? undefined;
-    downloadCsv("transactions.csv", await api.exportTransactionsCsv(5000, customerId, buildOverviewFilters()));
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "匯出失敗", "error");
-  }
-}
-
 function updateOverviewFilters(value: typeof overviewFilters.value): void {
   overviewFilters.value = value;
 }
@@ -270,7 +247,6 @@ watch(pageMode, async (value) => {
       @update:filters="updateOverviewFilters"
       @search="searchOverview"
       @reset="resetOverviewFilters"
-      @export="exportOverviewCsv"
     />
   </div>
 </template>

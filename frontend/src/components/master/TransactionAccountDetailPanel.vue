@@ -20,7 +20,7 @@ function summarizeQuantity(row: MaterialTransaction | null): number {
 </script>
 
 <template>
-  <article class="panel detail-panel">
+  <article class="panel detail-panel" data-tour="master-ledger-detail">
     <UiSectionHeader
       class="panel-head"
       title="案件詳細"

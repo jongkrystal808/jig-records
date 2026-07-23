@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import type { Customer } from "@/types";
 
@@ -61,6 +62,40 @@ function handleCustomerChange(event: Event): void {
   emit("update:selectedCustomerId", Number.isFinite(value) ? value : null);
 }
 
+const activePopover = ref<"receipt" | "return" | "low_stock" | null>(null);
+
+function togglePopover(target: "receipt" | "return" | "low_stock"): void {
+  activePopover.value = activePopover.value === target ? null : target;
+}
+
+function closePopover(): void {
+  activePopover.value = null;
+}
+
+function handleDocumentClick(event: MouseEvent): void {
+  const target = event.target;
+  if (!(target instanceof Element) || target.closest("[data-topbar-popover]")) {
+    return;
+  }
+  closePopover();
+}
+
+function handleDocumentKeydown(event: KeyboardEvent): void {
+  if (event.key === "Escape") {
+    closePopover();
+  }
+}
+
+onMounted(() => {
+  document.addEventListener("click", handleDocumentClick);
+  document.addEventListener("keydown", handleDocumentKeydown);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("click", handleDocumentClick);
+  document.removeEventListener("keydown", handleDocumentKeydown);
+});
+
 // Keep desktop shell UI isolated so App.vue only orchestrates session, routing, and stats loading.
 </script>
 
@@ -89,7 +124,7 @@ function handleCustomerChange(event: Event): void {
         治具收/退料
       </button>
       <button class="primary-btn action-btn compact-primary-btn" data-tour="inventory-export-entry-trigger" type="button" @click="emit('openExport')">
-        收退料資訊匯出
+        收退料明細匯出
       </button>
       <button class="outline-btn action-btn compact-outline-btn" data-tour="search-onboarding-entry" type="button" @click="emit('openOnboarding')">
         新手教學
@@ -100,9 +135,12 @@ function handleCustomerChange(event: Event): void {
       <div class="topbar-info">
         <span class="pill">{{ authDisplayName }}</span>
         <span class="pill">客戶 {{ selectedCustomerCode || "未選" }}</span>
-        <div class="pill-hover">
-          <span class="pill">今日收料 {{ todayReceiptQty }}</span>
-          <div class="hover-panel">
+        <div class="pill-hover" data-topbar-popover>
+          <button class="pill pill-trigger" type="button" :aria-expanded="activePopover === 'receipt'" @click="togglePopover('receipt')">
+            <span>今日收料</span>
+            <strong class="pill-number">{{ todayReceiptQty }}</strong>
+          </button>
+          <div v-if="activePopover === 'receipt'" class="hover-panel popover-panel">
             <div class="hover-head">
               <strong>最近收料 10 筆</strong>
             </div>
@@ -116,9 +154,12 @@ function handleCustomerChange(event: Event): void {
             <div v-else class="hover-empty">今天尚無收料資料</div>
           </div>
         </div>
-        <div class="pill-hover">
-          <span class="pill">今日退料 {{ todayReturnQty }}</span>
-          <div class="hover-panel">
+        <div class="pill-hover" data-topbar-popover>
+          <button class="pill pill-trigger" type="button" :aria-expanded="activePopover === 'return'" @click="togglePopover('return')">
+            <span>今日退料</span>
+            <strong class="pill-number">{{ todayReturnQty }}</strong>
+          </button>
+          <div v-if="activePopover === 'return'" class="hover-panel popover-panel">
             <div class="hover-head">
               <strong>最近退料 10 筆</strong>
             </div>
@@ -132,9 +173,12 @@ function handleCustomerChange(event: Event): void {
             <div v-else class="hover-empty">今天尚無退料資料</div>
           </div>
         </div>
-        <div class="pill-hover">
-          <span class="pill warn">低水位 {{ lowStockCount }}</span>
-          <div class="hover-panel">
+        <div class="pill-hover" data-topbar-popover>
+          <button class="pill warn pill-trigger" type="button" :aria-expanded="activePopover === 'low_stock'" @click="togglePopover('low_stock')">
+            <span>低水位</span>
+            <strong class="pill-number">{{ lowStockCount }}</strong>
+          </button>
+          <div v-if="activePopover === 'low_stock'" class="hover-panel popover-panel">
             <div class="hover-head">
               <strong>低水位治具</strong>
             </div>
@@ -152,7 +196,7 @@ function handleCustomerChange(event: Event): void {
       </div>
 
       <label class="customer-picker" data-tour="global-customer-picker">
-        <select :value="selectedCustomerId ?? undefined" @change="handleCustomerChange">
+        <select :value="selectedCustomerId ?? undefined" aria-label="選擇客戶" @change="handleCustomerChange">
           <option v-for="customer in customers" :key="customer.id" :value="customer.id">{{ customer.code }} - {{ customer.name }}</option>
         </select>
       </label>
@@ -252,14 +296,19 @@ function handleCustomerChange(event: Event): void {
 .pill {
   display: inline-flex;
   align-items: center;
-  min-height: 30px;
-  padding: 4px 10px;
+  min-height: 44px;
+  padding: 8px 12px;
   border: 1px solid #d7e2f5;
   border-radius: 999px;
   background: #f7faff;
   color: #35527d;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
+}
+
+.pill-number {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .pill.warn {
@@ -278,7 +327,7 @@ function handleCustomerChange(event: Event): void {
   left: 0;
   z-index: 50;
   width: 280px;
-  display: none;
+  display: grid;
   gap: 8px;
   padding: 10px;
   border: 1px solid var(--line);
@@ -287,14 +336,19 @@ function handleCustomerChange(event: Event): void {
   box-shadow: 0 18px 36px rgba(28, 47, 84, 0.16);
 }
 
-.pill-hover:hover .hover-panel {
-  display: grid;
+.pill-trigger {
+  cursor: pointer;
+  gap: 8px;
+}
+
+.popover-panel {
+  animation: fadeDown 0.14s ease;
 }
 
 .hover-head strong,
 .hover-row strong {
   color: #22314a;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .hover-list {
@@ -317,7 +371,7 @@ function handleCustomerChange(event: Event): void {
 .hover-row small,
 .hover-empty {
   color: #5d6d89;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .hover-empty {
@@ -330,10 +384,22 @@ function handleCustomerChange(event: Event): void {
   background: linear-gradient(180deg, #ffffff 0%, #f7f9fd 100%);
   color: #35527d;
   padding: 8px 10px;
-  min-height: 34px;
+  min-height: 44px;
   font: inherit;
+  font-size: 14px;
   font-weight: 700;
   cursor: pointer;
+}
+
+@keyframes fadeDown {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .customer-picker {
@@ -345,9 +411,11 @@ select {
   width: 100%;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
-  padding: 8px 10px;
+  min-height: 44px;
+  padding: 10px 12px;
   background: #fff;
   color: var(--text);
+  font-size: 14px;
 }
 
 .action-btn {
@@ -357,16 +425,16 @@ select {
 .compact-primary-btn {
   border-color: #2f6ee5;
   background: linear-gradient(180deg, #4b89ff 0%, #2f6ee5 100%);
-  min-height: 40px;
-  padding: 8px 18px;
-  font-size: 13px;
+  min-height: 44px;
+  padding: 10px 18px;
+  font-size: 14px;
   font-weight: 800;
 }
 
 .compact-outline-btn {
-  min-height: 34px;
-  padding: 6px 11px;
-  font-size: 11px;
+  min-height: 44px;
+  padding: 10px 14px;
+  font-size: 14px;
   font-weight: 800;
 }
 
@@ -411,23 +479,42 @@ select {
 }
 
 @media (max-width: 1200px) {
-  .topbar {
-    flex-wrap: wrap;
-  }
-
-  .topbar-primary-action {
-    order: 3;
-    width: 100%;
-    margin: 0;
-    justify-content: flex-end;
-  }
-}
-
-@media (max-width: 960px) {
   .mobile-trigger,
   .mobile-customer {
     display: inline-flex;
     align-items: center;
+  }
+
+  .topbar {
+    gap: 12px;
+    padding: 10px 12px;
+  }
+
+  .topbar-main {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .mobile-customer {
+    margin-left: auto;
+    min-height: 36px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: #f7faff;
+    color: #35527d;
+    font-size: 13px;
+    font-weight: 700;
+    max-width: 180px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .topbar-primary-action {
+    flex: 1 0 100%;
+    width: 100%;
+    margin: 0;
+    justify-content: flex-start;
   }
 
   .topbar-primary-action,
@@ -436,10 +523,6 @@ select {
   .more-menu,
   .topbar-actions > .outline-btn {
     display: none;
-  }
-
-  .topbar {
-    padding: 10px 12px;
   }
 }
 </style>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useRouter } from "vue-router";
+
 import BatchImportPanel from "@/components/inventory/BatchImportPanel.vue";
 import InventoryExportPanel from "@/components/inventory/InventoryExportPanel.vue";
 
@@ -14,6 +16,13 @@ const emit = defineEmits<{
   refreshStats: [];
 }>();
 
+const router = useRouter();
+
+async function openInventoryOverview(): Promise<void> {
+  emit("closeBatch");
+  await router.push("/inventory/overview");
+}
+
 // Centralize global modal mounting so App.vue only toggles open state and refresh side effects.
 </script>
 
@@ -26,7 +35,10 @@ const emit = defineEmits<{
             <span class="modal-eyebrow">Global Action</span>
             <h2>收 / 退料</h2>
           </div>
-          <button class="outline-btn" type="button" @click="emit('closeBatch')">關閉</button>
+          <div class="modal-head-actions">
+            <button class="overview-btn" type="button" @click="openInventoryOverview">收退料總檢視</button>
+            <button class="outline-btn" type="button" @click="emit('closeBatch')">關閉</button>
+          </div>
         </div>
         <BatchImportPanel
           :customer-id="customerId"
@@ -66,5 +78,34 @@ const emit = defineEmits<{
 .modal-head h2 {
   margin: 0;
   color: #1f2b45;
+}
+
+.modal-head-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.overview-btn {
+  border: 1px solid #d3b07a;
+  border-radius: 10px;
+  padding: 7px 12px;
+  background: linear-gradient(180deg, #fff7e8 0%, #ffebc4 100%);
+  color: #8a5610;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.overview-btn:hover {
+  filter: brightness(0.98);
+}
+
+@media (max-width: 640px) {
+  .modal-head-actions {
+    width: 100%;
+  }
 }
 </style>

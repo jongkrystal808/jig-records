@@ -1,4 +1,4 @@
-import type { FixtureImageUploadResult } from "@/types";
+import type { FixtureImageBatchUploadResult, FixtureImageUploadResult } from "@/types";
 
 import { API_ROOT, request, requestBlob } from "@/api/core";
 
@@ -19,6 +19,16 @@ export const mediaApi = {
     const formData = new FormData();
     formData.append("image", file);
     return request<FixtureImageUploadResult>(`/master/fixtures/${fixtureId}/image?customer_id=${encodeURIComponent(String(customerId))}`, {
+      method: "POST",
+      body: formData
+    });
+  },
+  uploadFixtureImagesBatch(customerId: number, files: File[]) {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append("images", file);
+    }
+    return request<FixtureImageBatchUploadResult>(`/master/fixtures/images/batch?customer_id=${encodeURIComponent(String(customerId))}`, {
       method: "POST",
       body: formData
     });

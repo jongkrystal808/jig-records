@@ -12,6 +12,7 @@ from backend.app.schemas.master import (
     CustomerUpdate,
     FixtureCreate,
     FixtureDeleteRead,
+    FixtureImageBatchUploadRead,
     FixtureImageUploadRead,
     FixtureQualityReportRead,
     FixtureRead,
@@ -204,6 +205,36 @@ async def upload_fixture_image(
             filename=image.filename,
             actor=session,
         )
+    except ValueError as exc:
+        message = str(exc)
+        status_code = status.HTTP_404_NOT_FOUND if message.endswith("not found") else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=status_code, detail=message) from exc
+
+
+@router.post(
+    "/fixtures/images/batch",
+    response_model=FixtureImageBatchUploadRead,
+    dependencies=[Depends(require_permission("write"))],
+)
+async def upload_fixture_images_batch(
+    customer_id: int = Query(...),
+    images: list[UploadFile] = File(...),
+    session: SessionContext = Depends(require_permission("write")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    service = MasterService(db)
+    try:
+        uploads = []
+        for image in images:
+            uploads.append(
+                {
+                    "filename": image.filename,
+                    "content_type": image.content_type,
+                    "content": await image.read(),
+                }
+            )
+        return service.upload_fixture_images_batch(customer_id=customer_id, uploads=uploads, actor=session)
     except ValueError as exc:
         message = str(exc)
         status_code = status.HTTP_404_NOT_FOUND if message.endswith("not found") else status.HTTP_400_BAD_REQUEST
@@ -454,6 +485,5 @@ def delete_station(
         message = str(exc)
         status_code = status.HTTP_404_NOT_FOUND if message.endswith("not found") else status.HTTP_400_BAD_REQUEST
         raise HTTPException(status_code=status_code, detail=message) from exc
-
 
 

@@ -16,7 +16,7 @@ const emit = defineEmits<{
 
 <template>
   <teleport to="body">
-    <div v-if="open" class="ui-modal-backdrop" @click.self="emit('close')">
+    <div v-if="open" class="ui-modal-backdrop release-modal-backdrop" @click.self="emit('close')">
       <div class="ui-modal-card ui-modal-card--narrow release-modal-card">
         <div class="release-head">
           <div>
@@ -40,6 +40,10 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
+.release-modal-backdrop {
+  z-index: 140;
+}
+
 .release-modal-card {
   display: grid;
   gap: 16px;

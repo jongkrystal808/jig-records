@@ -48,6 +48,7 @@ const currentCustomerId = computed(() => selectedCustomerId.value ?? undefined);
 const selectedCustomer = computed(() => customers.value.find((row) => row.id === selectedCustomerId.value) ?? null);
 const canEnterMaster = computed(() => authSession.value?.role !== "guest");
 const canOperateInventory = computed(() => authSession.value?.role !== "guest");
+const canAccessAdminOnboarding = computed(() => authSession.value?.role === "admin");
 const today = computed(() => formatDateKey(new Date()));
 const currentOnboardingFlow = computed(() => getOnboardingFlow(onboardingFlowId.value));
 const currentOnboardingSteps = computed(() => currentOnboardingFlow.value?.steps ?? []);
@@ -62,6 +63,9 @@ const onboardingFlowCards = computed(() =>
     } else if (flow.requiresMasterAccess && !canEnterMaster.value) {
       disabled = true;
       disabledReason = "訪客不可進入資料維護";
+    } else if (flow.requiresAdminAccess && !canAccessAdminOnboarding.value) {
+      disabled = true;
+      disabledReason = "只有 Admin 可觀看這組教學";
     }
     return {
       id: flow.id,
@@ -100,11 +104,13 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   closeActiveModal();
 }
 
-const menuEntries = computed(() => [
-  { label: "收退料總檢視", to: "/inventory/overview", disabled: false },
-  { label: "資料維護", to: "/master", disabled: !canEnterMaster.value },
-  { label: "產能管理", to: "/production", disabled: false }
-]);
+const menuEntries = computed(() =>
+  [
+    { label: "收退料總檢視", to: "/inventory/overview", disabled: false },
+    canEnterMaster.value ? { label: "資料維護", to: "/master", disabled: false } : null,
+    { label: "產能管理", to: "/production", disabled: false }
+  ].filter((entry): entry is { label: string; to: string; disabled: boolean } => entry !== null)
+);
 
 async function loadCustomers(): Promise<void> {
   customers.value = await api.listCustomers();

@@ -77,6 +77,21 @@ class FixtureImageUploadRead(BaseModel):
     fixture: FixtureRead
 
 
+class FixtureImageBatchUploadItemRead(BaseModel):
+    file_name: str
+    fixture_code: str | None = None
+    fixture_id: int | None = None
+    success: bool
+    message: str
+
+
+class FixtureImageBatchUploadRead(BaseModel):
+    requested_count: int
+    uploaded_count: int
+    failed_count: int
+    results: list[FixtureImageBatchUploadItemRead] = Field(default_factory=list)
+
+
 class FixtureDeleteRead(BaseModel):
     fixture_id: int
     fixture_code: str

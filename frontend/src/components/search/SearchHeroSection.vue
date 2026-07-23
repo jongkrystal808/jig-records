@@ -44,6 +44,7 @@ const visibleRecentFixtureShortcuts = computed(() =>
 );
 const hiddenRecentShortcutCount = computed(() => Math.max(props.recentFixtureShortcuts.length - RECENT_SHORTCUT_PREVIEW_COUNT, 0));
 const hasReleaseNotice = computed(() => currentReleaseNotice.highlights.length > 0);
+const showRecentShortcutContent = computed(() => !props.hasActiveQuery || recentShortcutExpanded.value);
 
 function focusQueryInput(): void {
   queryInput.value?.focus();
@@ -60,6 +61,15 @@ watch(
   () => props.recentFixtureShortcuts,
   () => {
     recentShortcutExpanded.value = false;
+  }
+);
+
+watch(
+  () => props.hasActiveQuery,
+  (hasActiveQuery) => {
+    if (hasActiveQuery) {
+      recentShortcutExpanded.value = false;
+    }
   }
 );
 </script>
@@ -97,14 +107,15 @@ watch(
 
     <div class="search-toolbar">
       <div class="mode-switch" data-tour="search-mode-switch">
-        <button class="mode-btn" :class="{ active: mode === 'fixture' }" type="button" @click="emit('update:mode', 'fixture')">治具</button>
-        <button class="mode-btn" :class="{ active: mode === 'model' }" type="button" @click="emit('update:mode', 'model')">機種</button>
+        <button class="mode-btn" :class="{ active: mode === 'fixture' }" type="button" :aria-pressed="mode === 'fixture'" @click="emit('update:mode', 'fixture')">治具</button>
+        <button class="mode-btn" :class="{ active: mode === 'model' }" type="button" :aria-pressed="mode === 'model'" @click="emit('update:mode', 'model')">機種</button>
       </div>
       <label class="query-field" data-tour="search-query-field">
         <div class="query-input-shell">
           <input
             ref="queryInput"
             :value="queryDraft"
+            :aria-label="mode === 'fixture' ? '搜尋治具編號或名稱' : '搜尋機種編號或名稱'"
             :placeholder="mode === 'fixture' ? '請輸入治具編號 / 名稱,例如 C-00003' : '請輸入機種編號 / 名稱,例如 VPort-254'"
             autocomplete="off"
             spellcheck="false"
@@ -112,6 +123,7 @@ watch(
             @keydown.enter.prevent="emit('submit')"
             @keydown.esc.prevent="handleClear"
           />
+          <button class="query-submit-btn" type="button" @click="emit('submit')">搜尋</button>
           <button
             v-if="queryDraft.trim().length > 0"
             class="query-clear-btn"
@@ -131,17 +143,12 @@ watch(
         <strong>最近收 / 退料治具</strong>
         <div class="shortcut-head-actions">
           <span>{{ recentFixtureShortcuts.length }} 筆</span>
-          <button
-            v-if="hiddenRecentShortcutCount > 0 || recentShortcutExpanded"
-            class="shortcut-toggle-btn"
-            type="button"
-            @click="recentShortcutExpanded = !recentShortcutExpanded"
-          >
-            {{ recentShortcutExpanded ? "收合" : `顯示更多（+${hiddenRecentShortcutCount}）` }}
+          <button class="shortcut-toggle-btn" type="button" @click="recentShortcutExpanded = !recentShortcutExpanded">
+            {{ showRecentShortcutContent ? "收合" : `展開近期治具（${recentFixtureShortcuts.length}）` }}
           </button>
         </div>
       </div>
-      <div class="shortcut-row">
+      <div v-if="showRecentShortcutContent" class="shortcut-row">
         <button
           v-for="shortcut in visibleRecentFixtureShortcuts"
           :key="`${shortcut.fixtureCode}-${shortcut.transactionType}-${shortcut.occurredAt}`"
@@ -178,7 +185,7 @@ watch(
   gap: 12px;
   padding: 16px;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--line);
   border-radius: 20px;
   background:
@@ -250,6 +257,7 @@ h1 {
 .release-notice-anchor {
   position: relative;
   flex: 0 0 auto;
+  z-index: 20;
 }
 
 .release-notice-trigger {
@@ -278,7 +286,7 @@ h1 {
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
-  z-index: 5;
+  z-index: 30;
   width: min(360px, calc(100vw - 40px));
   padding: 12px 14px;
   border: 1px solid color-mix(in srgb, var(--blue) 16%, var(--line));
@@ -382,13 +390,18 @@ h1 {
 
 .query-input-shell {
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
 }
 
 .query-field input {
   width: 100%;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
-  padding: 9px 72px 9px 10px;
+  min-height: 44px;
+  padding: 9px 46px 9px 12px;
   background: #fff;
   font: inherit;
 }
@@ -399,10 +412,22 @@ h1 {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue-soft) 88%, white);
 }
 
+.query-submit-btn {
+  border: 1px solid #2f6ee5;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #4b89ff 0%, #2f6ee5 100%);
+  color: #fff;
+  min-height: 44px;
+  padding: 0 18px;
+  font: inherit;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .query-clear-btn {
   position: absolute;
   top: 50%;
-  right: 8px;
+  right: 98px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -536,6 +561,18 @@ h1 {
 
   .search-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .query-input-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .query-clear-btn {
+    right: 8px;
+  }
+
+  .query-submit-btn {
+    width: 100%;
   }
 }
 </style>

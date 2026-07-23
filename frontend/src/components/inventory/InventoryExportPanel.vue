@@ -78,7 +78,7 @@ async function exportReport(): Promise<void> {
     });
     const fallbackName = `transaction-${reportType.value}.xlsx`;
     downloadBlob(response.blob, response.filename ?? fallbackName);
-    pushToast("收退料匯出完成。", "success");
+    pushToast("收退料明細匯出完成。", "success");
     emit("close");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "匯出失敗", "error");
@@ -89,17 +89,17 @@ async function exportReport(): Promise<void> {
 </script>
 
 <template>
-  <section class="export-panel">
+  <section class="export-panel" data-tour="inventory-export-content">
     <header class="export-head">
       <div class="title-row">
-        <h2>收退料匯出</h2>
+        <h2>收退料明細匯出</h2>
         <span class="export-pill">Export</span>
       </div>
       <button class="outline-btn" type="button" @click="emit('close')">關閉</button>
     </header>
 
     <div class="selection-grid">
-      <fieldset class="selection-block selection-fieldset">
+      <fieldset class="selection-block selection-fieldset" data-tour="inventory-export-report-type">
         <legend>匯出內容</legend>
         <label class="radio-row" :class="{ selected: reportType === 'summary' }">
           <input v-model="reportType" type="radio" :name="reportTypeGroupName" value="summary" />
@@ -113,7 +113,7 @@ async function exportReport(): Promise<void> {
         </label>
       </fieldset>
 
-      <fieldset class="selection-block selection-fieldset">
+      <fieldset class="selection-block selection-fieldset" data-tour="inventory-export-scope-mode">
         <legend>匯出範圍</legend>
         <label class="radio-row" :class="{ selected: scopeMode === 'all' }">
           <input v-model="scopeMode" type="radio" :name="scopeModeGroupName" value="all" />
@@ -128,7 +128,7 @@ async function exportReport(): Promise<void> {
       </fieldset>
     </div>
 
-    <section v-if="usingCustomScope" class="filter-card">
+    <section v-if="usingCustomScope" class="filter-card" data-tour="inventory-export-filters">
       <div class="field-grid date-grid">
         <label class="field">
           <span>日期 (起)</span>
@@ -163,7 +163,7 @@ async function exportReport(): Promise<void> {
       </div>
     </div>
 
-    <div class="actions">
+    <div class="actions" data-tour="inventory-export-submit">
       <button class="outline-btn" type="button" :disabled="exporting" @click="emit('close')">取消</button>
       <button class="primary-btn export-submit" type="button" :disabled="exporting" @click="exportReport">
         {{ exporting ? "匯出中..." : "確定匯出" }}

@@ -15,6 +15,7 @@ The system is designed for:
 - Stock warning management
 - Optional file-based fixture image preview
 - Fast search workflow
+- Touch-friendly and keyboard-usable operational UI across shell, search, inventory overview, and master-data workspaces
 
 The Lite version intentionally avoids heavy lifecycle management logic.
 
@@ -116,15 +117,18 @@ components/
 │  └─ AppReleaseNoticeModal.vue
 ├─ inventory/
 │  ├─ BatchImportPanel.vue
+│  ├─ InventoryExportPanel.vue
 │  ├─ InventoryOperationBoard.vue
 │  └─ InventoryOverviewPanel.vue
 ├─ master/
+│  ├─ FixtureQualityPanel.vue
 │  ├─ MasterListPanel.vue
 │  ├─ MasterDetailPanel.vue
 │  ├─ TransactionAccountListPanel.vue
 │  └─ TransactionAccountDetailPanel.vue
 ├─ production/
 │  ├─ ProductionHeaderSection.vue
+│  ├─ ProductionCapacityPanel.vue
 │  ├─ ProductionDetailSection.vue
 │  └─ ProductionBatchImportModal.vue
 ├─ search/
@@ -163,12 +167,15 @@ Application shell notes:
 - the top bar provides a `更多功能` menu with `收退料總檢視` / `資料維護` / `產能管理`
 - clicking the logo returns to `/search`
 - `MasterPage` and `ProductionPage` each provide a local `返回搜尋` action
+- the desktop top bar now drops into a compact-header mode below `1200px`, rather than holding a crowded two-row desktop layout until phone width
+- top-bar daily metrics now use click/tap popovers with keyboard close behavior, rather than hover-only disclosure
 - mobile layout keeps a persistent hamburger trigger plus current customer name, with non-essential controls collapsed into the menu
+- the mobile drawer is now a scrollable panel with a sticky header, and primary actions are placed ahead of summary stats
 - mobile drawer also exposes `新手教學`, so onboarding replay is not tied to the search page alone
 - the root shell now owns the onboarding picker and reuses `data-tour` anchors rendered across multiple pages
 - onboarding state is stored in lightweight reactive app state and uses route-aware step syncing
 - onboarding is now grouped into selectable flows so users can choose a page- or tab-specific tutorial instead of replaying one long linear tour
-- the onboarding picker is currently consolidated into four flows: `查詢工作台`, `批次收 / 退料 & 收退料總檢視`, `治具 / 機種 / 站點主資料`, and `機種站點對應 & 站點治具需求`
+- the onboarding picker is currently consolidated into five flows: `查詢工作台`, `批次收 / 退料 & 收退料總檢視`, `治具 / 機種 / 站點主資料`, `機種站點對應 & 站點治具需求`, and `收退料帳目管理 / 治具資料品質`
 - the root shell also owns a versioned release-notice modal, with copy defined in `frontend/src/releaseNotice.ts`
 - release-note dismissal is now one-time per version per browser via `localStorage`, rather than once per account
 
@@ -220,6 +227,8 @@ Includes:
 - Admin-only permanent fixture deletion with an explicit preserve/delete transaction-history choice
 - Admin-only permanent model deletion with an explicit warning that related model-station mappings, fixture requirements, and affected capacity summaries will be removed together
 - Admin-only permanent station deletion with an explicit warning that related model-station mappings, fixture requirements, and affected capacity summaries will be removed together
+- Master-data desktop layout now keeps list/detail split view down to about `1100px`; phone-width flow switches to `list -> detail` instead of long stacked scrolling
+- Master-data list rows are keyboard-operable and focusable, not mouse-only table rows
 
 API prefix:
 
@@ -253,6 +262,7 @@ Includes:
 - Shared batch-import UI used by both `/inventory` and the global shell modal
 - Admin transaction reversal with full customer-scoped stock recomputation
 - Admin one-click inventory-state rebuild from persisted transaction items
+- Inventory overview filters now use a primary + advanced split with responsive `4 / 3 / 2 / 1` column behavior, instead of collapsing to a single long column too early
 
 API prefix:
 
@@ -265,7 +275,7 @@ API prefix:
 The inventory page now supports one operational entry path and one overview path:
 
 - Batch paste import from clipboard rows
-- Transaction overview with direct CSV export using current filters
+- Transaction overview with in-page filtering only; history export is handled through the shared export flow rather than an overview-page CSV action
 
 Current layout direction for inventory entry points:
 

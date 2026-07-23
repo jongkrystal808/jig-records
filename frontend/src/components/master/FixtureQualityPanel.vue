@@ -105,7 +105,7 @@ function handleIssueClick(row: FixtureQualityReport["rows"][number], issueCode: 
 </script>
 
 <template>
-  <article class="panel quality-panel">
+  <article class="panel quality-panel" data-tour="master-quality-panel">
     <UiSectionHeader
       class="panel-head"
       title="治具資料品質"
@@ -125,7 +125,7 @@ function handleIssueClick(row: FixtureQualityReport["rows"][number], issueCode: 
     <div v-if="loading" class="loading-banner">資料載入中，請稍候...</div>
 
     <template v-else>
-      <div class="quality-summary">
+      <div class="quality-summary" data-tour="master-quality-summary">
         <div class="quality-card">
           <span>沒有名稱</span>
           <strong>{{ report?.missing_name_count ?? 0 }}</strong>

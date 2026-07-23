@@ -24,7 +24,7 @@ function summarizeQuantity(row: MaterialTransaction): number {
 </script>
 
 <template>
-  <article class="panel list-panel">
+  <article class="panel list-panel" data-tour="master-ledger-list">
     <UiSectionHeader class="panel-head" title="收退料帳目管理" :description="`${rows.length} 筆案件`" />
 
     <div v-if="rows.length > 0" class="list-footer">
@@ -35,7 +35,7 @@ function summarizeQuantity(row: MaterialTransaction): number {
       </div>
     </div>
 
-    <div class="list-toolbar">
+    <div class="list-toolbar" data-tour="master-ledger-filters">
       <input
         :value="keyword"
         placeholder="搜尋單號 / 操作人 / 治具編號"

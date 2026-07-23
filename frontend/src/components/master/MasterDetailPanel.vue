@@ -322,7 +322,6 @@ const hardDeleteMeta = computed(() => {
   cursor: not-allowed;
 }
 
-
 .action-group {
   display: flex;
   gap: 4px;

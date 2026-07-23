@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref } from "vue";
+
 const props = defineProps<{
   filters: {
     transaction_type: "" | "receipt" | "return";
@@ -32,7 +34,6 @@ const emit = defineEmits<{
   "update:filters": [value: typeof props.filters];
   search: [];
   reset: [];
-  export: [];
 }>();
 
 function updateFilter<Key extends keyof typeof props.filters>(key: Key, value: (typeof props.filters)[Key]): void {
@@ -41,6 +42,8 @@ function updateFilter<Key extends keyof typeof props.filters>(key: Key, value: (
     [key]: value
   });
 }
+
+const showAdvancedFilters = ref(false);
 </script>
 
 <template>
@@ -49,46 +52,56 @@ function updateFilter<Key extends keyof typeof props.filters>(key: Key, value: (
       <div>
         <h2>收 / 退料總檢視</h2>
       </div>
-      <div class="overview-tools">
-        <div class="toolbar-actions">
-          <button class="outline-btn" type="button" @click="emit('export')">匯出 CSV</button>
-        </div>
-      </div>
     </div>
 
     <form class="overview-form" data-tour="overview-filter-form" @submit.prevent="emit('search')">
-      <label>
-        <span>類型</span>
-        <select :value="filters.transaction_type" @change="updateFilter('transaction_type', ($event.target as HTMLSelectElement).value as '' | 'receipt' | 'return')">
-          <option value="">全部</option>
-          <option value="receipt">收料</option>
-          <option value="return">退料</option>
-        </select>
-      </label>
-      <label>
-        <span>起始日期</span>
-        <input :value="filters.date_from" type="date" @input="updateFilter('date_from', ($event.target as HTMLInputElement).value)" />
-      </label>
-      <label>
-        <span>結束日期</span>
-        <input :value="filters.date_to" type="date" @input="updateFilter('date_to', ($event.target as HTMLInputElement).value)" />
-      </label>
-      <label>
-        <span>治具編號</span>
-        <input :value="filters.fixture_code" placeholder="請輸入治具編號 / 名稱" @input="updateFilter('fixture_code', ($event.target as HTMLInputElement).value)" />
-      </label>
-      <label>
-        <span>單號</span>
-        <input :value="filters.transaction_no" placeholder="RCV-20260526-000001" @input="updateFilter('transaction_no', ($event.target as HTMLInputElement).value)" />
-      </label>
-      <label>
-        <span>datecode/編號</span>
-        <input :value="filters.tracking_code" placeholder="輸入 datecode/編號 或舊 Datecode" @input="updateFilter('tracking_code', ($event.target as HTMLInputElement).value)" />
-      </label>
-      <label>
-        <span>操作人員</span>
-        <input :value="filters.created_by" placeholder="輸入人員名稱" @input="updateFilter('created_by', ($event.target as HTMLInputElement).value)" />
-      </label>
+      <div class="overview-fields">
+        <label>
+          <span>類型</span>
+          <select :value="filters.transaction_type" @change="updateFilter('transaction_type', ($event.target as HTMLSelectElement).value as '' | 'receipt' | 'return')">
+            <option value="">全部</option>
+            <option value="receipt">收料</option>
+            <option value="return">退料</option>
+          </select>
+        </label>
+        <label>
+          <span>起始日期</span>
+          <input :value="filters.date_from" type="date" @input="updateFilter('date_from', ($event.target as HTMLInputElement).value)" />
+        </label>
+        <label>
+          <span>結束日期</span>
+          <input :value="filters.date_to" type="date" @input="updateFilter('date_to', ($event.target as HTMLInputElement).value)" />
+        </label>
+        <label>
+          <span>治具編號</span>
+          <input :value="filters.fixture_code" placeholder="請輸入治具編號 / 名稱" @input="updateFilter('fixture_code', ($event.target as HTMLInputElement).value)" />
+        </label>
+      </div>
+      <div class="overview-secondary-row">
+        <button
+          class="outline-btn advanced-toggle"
+          type="button"
+          :aria-expanded="showAdvancedFilters"
+          aria-controls="overview-advanced-filters"
+          @click="showAdvancedFilters = !showAdvancedFilters"
+        >
+          {{ showAdvancedFilters ? "收合進階篩選" : "進階篩選" }}
+        </button>
+      </div>
+      <div v-if="showAdvancedFilters" id="overview-advanced-filters" class="overview-fields overview-fields-advanced">
+        <label>
+          <span>單號</span>
+          <input :value="filters.transaction_no" placeholder="RCV-20260526-000001" @input="updateFilter('transaction_no', ($event.target as HTMLInputElement).value)" />
+        </label>
+        <label>
+          <span>datecode/編號</span>
+          <input :value="filters.tracking_code" placeholder="輸入 datecode/編號 或舊 Datecode" @input="updateFilter('tracking_code', ($event.target as HTMLInputElement).value)" />
+        </label>
+        <label>
+          <span>操作人員</span>
+          <input :value="filters.created_by" placeholder="輸入人員名稱" @input="updateFilter('created_by', ($event.target as HTMLInputElement).value)" />
+        </label>
+      </div>
       <div class="overview-actions">
         <button class="outline-btn" type="button" @click="emit('reset')">重設</button>
         <button class="primary-btn" type="submit" :disabled="loading">
@@ -170,27 +183,18 @@ function updateFilter<Key extends keyof typeof props.filters>(key: Key, value: (
   font-size: 16px;
 }
 
-.overview-tools {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.toolbar-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.toolbar-actions .outline-btn,
 .overview-actions .outline-btn,
 .overview-actions .primary-btn {
   width: auto;
 }
 
 .overview-form {
+  display: grid;
+  gap: 10px;
+  align-items: end;
+}
+
+.overview-fields {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px 10px;
@@ -213,6 +217,23 @@ function updateFilter<Key extends keyof typeof props.filters>(key: Key, value: (
   display: flex;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.overview-secondary-row {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.advanced-toggle {
+  width: auto;
+  min-width: 132px;
+}
+
+.overview-fields-advanced {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fbfcff 0%, #f5f8fd 100%);
 }
 
 .overview-table-wrap {
@@ -316,8 +337,8 @@ select {
 }
 
 @media (max-width: 1500px) {
-  .overview-form {
-    grid-template-columns: 1fr;
+  .overview-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .overview-head {
@@ -329,12 +350,18 @@ select {
   }
 }
 
+@media (max-width: 1180px) {
+  .overview-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 900px) {
   .panel {
     padding: 12px;
   }
 
-  .overview-form {
+  .overview-fields {
     grid-template-columns: 1fr;
   }
 
@@ -350,6 +377,16 @@ select {
 @media (max-width: 640px) {
   .overview-head h2 {
     font-size: 16px;
+  }
+
+  .advanced-toggle,
+  .overview-actions button {
+    width: 100%;
+  }
+
+  .overview-secondary-row,
+  .overview-actions {
+    flex-direction: column;
   }
 
   .overview-tools,

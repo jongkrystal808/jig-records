@@ -684,8 +684,8 @@ onBeforeUnmount(() => {
 }
 
 .search-shell.idle {
-  min-height: calc(100dvh - 210px);
-  align-content: center;
+  min-height: 0;
+  align-content: start;
 }
 
 .content-grid {

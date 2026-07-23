@@ -65,6 +65,8 @@
 - `MasterPage` 已有前端分頁；`SearchWorkspacePage` 也已改為 bounded search contract + `load more`。
 - `SearchWorkspacePage` 目前仍沒有可收合的篩選區。
 - `SearchWorkspacePage` 的 fixture / model context 已改為選取後延遲載入，不再首屏全量預載全部 search domain 資料。
+- `SearchHeroSection.vue` 已補明確 `搜尋` CTA；搜尋後會自動收合 `最近收 / 退料治具` 區塊，讓結果更早進入第一屏。
+- `SearchWorkspacePage.vue` 的 idle hero 已取消固定視窗高垂直置中，避免 1024px 左右筆電出現過大頂部留白。
 - `npm run build` 目前可通過。
 - `.venv\\Scripts\\python.exe -m pytest -q` 目前為 `86 passed`。
 - 目前 `identifier` 已收斂為單一規則：
@@ -91,6 +93,10 @@
 - 登入後的版本更新提示已改成同一版本只顯示一次，不再因再次登入或切換帳號重複跳出。
 - 查詢頁已移除 `相近編號` 提示框，只保留最近收 / 退料治具快捷入口。
 - 查詢頁送出搜尋後，會在版面穩定後自動捲動到結果區，不再被 `最近收 / 退料治具` 區塊擠偏。
+- `AppTopbar.vue` 已把 `今日收料 / 今日退料 / 低水位` 從 hover-only 改成 click/tap popover，並支援鍵盤與 `Esc` 關閉。
+- `AppTopbar.vue` 現在於 `1200px` 以下直接切 compact header，不再保留 961-1200px 的雙列桌面頂欄。
+- `AppMobileDrawer.vue` 已補可捲動 drawer、sticky header，並把主要功能入口排在統計資訊前方。
+- shell / search / drawer 已補一批無障礙語意：customer picker 名稱、搜尋 input 名稱、mode switch `aria-pressed`、drawer overlay `關閉選單`。
 - 收退料送出已新增 2 分鐘重複交易防呆；遇到相同使用者、相同交易簽章時會先跳確認提示。
 - 若使用者確認重送但沿用同一 `transaction_no`，後端仍會明確提示需修改單號，不會建立第二筆同單號交易。
 - `MasterPage` 已新增 admin-only `治具資料品質` 分頁，可檢查名稱、儲位、圖片、最低水位、機種關聯與 `Identifier`/總庫存一致性。
@@ -105,6 +111,9 @@
 - 目標 MySQL 已升級至 Alembic `0014_fixture_deletion`，transaction item 的 `fixture_id` 可為空並使用 `ON DELETE SET NULL`。
 - 現行 backend customer scope 對 `admin` 與 `user` 都依 `user_customers` 指派；`manage` 權限不會略過客戶範圍。
 - `資料維護` 主清單與 `收退料帳目管理` 清單已把頁數提示、總筆數提示與翻頁動作移到清單最上方，不再放在表格底部。
+- `InventoryOverviewPanel.vue` 的總檢視篩選區已改成主篩選 + `進階篩選`，並使用 `4 / 3 / 2 / 1` 欄 responsive 版面，避免筆電第一屏被表單吃滿。
+- `MasterPage.vue` 主資料頁雙欄會維持到約 `1100px`；手機寬度改成 `清單 -> 明細` 流程，不再長頁上下來回捲動。
+- `MasterListPanel.vue` 的主資料表格列已支援 `tab` 聚焦與 `Enter / Space` 開啟明細。
 
 ## Phase 0-4 Approved Update
 

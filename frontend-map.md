@@ -45,9 +45,14 @@
   - 頂部導覽列
   - customer picker
   - 今日收料 / 退料 / 低水位摘要
+  - `1200px` 以下 compact header
+  - click/tap popover 與 keyboard-accessible daily summary
 
 - `frontend/src/components/app/AppMobileDrawer.vue`
   - 手機版抽屜選單
+  - scrollable drawer
+  - sticky header
+  - overlay / picker accessibility naming
 
 - `frontend/src/components/app/AppGlobalModals.vue`
   - 全域 `收 / 退料` modal
@@ -199,9 +204,11 @@
 
 - 改頂部導覽、customer picker、today summary
   - `frontend/src/components/app/AppTopbar.vue`
+  - compact header / click popover / topbar a11y 也在這裡
 
 - 改手機版選單
   - `frontend/src/components/app/AppMobileDrawer.vue`
+  - drawer scroll / sticky header / overlay a11y 也在這裡
 
 - 改全域收退料 / 匯出 modal
   - `frontend/src/components/app/AppGlobalModals.vue`
@@ -239,6 +246,8 @@
   - fixture / model context lazy fetch
   - fixture 完整交易歷史的額外延遲載入
   - 開啟 onboarding 分類選單
+  - 搜尋結果自動 scroll 進第一屏
+  - idle hero 不再使用固定 viewport-height 垂直置中
 
 - `SearchHeroSection.vue`
   - 查詢首頁 hero shell
@@ -247,6 +256,9 @@
   - smart hints 收合 / 展開
   - 最近收 / 退料治具快捷入口
   - onboarding 入口
+  - 明確 `搜尋` CTA
+  - 查詢後自動收合近期治具
+  - 搜尋欄 / mode switch 無障礙語意
 
 - `SearchResultPanel.vue`
   - 查詢結果外層殼層
@@ -301,6 +313,7 @@
 
 - 改首頁 hero、快捷入口、onboarding 按鈕
   - `frontend/src/components/search/SearchHeroSection.vue`
+  - 搜尋 CTA、近期治具自動收合也在這裡
 
 - 改查詢結果外殼與版面
   - `frontend/src/components/search/SearchResultPanel.vue`
@@ -342,6 +355,8 @@
   - overview 篩選
   - 交易表格
   - 匯出入口
+  - 主篩選 / 進階篩選切換
+  - `4 / 3 / 2 / 1` 欄 responsive filter layout
 
 - `BatchImportPanel.vue`
   - 批次貼上解析
@@ -413,6 +428,7 @@
 
 - 改 overview 篩選欄位與交易表格
   - `frontend/src/components/inventory/InventoryOverviewPanel.vue`
+  - 主篩選 / 進階篩選與 responsive 欄位配置也在這裡
 
 - 改批次貼上解析規則 / `Tab` 鍵輸入行為 / 相似治具比對 / 匯入預覽表 / 重複交易確認提示 / tutorial mode
   - `frontend/src/components/inventory/BatchImportPanel.vue`
@@ -441,12 +457,15 @@
   - admin 治具資料品質報表
   - admin 主資料永久刪除 dialog state 與送出 orchestration
   - 刪除完成後重載 fixtures / quality / models / stations 並清除選取
+  - `1100px` 以上維持 list/detail 雙欄
+  - 手機版 `清單 -> 明細` 流程切換
 
 - `MasterListPanel.vue`
   - tab 清單
   - 搜尋 / 篩選
   - 分頁列表
   - 頁數提示 / 總筆數 / 翻頁動作固定在表格上方
+  - row focus / `Enter` / `Space` keyboard interaction
 
 - `MasterDetailPanel.vue`
   - fixture / model / station / customer / user detail form
@@ -526,10 +545,12 @@
 - 改 page tab orchestration、summary、CSV 流程、品質報表跳轉
   - `frontend/src/pages/MasterPage.vue`
   - 治具刪除 dialog 與刪除後 refresh 也在此檔
+  - master responsive breakpoint 與手機 `list -> detail` 流程也在此檔
 
 - 改列表、搜尋、分頁欄位
   - `frontend/src/components/master/MasterListPanel.vue`
   - 主資料清單的頁數提示 / 總筆數 / 翻頁動作目前在表格上方
+  - 鍵盤列選取 / focus 樣式也在此檔
 
 - 改 detail 編輯表單
   - `frontend/src/components/master/MasterDetailPanel.vue`

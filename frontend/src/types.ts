@@ -32,6 +32,21 @@ export interface FixtureImageUploadResult {
   fixture: Fixture;
 }
 
+export interface FixtureImageBatchUploadItem {
+  file_name: string;
+  fixture_code: string | null;
+  fixture_id: number | null;
+  success: boolean;
+  message: string;
+}
+
+export interface FixtureImageBatchUploadResult {
+  requested_count: number;
+  uploaded_count: number;
+  failed_count: number;
+  results: FixtureImageBatchUploadItem[];
+}
+
 export interface FixtureQualityRow {
   fixture_id: number;
   fixture_code: string;

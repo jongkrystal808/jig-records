@@ -4,7 +4,8 @@ export type OnboardingFlowId =
   | "search-basics"
   | "inventory-workflow"
   | "master-basics"
-  | "production-workflow";
+  | "production-workflow"
+  | "admin-inventory-governance";
 
 export interface OnboardingStepNote {
   /** "warning" 用在不可逆或需要特別小心的操作；"info" 用在一般補充說明 */
@@ -52,6 +53,7 @@ export interface OnboardingFlow {
   summary: string;
   requiresInventoryAccess?: boolean;
   requiresMasterAccess?: boolean;
+  requiresAdminAccess?: boolean;
   steps: OnboardingStep[];
 }
 
@@ -202,6 +204,68 @@ export const onboardingFlows: OnboardingFlow[] = [
         },
         placement: "top",
         openBatchModal: true
+      },
+      {
+        id: "inventory-export-entry",
+        route: "/search",
+        target: "[data-tour='inventory-export-entry-trigger']",
+        title: "收退料明細匯出也走頂部全域入口",
+        description: "當你不是要立即收退料，而是要把歷史資料交給現場或主管時，改走這個匯出入口。",
+        bullets: [
+          "可直接匯出摘要或明細",
+          "不用先切進總檢視頁",
+          "匯出條件與客戶範圍會跟目前選擇一起帶入"
+        ],
+        placement: "bottom"
+      },
+      {
+        id: "inventory-export-panel",
+        route: "/search",
+        target: "[data-tour='inventory-export-panel']",
+        title: "匯出面板集中處理格式與範圍",
+        description: "打開後先決定要匯出摘要還是明細，再決定全部資料或自定義範圍。",
+        placement: "left",
+        openExportModal: true
+      },
+      {
+        id: "inventory-export-report-type",
+        route: "/search",
+        target: "[data-tour='inventory-export-report-type']",
+        title: "先選摘要還是明細",
+        description: "兩種匯出用途不同：",
+        bullets: [
+          "匯出摘要：適合快速看各治具的收退料加總",
+          "匯出明細：適合追單筆 identifier、治具與交易差異"
+        ],
+        placement: "left",
+        openExportModal: true
+      },
+      {
+        id: "inventory-export-scope",
+        route: "/search",
+        target: "[data-tour='inventory-export-scope-mode']",
+        title: "再決定全部匯出或自定義範圍",
+        description: "資料量大時，建議改用自定義範圍，只匯出需要追查的日期、單號或治具。",
+        placement: "left",
+        openExportModal: true
+      },
+      {
+        id: "inventory-export-filters",
+        route: "/search",
+        target: "[data-tour='inventory-export-filters']",
+        title: "自定義模式可縮小日期、單號、識別碼與治具範圍",
+        description: "如果只需要查特定批次或異常時段，先縮條件再匯出，檔案會更乾淨也更好核對。",
+        placement: "top",
+        openExportModal: true
+      },
+      {
+        id: "inventory-export-submit",
+        route: "/search",
+        target: "[data-tour='inventory-export-submit']",
+        title: "最後確認欄位與範圍後再匯出",
+        description: "按下確定後會直接下載檔案；若要交給別人核對，建議先確認目前客戶與匯出格式沒有選錯。",
+        placement: "top",
+        openExportModal: true
       },
       {
         id: "overview-menu",
@@ -465,6 +529,81 @@ export const onboardingFlows: OnboardingFlow[] = [
         target: "[data-tour='production-requirement-list']",
         title: "新增後在列表核對站點、治具與數量",
         description: "下方是該站點的正式需求清單，可直接編輯；大量新增用批次貼上。",
+        placement: "top"
+      }
+    ]
+  },
+  {
+    id: "admin-inventory-governance",
+    sectionLabel: "系統管理",
+    label: "收退料帳目管理 / 治具資料品質",
+    summary: "Admin 用來修復資料與追查異常的兩個分頁：先看帳目，再看品質。",
+    requiresMasterAccess: true,
+    requiresAdminAccess: true,
+    steps: [
+      {
+        id: "admin-ledger-tab",
+        route: "/master/ledger",
+        target: "[data-tour='master-tab-ledger']",
+        title: "帳目管理用來追交易與處理撤回 / 重算",
+        description: "這不是一般查詢頁，而是 admin 的修復入口；遇到異常帳目、重複收退料或庫存不一致時從這裡進。",
+        placement: "bottom"
+      },
+      {
+        id: "admin-ledger-list",
+        route: "/master/ledger",
+        target: "[data-tour='master-ledger-list']",
+        title: "左側清單集中列出案件，先選案再處理",
+        description: "可先用單號、操作人、治具編號與交易類型縮小範圍，再從清單挑一筆案件。",
+        placement: "right"
+      },
+      {
+        id: "admin-ledger-filters",
+        route: "/master/ledger",
+        target: "[data-tour='master-ledger-filters']",
+        title: "篩選列是追查異常的第一步",
+        description: "不知道是哪一筆出錯時，先縮日期、單號或操作人，再決定要看明細、撤回或重算。",
+        placement: "bottom"
+      },
+      {
+        id: "admin-ledger-detail",
+        route: "/master/ledger",
+        target: "[data-tour='master-ledger-detail']",
+        title: "右側明細提供重載、全量重算與撤回案件",
+        description: "選中案件後，右側可看明細、重載、重算整體庫存摘要，或撤回這筆案件。",
+        note: {
+          tone: "warning",
+          text: "撤回與重算都會直接影響正式庫存，操作前請先確認單號與明細是否正確。"
+        },
+        placement: "left"
+      },
+      {
+        id: "admin-quality-tab",
+        route: "/master/quality",
+        target: "[data-tour='master-tab-quality']",
+        title: "治具資料品質分頁集中看主檔缺漏與庫存異常",
+        description: "當問題不一定來自交易，而是主資料不完整時，改從這個分頁盤點名稱、儲位、圖片與關聯缺漏。",
+        placement: "bottom"
+      },
+      {
+        id: "admin-quality-summary",
+        route: "/master/quality",
+        target: "[data-tour='master-quality-summary']",
+        title: "先用上方摘要看異常分布，再決定優先順序",
+        description: "摘要卡會把沒有名稱、沒有圖片、缺少關聯與庫存不一致分開統計，方便決定先補哪一類。",
+        placement: "bottom"
+      },
+      {
+        id: "admin-quality-panel",
+        route: "/master/quality",
+        target: "[data-tour='master-quality-panel']",
+        title: "點問題標籤可直接開啟修正流程",
+        description: "多數問題都能在這頁直接修，不必自己再跳分頁；像缺圖片、缺名稱、缺儲位都能就地處理。",
+        bullets: [
+          "主檔欄位缺漏：直接在品質修正彈窗更新",
+          "缺機種關聯：在彈窗補第一筆 mapping / requirement",
+          "庫存不一致：回到帳目管理做撤回或重算"
+        ],
         placement: "top"
       }
     ]

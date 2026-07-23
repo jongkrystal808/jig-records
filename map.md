@@ -26,10 +26,12 @@
 - 改 topbar / customer picker / 今日摘要
   - `frontend/src/components/app/AppTopbar.vue`
   - 桌面版 `新手教學` 入口也在這裡
+  - `1200px` 以下 compact header、click/tap popover、摘要可用性也在這裡
 
 - 改手機版抽屜選單
   - `frontend/src/components/app/AppMobileDrawer.vue`
   - 手機版 `新手教學` 入口也在這裡
+  - scroll / sticky header / overlay 無障礙名稱也在這裡
 
 - 改全域收退料 / 匯出 modal
   - `frontend/src/components/app/AppGlobalModals.vue`
@@ -58,11 +60,13 @@
   - 資料整理：`frontend/src/pages/SearchWorkspacePage.vue`
   - 顯示與點擊入口：`frontend/src/components/search/SearchHeroSection.vue`
   - 搜尋完成後自動定位結果區：`frontend/src/pages/SearchWorkspacePage.vue`
+  - 搜尋 CTA、近期治具自動收合、hero idle 留白也在這組檔案
 
 - 改收退料作業 / overview
   - `frontend/src/pages/InventoryPage.vue`
   - `frontend/src/components/inventory/InventoryOperationBoard.vue`
   - `frontend/src/components/inventory/InventoryOverviewPanel.vue`
+  - overview 主篩選 / 進階篩選與 responsive 欄位配置也在 `InventoryOverviewPanel.vue`
 
 - 改批次貼上匯入
   - inventory：`frontend/src/components/inventory/BatchImportPanel.vue`
@@ -92,6 +96,8 @@
   - route 對應：`/master/fixtures`、`/master/models`、`/master/stations`、`/master/customers`、`/master/users`、`/master/ledger`、`/master/quality`
   - admin 主資料永久刪除（治具 / 機種 / 站點）：`MasterPage.vue`、`MasterDetailPanel.vue`、`frontend/src/api/masterClient.ts`
   - 保留歷史時前端交易型別允許 `fixture_id: null`：`frontend/src/types.ts`
+  - master 響應式雙欄 breakpoint、手機 `list -> detail` 流程在 `MasterPage.vue`
+  - master 清單列鍵盤可操作與 focus 樣式在 `MasterListPanel.vue`
 
 - 改產能頁
   - `frontend/src/pages/ProductionPage.vue`

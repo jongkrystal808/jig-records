@@ -6,6 +6,10 @@
 - 前端主要頁面各自依賴哪些後端 API / 資料表
 - 改資料模型或啟動流程時最少要連動檢查哪些地方
 
+補充：
+
+- 近期 `AppTopbar` / `AppMobileDrawer` / `SearchHeroSection` / `InventoryOverviewPanel` / `MasterPage` / `MasterListPanel` 的 responsive、accessibility、互動優化都屬前端調整，不需要新增 backend API 或 schema 變更。
+
 ## 後端請求路徑
 
 一條典型後端變更路徑是：
