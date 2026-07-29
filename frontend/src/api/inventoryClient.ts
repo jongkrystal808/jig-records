@@ -1,9 +1,12 @@
 import type {
+  InventoryDashboardSummary,
   InventoryRecalculateResult,
   IdentifierStockSummary,
   MaterialTransaction,
+  MaterialTransactionPage,
   StockSummary,
   StockTransactionCreate,
+  TransactionOverviewPage,
   TransactionReverseResult,
   TransactionQueryFilters
 } from "@/types";
@@ -21,6 +24,19 @@ type AlertRow = {
 
 function buildTransactionParams(limit: number, customerId?: number, filters?: TransactionQueryFilters): URLSearchParams {
   const params = new URLSearchParams({ limit: String(limit) });
+  return appendTransactionFilterParams(params, customerId, filters);
+}
+
+function buildTransactionOverviewParams(page: number, pageSize: number, customerId?: number, filters?: TransactionQueryFilters): URLSearchParams {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  return appendTransactionFilterParams(params, customerId, filters);
+}
+
+function appendTransactionFilterParams(
+  params: URLSearchParams,
+  customerId?: number,
+  filters?: TransactionQueryFilters
+): URLSearchParams {
   setOptionalParam(params, "customer_id", customerId);
   setOptionalParam(params, "transaction_type", filters?.transaction_type);
   setOptionalParam(params, "date_from", filters?.date_from);
@@ -45,6 +61,12 @@ export const inventoryApi = {
     const suffix = params.size ? `?${params.toString()}` : "";
     return request<AlertRow[]>(`/inventory/alerts${suffix}`);
   },
+  listDashboardSummary(customerId?: number) {
+    const params = new URLSearchParams();
+    setOptionalParam(params, "customer_id", customerId);
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return request<InventoryDashboardSummary>(`/inventory/dashboard-summary${suffix}`);
+  },
   listIdentifierStockSummary(customerId?: number) {
     const params = new URLSearchParams();
     setOptionalParam(params, "customer_id", customerId);
@@ -53,6 +75,16 @@ export const inventoryApi = {
   },
   listTransactions(limit = 20, customerId?: number, filters?: TransactionQueryFilters) {
     return request<MaterialTransaction[]>(`/inventory/transactions?${buildTransactionParams(limit, customerId, filters).toString()}`);
+  },
+  listTransactionLedgerPage(page = 1, pageSize = 20, customerId?: number, filters?: TransactionQueryFilters) {
+    return request<MaterialTransactionPage>(
+      `/inventory/admin/transactions?${buildTransactionOverviewParams(page, pageSize, customerId, filters).toString()}`
+    );
+  },
+  listTransactionOverviewPage(page = 1, pageSize = 50, customerId?: number, filters?: TransactionQueryFilters) {
+    return request<TransactionOverviewPage>(
+      `/inventory/transactions/overview?${buildTransactionOverviewParams(page, pageSize, customerId, filters).toString()}`
+    );
   },
   exportTransactionsCsv(limit = 200, customerId?: number, filters?: TransactionQueryFilters) {
     return requestText(`/inventory/transactions/export?${buildTransactionParams(limit, customerId, filters).toString()}`);

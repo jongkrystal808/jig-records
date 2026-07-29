@@ -58,23 +58,19 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
   const editingRequirementId = ref<number | null>(null);
   const openAutocompleteKey = ref<AutocompleteKey>(null);
 
-  const mappingEditorBaseline = computed(() => ({
-    modelCode: normalizeEditorText(options.selectedModel.value?.code),
-    stationCode: normalizeEditorText(options.stations.value.find((row) => row.id === mappingStationId.value)?.code)
-  }));
+  const mappingEditorBaseline = ref({
+    stationCode: ""
+  });
   const mappingEditorCurrent = computed(() => ({
-    modelCode: normalizeEditorText(mappingModelCodeInput.value),
     stationCode: normalizeEditorText(mappingStationCodeInput.value)
   }));
   const hasUnsavedMappingChanges = computed(() => JSON.stringify(mappingEditorCurrent.value) !== JSON.stringify(mappingEditorBaseline.value));
 
-  const requirementEditorBaseline = computed(() => ({
-    stationCode: normalizeEditorText(options.selectedStation.value?.code),
-    fixtureCode: normalizeEditorText(options.fixtures.value.find((row) => row.id === fixtureId.value)?.code),
-    requiredQty: requiredQty.value
-  }));
+  const requirementEditorBaseline = ref({
+    fixtureCode: "",
+    requiredQty: 1
+  });
   const requirementEditorCurrent = computed(() => ({
-    stationCode: normalizeEditorText(requirementStationCodeInput.value),
     fixtureCode: normalizeEditorText(fixtureCodeInput.value),
     requiredQty: requiredQty.value
   }));
@@ -244,7 +240,7 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
   }
 
   function resetMappingEditor(): void {
-    if (hasUnsavedMappingChanges.value && !window.confirm("目前 Mapping 表單有未儲存的修改，重載後將會捨棄。要繼續嗎？")) {
+    if (hasUnsavedMappingChanges.value && !window.confirm("目前站點設定表單有未儲存的修改，重載後將會捨棄。要繼續嗎？")) {
       return;
     }
     resetMappingEditorWithoutPrompt();
@@ -253,11 +249,15 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
   function resetMappingEditorWithoutPrompt(): void {
     editingMappingId.value = null;
     mappingModelCodeInput.value = options.selectedModel.value?.code ?? "";
-    mappingStationCodeInput.value = options.stations.value.find((row) => row.id === mappingStationId.value)?.code ?? "";
+    mappingStationId.value = null;
+    mappingStationCodeInput.value = "";
+    mappingEditorBaseline.value = {
+      stationCode: ""
+    };
   }
 
   function resetRequirementEditor(): void {
-    if (hasUnsavedRequirementChanges.value && !window.confirm("目前 Requirement 表單有未儲存的修改，重載後將會捨棄。要繼續嗎？")) {
+    if (hasUnsavedRequirementChanges.value && !window.confirm("目前治具需求表單有未儲存的修改，重載後將會捨棄。要繼續嗎？")) {
       return;
     }
     resetRequirementEditorWithoutPrompt();
@@ -266,27 +266,46 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
   function resetRequirementEditorWithoutPrompt(): void {
     editingRequirementId.value = null;
     requirementStationCodeInput.value = options.selectedStation.value?.code ?? "";
-    fixtureCodeInput.value = options.fixtures.value.find((row) => row.id === fixtureId.value)?.code ?? "";
+    fixtureId.value = null;
+    fixtureCodeInput.value = "";
     requiredQty.value = 1;
+    requirementEditorBaseline.value = {
+      fixtureCode: "",
+      requiredQty: 1
+    };
   }
 
   function startEditMapping(row: { id: number; model_id: number; station_id: number }): void {
-    if (editingMappingId.value !== row.id && hasUnsavedMappingChanges.value && !window.confirm("目前 Mapping 表單有未儲存的修改，切換編輯對象後將會捨棄。要繼續嗎？")) {
+    if (editingMappingId.value !== row.id && hasUnsavedMappingChanges.value && !window.confirm("目前站點設定表單有未儲存的修改，切換編輯對象後將會捨棄。要繼續嗎？")) {
       return;
     }
     modelId.value = row.model_id;
     mappingStationId.value = row.station_id;
+    mappingModelCodeInput.value = options.models.value.find((item) => item.id === row.model_id)?.code ?? "";
+    mappingStationCodeInput.value = options.stations.value.find((item) => item.id === row.station_id)?.code ?? "";
     editingMappingId.value = row.id;
+    mappingEditorBaseline.value = {
+      stationCode: normalizeEditorText(mappingStationCodeInput.value)
+    };
   }
 
   function startEditRequirement(row: { id: number; station_id: number; fixture_id: number; required_qty: number }): void {
-    if (editingRequirementId.value !== row.id && hasUnsavedRequirementChanges.value && !window.confirm("目前 Requirement 表單有未儲存的修改，切換編輯對象後將會捨棄。要繼續嗎？")) {
+    if (editingRequirementId.value !== row.id && hasUnsavedRequirementChanges.value && !window.confirm("目前治具需求表單有未儲存的修改，切換編輯對象後將會捨棄。要繼續嗎？")) {
       return;
     }
     requirementStationId.value = row.station_id;
     fixtureId.value = row.fixture_id;
     requiredQty.value = row.required_qty;
+    requirementStationCodeInput.value =
+      options.availableRequirementStations.value.find((item) => item.id === row.station_id)?.code ??
+      options.stations.value.find((item) => item.id === row.station_id)?.code ??
+      "";
+    fixtureCodeInput.value = options.fixtures.value.find((item) => item.id === row.fixture_id)?.code ?? "";
     editingRequirementId.value = row.id;
+    requirementEditorBaseline.value = {
+      fixtureCode: normalizeEditorText(fixtureCodeInput.value),
+      requiredQty: row.required_qty
+    };
   }
 
   function syncRequirementStationSelection(): void {

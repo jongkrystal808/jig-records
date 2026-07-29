@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 
 import UiSectionHeader from "@/components/UiSectionHeader.vue";
-import type { FixtureQualityReport } from "@/types";
+import type { Fixture, FixtureQualityReport } from "@/types";
 import { fallbackText } from "@/utils/display";
 
 const ISSUE_LABELS: Record<string, string> = {
@@ -25,14 +25,20 @@ const ISSUE_FILTER_LABELS: Record<string, string> = {
 
 const props = defineProps<{
   report: FixtureQualityReport | null;
+  fixtures: Fixture[];
   loading: boolean;
+  inlineSavingFixtureId: number | null;
 }>();
 
 const emit = defineEmits<{
   openIssueEditor: [fixtureId: number, issueCode: string];
+  saveInlineIssue: [fixtureId: number, lineStorageLocation: string, departmentStorageLocation: string, minStockQty: number];
 }>();
 
 const selectedIssueCode = ref<"all" | keyof typeof ISSUE_FILTER_LABELS>("all");
+const inlineDrafts = ref<
+  Record<number, { lineStorageLocation: string; departmentStorageLocation: string; minStockQty: number }>
+>({});
 
 function rowMatchesIssueFilter(row: FixtureQualityReport["rows"][number], issueCode: string): boolean {
   if (issueCode === "missing_storage_and_min_stock") {
@@ -68,7 +74,33 @@ function issueLabel(issueCode: string): string {
 }
 
 function isIssueClickable(issueCode: string): boolean {
-  return issueCode !== "missing_model_relation";
+  return issueCode.length > 0 && issueCode !== "missing_storage_and_min_stock";
+}
+
+function rowNeedsInlineFix(row: FixtureQualityReport["rows"][number]): boolean {
+  return rowMatchesIssueFilter(row, "missing_storage_and_min_stock");
+}
+
+function inlineDraft(
+  row: FixtureQualityReport["rows"][number]
+): { lineStorageLocation: string; departmentStorageLocation: string; minStockQty: number } {
+  return (
+    inlineDrafts.value[row.fixture_id] ?? {
+      lineStorageLocation: "",
+      departmentStorageLocation: "",
+      minStockQty: row.min_stock_qty
+    }
+  );
+}
+
+function canSaveInline(row: FixtureQualityReport["rows"][number]): boolean {
+  const draft = inlineDraft(row);
+  const fixture = props.fixtures.find((item) => item.id === row.fixture_id);
+  return (
+    draft.lineStorageLocation.trim() !== (fixture?.line_storage_location ?? "").trim() ||
+    draft.departmentStorageLocation.trim() !== (fixture?.department_storage_location ?? "").trim() ||
+    draft.minStockQty !== row.min_stock_qty
+  );
 }
 
 function exportCsv(): void {
@@ -102,6 +134,44 @@ function handleIssueClick(row: FixtureQualityReport["rows"][number], issueCode: 
   }
   emit("openIssueEditor", row.fixture_id, issueCode);
 }
+
+function saveInline(row: FixtureQualityReport["rows"][number]): void {
+  const draft = inlineDraft(row);
+  emit(
+    "saveInlineIssue",
+    row.fixture_id,
+    draft.lineStorageLocation.trim(),
+    draft.departmentStorageLocation.trim(),
+    draft.minStockQty
+  );
+}
+
+function handleInlineEnter(row: FixtureQualityReport["rows"][number]): void {
+  if (props.inlineSavingFixtureId === row.fixture_id || !canSaveInline(row)) {
+    return;
+  }
+  saveInline(row);
+}
+
+watch(
+  [() => props.report?.rows, () => props.fixtures],
+  ([rows]) => {
+    const nextDrafts: Record<
+      number,
+      { lineStorageLocation: string; departmentStorageLocation: string; minStockQty: number }
+    > = {};
+    for (const row of rows ?? []) {
+      const fixture = props.fixtures.find((item) => item.id === row.fixture_id);
+      nextDrafts[row.fixture_id] = {
+        lineStorageLocation: fixture?.line_storage_location ?? "",
+        departmentStorageLocation: fixture?.department_storage_location ?? "",
+        minStockQty: fixture?.min_stock_qty ?? row.min_stock_qty
+      };
+    }
+    inlineDrafts.value = nextDrafts;
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -167,8 +237,44 @@ function handleIssueClick(row: FixtureQualityReport["rows"][number], issueCode: 
             <tr v-for="row in filteredRows" :key="row.fixture_id">
               <td>{{ row.fixture_code }}</td>
               <td>{{ fallbackText(row.fixture_name) }}</td>
-              <td>{{ fallbackText(row.storage_location) }}</td>
-              <td>{{ row.min_stock_qty }}</td>
+              <td>
+                <template v-if="rowNeedsInlineFix(row)">
+                  <div class="inline-edit-stack">
+                    <input
+                      v-model="inlineDraft(row).lineStorageLocation"
+                      class="inline-edit-input"
+                      type="text"
+                      placeholder="產線儲位"
+                      @keydown.enter.prevent="handleInlineEnter(row)"
+                    />
+                    <input
+                      v-model="inlineDraft(row).departmentStorageLocation"
+                      class="inline-edit-input"
+                      type="text"
+                      placeholder="部門儲位"
+                      @keydown.enter.prevent="handleInlineEnter(row)"
+                    />
+                    <small class="inline-edit-hint">產線儲位、部門儲位分開填寫，只填一個也可</small>
+                  </div>
+                </template>
+                <template v-else>
+                  {{ fallbackText(row.storage_location) }}
+                </template>
+              </td>
+              <td>
+                <template v-if="rowNeedsInlineFix(row)">
+                  <input
+                    v-model.number="inlineDraft(row).minStockQty"
+                    class="inline-edit-input min-stock-input"
+                    type="number"
+                    min="0"
+                    @keydown.enter.prevent="handleInlineEnter(row)"
+                  />
+                </template>
+                <template v-else>
+                  {{ row.min_stock_qty }}
+                </template>
+              </td>
               <td>{{ row.stock_qty }}</td>
               <td>{{ row.identifier_stock_qty }}</td>
               <td>{{ row.related_model_count }}</td>
@@ -188,6 +294,15 @@ function handleIssueClick(row: FixtureQualityReport["rows"][number], issueCode: 
                       {{ issueLabel(issueCode) }}
                     </span>
                   </template>
+                  <button
+                    v-if="rowNeedsInlineFix(row)"
+                    class="outline-btn small inline-save-btn"
+                    type="button"
+                    :disabled="inlineSavingFixtureId === row.fixture_id || !canSaveInline(row)"
+                    @click="saveInline(row)"
+                  >
+                    {{ inlineSavingFixtureId === row.fixture_id ? "更新中..." : "更新" }}
+                  </button>
                 </div>
               </td>
             </tr>
@@ -344,6 +459,35 @@ function handleIssueClick(row: FixtureQualityReport["rows"][number], issueCode: 
 .outline-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.inline-edit-stack {
+  display: grid;
+  gap: 4px;
+}
+
+.inline-edit-input {
+  width: 100%;
+  min-width: 120px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+}
+
+.inline-edit-hint {
+  color: #74839b;
+  font-size: 10px;
+}
+
+.min-stock-input {
+  max-width: 96px;
+}
+
+.inline-save-btn {
+  align-self: flex-start;
 }
 
 @media (max-width: 1400px) {

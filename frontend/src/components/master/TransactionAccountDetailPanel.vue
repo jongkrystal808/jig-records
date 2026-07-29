@@ -17,6 +17,10 @@ function summarizeQuantity(row: MaterialTransaction | null): number {
   }
   return row.items.reduce((sum, item) => sum + item.quantity, 0);
 }
+
+function displayTransactionNo(value: string | null | undefined): string {
+  return value?.trim() || "（無單號）";
+}
 </script>
 
 <template>
@@ -24,7 +28,7 @@ function summarizeQuantity(row: MaterialTransaction | null): number {
     <UiSectionHeader
       class="panel-head"
       title="案件詳細"
-      :description="transaction ? transaction.transaction_no : '尚未選擇案件'"
+      :description="transaction ? displayTransactionNo(transaction.transaction_no) : '尚未選擇案件'"
     >
       <template #actions>
         <div class="action-group">

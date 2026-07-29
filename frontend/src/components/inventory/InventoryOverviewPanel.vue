@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref, watch } from "vue";
+
+import { ownershipLabel } from "@/utils/display";
+import { formatLocalDate } from "@/utils/date";
 
 const props = defineProps<{
   filters: {
@@ -12,26 +15,31 @@ const props = defineProps<{
     created_by: string;
   };
   rows: Array<{
-    id: string;
-    transaction_type: string;
-    transaction_no: string;
+    id: number;
+    transaction_type: "receipt" | "return";
+    transaction_no: string | null;
     occurred_at: string;
     created_by: string;
     fixture_id: number | null;
     fixture_code: string;
     fixture_name: string;
-    ownership_type: string;
+    ownership_type: "customer_supplied" | "self_purchased";
     identifier: string | null;
     quantity: number;
-    note: string;
-    ownership_label: string;
-    occurred_at_label: string;
+    note: string | null;
   }>;
+  page: number;
+  pageSize: number;
+  total: number;
   loading: boolean;
+  backLabel?: string;
 }>();
 
 const emit = defineEmits<{
   "update:filters": [value: typeof props.filters];
+  "update:page": [value: number];
+  "update:pageSize": [value: number];
+  back: [];
   search: [];
   reset: [];
 }>();
@@ -44,6 +52,32 @@ function updateFilter<Key extends keyof typeof props.filters>(key: Key, value: (
 }
 
 const showAdvancedFilters = ref(false);
+const totalPages = computed(() => Math.max(1, Math.ceil(props.total / props.pageSize)));
+const hasRows = computed(() => props.rows.length > 0);
+const pageDraft = ref(String(props.page));
+
+function jumpToPage(): void {
+  const parsed = Number.parseInt(pageDraft.value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    pageDraft.value = String(props.page);
+    return;
+  }
+  const nextPage = Math.min(parsed, totalPages.value);
+  pageDraft.value = String(nextPage);
+  emit("update:page", nextPage);
+}
+
+watch(
+  () => props.page,
+  (value) => {
+    pageDraft.value = String(value);
+  },
+  { immediate: true }
+);
+
+function displayTransactionNo(value: string | null): string {
+  return value?.trim() || "（無單號）";
+}
 </script>
 
 <template>
@@ -52,6 +86,7 @@ const showAdvancedFilters = ref(false);
       <div>
         <h2>收 / 退料總檢視</h2>
       </div>
+      <button v-if="backLabel" class="outline-btn small" type="button" @click="emit('back')">{{ backLabel }}</button>
     </div>
 
     <form class="overview-form" data-tour="overview-filter-form" @submit.prevent="emit('search')">
@@ -110,13 +145,32 @@ const showAdvancedFilters = ref(false);
       </div>
     </form>
 
+    <div class="overview-toolbar">
+      <span class="overview-summary">共 {{ total }} 筆，第 {{ page }} / {{ totalPages }} 頁</span>
+      <div class="overview-pager">
+        <label class="page-size-field">
+          <span>每頁</span>
+          <select :value="pageSize" :disabled="loading" @change="emit('update:pageSize', Number(($event.target as HTMLSelectElement).value))">
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+          </select>
+        </label>
+        <button class="outline-btn small" type="button" :disabled="loading || page <= 1" @click="emit('update:page', page - 1)">上一頁</button>
+        <label class="page-jump-field">
+          <span>跳至</span>
+          <input v-model="pageDraft" type="number" min="1" :max="totalPages" :disabled="loading || !hasRows" @keydown.enter.prevent="jumpToPage" />
+        </label>
+        <button class="outline-btn small" type="button" :disabled="loading || !hasRows" @click="jumpToPage">跳轉</button>
+        <button class="outline-btn small" type="button" :disabled="loading || page >= totalPages || !hasRows" @click="emit('update:page', page + 1)">下一頁</button>
+      </div>
+    </div>
+
     <div class="overview-table-wrap">
       <table class="grid-table overview-table">
         <thead>
           <tr>
             <th>類型</th>
             <th>單號</th>
-            <th>治具ID</th>
             <th>治具編號</th>
             <th>來源</th>
             <th>datecode/編號</th>
@@ -133,18 +187,17 @@ const showAdvancedFilters = ref(false);
                 {{ row.transaction_type === "receipt" ? "收料" : "退料" }}
               </span>
             </td>
-            <td>{{ row.transaction_no }}</td>
-            <td>{{ row.fixture_id }}</td>
+            <td>{{ displayTransactionNo(row.transaction_no) }}</td>
             <td>{{ row.fixture_code }}</td>
-            <td>{{ row.ownership_label }}</td>
+            <td>{{ ownershipLabel(row.ownership_type) }}</td>
             <td>{{ row.identifier || "-" }}</td>
             <td>{{ row.quantity }}</td>
             <td>{{ row.created_by }}</td>
-            <td>{{ row.occurred_at_label }}</td>
+            <td>{{ formatLocalDate(row.occurred_at) }}</td>
             <td>{{ row.note || "-" }}</td>
           </tr>
           <tr v-if="rows.length === 0">
-            <td colspan="10" class="empty-cell">{{ loading ? "查詢中..." : "查無資料" }}</td>
+            <td colspan="9" class="empty-cell">{{ loading ? "查詢中..." : "查無資料" }}</td>
           </tr>
         </tbody>
       </table>
@@ -164,7 +217,7 @@ const showAdvancedFilters = ref(false);
 
 .overview-panel {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto auto auto 1fr;
   gap: 8px;
   height: 100%;
   overflow: auto;
@@ -206,7 +259,8 @@ const showAdvancedFilters = ref(false);
   gap: 6px;
 }
 
-.overview-form span {
+.overview-form span,
+.page-size-field span {
   color: #56657f;
   font-size: 12px;
   font-weight: 700;
@@ -234,6 +288,45 @@ const showAdvancedFilters = ref(false);
   border: 1px solid var(--line);
   border-radius: 12px;
   background: linear-gradient(180deg, #fbfcff 0%, #f5f8fd 100%);
+}
+
+.overview-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.overview-summary {
+  color: #56657f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.overview-pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-size-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-jump-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-size-field select {
+  min-width: 78px;
+}
+
+.page-jump-field input {
+  min-width: 78px;
 }
 
 .overview-table-wrap {
@@ -322,6 +415,9 @@ select {
 }
 
 .grid-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   background: #f7f9fd;
   color: #52607b;
   font-weight: 700;
@@ -344,10 +440,6 @@ select {
   .overview-head {
     flex-direction: column;
   }
-
-  .overview-tools {
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 1180px) {
@@ -363,6 +455,16 @@ select {
 
   .overview-fields {
     grid-template-columns: 1fr;
+  }
+
+  .overview-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .overview-pager {
+    flex-wrap: wrap;
+    justify-content: space-between;
   }
 
   .overview-actions {
@@ -389,12 +491,18 @@ select {
     flex-direction: column;
   }
 
-  .overview-tools,
-  .toolbar-actions {
+  .overview-pager,
+  .page-size-field,
+  .page-jump-field {
     width: 100%;
   }
 
-  .toolbar-actions .outline-btn {
+  .page-size-field,
+  .page-jump-field {
+    justify-content: space-between;
+  }
+
+  .overview-pager .outline-btn {
     flex: 1 1 120px;
   }
 }

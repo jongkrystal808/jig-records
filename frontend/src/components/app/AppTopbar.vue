@@ -12,7 +12,7 @@ type MenuEntry = {
 type RecentEntry = {
   id: string;
   occurredAt: string;
-  transactionNo: string;
+  transactionNo: string | null;
   fixtureCode: string;
   identifier: string;
   quantity: number;
@@ -47,7 +47,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   toggleMobileMenu: [];
-  openBatch: [];
+  openBatch: [fixtureCode?: string];
   openExport: [];
   openOnboarding: [];
   "update:selectedCustomerId": [value: number | null];
@@ -70,6 +70,10 @@ function togglePopover(target: "receipt" | "return" | "low_stock"): void {
 
 function closePopover(): void {
   activePopover.value = null;
+}
+
+function displayTransactionNo(value: string | null): string {
+  return value?.trim() || "（無單號）";
 }
 
 function handleDocumentClick(event: MouseEvent): void {
@@ -124,7 +128,7 @@ onBeforeUnmount(() => {
         治具收/退料
       </button>
       <button class="primary-btn action-btn compact-primary-btn" data-tour="inventory-export-entry-trigger" type="button" @click="emit('openExport')">
-        收退料明細匯出
+        匯出中心
       </button>
       <button class="outline-btn action-btn compact-outline-btn" data-tour="search-onboarding-entry" type="button" @click="emit('openOnboarding')">
         新手教學
@@ -134,7 +138,6 @@ onBeforeUnmount(() => {
     <div class="topbar-actions">
       <div class="topbar-info">
         <span class="pill">{{ authDisplayName }}</span>
-        <span class="pill">客戶 {{ selectedCustomerCode || "未選" }}</span>
         <div class="pill-hover" data-topbar-popover>
           <button class="pill pill-trigger" type="button" :aria-expanded="activePopover === 'receipt'" @click="togglePopover('receipt')">
             <span>今日收料</span>
@@ -148,7 +151,7 @@ onBeforeUnmount(() => {
               <div v-for="entry in recentReceiptEntries" :key="entry.id" class="hover-row">
                 <strong>{{ entry.fixtureCode }}</strong>
                 <span>{{ entry.identifier }} / {{ entry.quantity }}</span>
-                <small>{{ formatHoverDate(entry.occurredAt) }} / {{ entry.transactionNo }}</small>
+                <small>{{ formatHoverDate(entry.occurredAt) }} / {{ displayTransactionNo(entry.transactionNo) }}</small>
               </div>
             </div>
             <div v-else class="hover-empty">今天尚無收料資料</div>
@@ -167,7 +170,7 @@ onBeforeUnmount(() => {
               <div v-for="entry in recentReturnEntries" :key="entry.id" class="hover-row">
                 <strong>{{ entry.fixtureCode }}</strong>
                 <span>{{ entry.identifier }} / {{ entry.quantity }}</span>
-                <small>{{ formatHoverDate(entry.occurredAt) }} / {{ entry.transactionNo }}</small>
+                <small>{{ formatHoverDate(entry.occurredAt) }} / {{ displayTransactionNo(entry.transactionNo) }}</small>
               </div>
             </div>
             <div v-else class="hover-empty">今天尚無退料資料</div>
@@ -184,9 +187,19 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="lowStockPreviewEntries.length > 0" class="hover-list">
               <div v-for="entry in lowStockPreviewEntries" :key="entry.fixture_id" class="hover-row">
-                <strong>{{ entry.fixture_code }}</strong>
-                <span>{{ entry.fixture_name }}</span>
-                <small>庫存 {{ entry.stock_qty }} / 最低 {{ entry.min_stock_qty }}</small>
+                <div class="hover-row-main">
+                  <strong>{{ entry.fixture_code }}</strong>
+                  <span>{{ entry.fixture_name }}</span>
+                  <small>庫存 {{ entry.stock_qty }} / 最低 {{ entry.min_stock_qty }}</small>
+                </div>
+                <button
+                  v-if="canOperateInventory"
+                  class="hover-inline-btn"
+                  type="button"
+                  @click="closePopover(); emit('openBatch', entry.fixture_code)"
+                >
+                  收 / 退料
+                </button>
               </div>
             </div>
             <div v-else class="hover-empty">目前沒有低水位治具</div>
@@ -359,12 +372,20 @@ onBeforeUnmount(() => {
 }
 
 .hover-row {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
   padding: 8px 9px;
   border: 1px solid #e2e8f3;
   border-radius: 10px;
   background: #fbfdff;
+}
+
+.hover-row-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 
 .hover-row span,
@@ -372,6 +393,21 @@ onBeforeUnmount(() => {
 .hover-empty {
   color: #5d6d89;
   font-size: 13px;
+}
+
+.hover-inline-btn {
+  flex: 0 0 auto;
+  border: 1px solid #d7e2f5;
+  border-radius: 9px;
+  min-height: 32px;
+  padding: 6px 10px;
+  background: #fff;
+  color: #35527d;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .hover-empty {
@@ -478,7 +514,7 @@ select {
   cursor: not-allowed;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1366px) {
   .mobile-trigger,
   .mobile-customer {
     display: inline-flex;

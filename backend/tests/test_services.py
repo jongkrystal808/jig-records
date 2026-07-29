@@ -24,7 +24,7 @@ from backend.app.schemas.common import CsvImportPayload
 from backend.app.schemas.auth import UserCreate, UserUpdate
 from backend.app.schemas.inventory import StockTransactionCreate
 from backend.app.schemas.master import FixtureCreate, FixtureUpdate
-from backend.app.schemas.production import FixtureRequirementCreate, ModelStationCreate
+from backend.app.schemas.production import FixtureRequirementCopy, FixtureRequirementCreate, ModelStationCreate
 from backend.app.services.auth_service import AuthService
 from backend.app.services.inventory_service import DuplicateTransactionError, InventoryService
 from backend.app.services.master_service import MasterService
@@ -475,9 +475,19 @@ class MasterServiceTests(ServiceTestCase):
                     department_storage_location=None,
                     description=None,
                 )
+                fixture_department_only = self.repo.create_fixture(
+                    customer_id=customer.id,
+                    responsible_user_id=None,
+                    code="FX-DEP",
+                    name="Fixture Department",
+                    line_storage_location=None,
+                    department_storage_location="RD-SHELF-9",
+                    description=None,
+                )
                 self.db.commit()
 
                 Path(image_dir, "FX-GOOD.png").write_bytes(b"fixture-image")
+                Path(image_dir, "FX-DEP.png").write_bytes(b"fixture-image")
                 self.production_service.create_model_station(
                     ModelStationCreate(customer_id=customer.id, model_id=model.id, station_id=station.id)
                 )
@@ -487,6 +497,15 @@ class MasterServiceTests(ServiceTestCase):
                         model_id=model.id,
                         station_id=station.id,
                         fixture_id=fixture_good.id,
+                        required_qty=1,
+                    )
+                )
+                self.production_service.create_fixture_requirement(
+                    FixtureRequirementCreate(
+                        customer_id=customer.id,
+                        model_id=model.id,
+                        station_id=station.id,
+                        fixture_id=fixture_department_only.id,
                         required_qty=1,
                     )
                 )
@@ -508,6 +527,12 @@ class MasterServiceTests(ServiceTestCase):
                                 "identifier": "2",
                                 "quantity": 3,
                             },
+                            {
+                                "fixture_id": fixture_department_only.id,
+                                "ownership_type": "self_purchased",
+                                "identifier": "3",
+                                "quantity": 2,
+                            },
                         ],
                     )
                 )
@@ -516,6 +541,8 @@ class MasterServiceTests(ServiceTestCase):
                 good_level.min_stock_qty = 2
                 bad_level = self.inventory_service.repo.get_or_create_stock_level(fixture_bad.id)
                 bad_level.min_stock_qty = 0
+                department_only_level = self.inventory_service.repo.get_or_create_stock_level(fixture_department_only.id)
+                department_only_level.min_stock_qty = 1
                 bad_summary = self.db.get(FixtureStockSummary, fixture_bad.id)
                 self.assertIsNotNone(bad_summary)
                 bad_summary.stock_qty = 5
@@ -523,7 +550,7 @@ class MasterServiceTests(ServiceTestCase):
 
                 report = self.master_service.build_fixture_quality_report(customer.id)
 
-                self.assertEqual(report.total_fixture_count, 2)
+                self.assertEqual(report.total_fixture_count, 3)
                 self.assertEqual(report.problematic_fixture_count, 1)
                 self.assertEqual(report.missing_name_count, 1)
                 self.assertEqual(report.missing_storage_location_count, 1)
@@ -694,6 +721,140 @@ class ProductionServiceTests(ServiceTestCase):
         )
         self.assertEqual(capacity_after["max_open_station_count"], 4)
         self.assertEqual(capacity_after["bottleneck_fixture_code"], "FX-A")
+
+    def test_create_fixture_requirement_auto_creates_model_station_mapping(self) -> None:
+        bundle = self.seed_customer_bundle()
+
+        created = self.production_service.create_fixture_requirement(
+            FixtureRequirementCreate(
+                customer_id=bundle["customer"].id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+                fixture_id=bundle["fixture_a"].id,
+                required_qty=2,
+            )
+        )
+
+        self.assertEqual(created.model_id, bundle["model"].id)
+        self.assertEqual(created.station_id, bundle["station"].id)
+        self.assertIsNotNone(
+            self.production_service.repo.get_model_station(
+                bundle["model"].id,
+                bundle["station"].id,
+                customer_id=bundle["customer"].id,
+            )
+        )
+
+        capacity = self.production_service.get_station_capacity(
+            bundle["station"].id,
+            bundle["model"].id,
+            bundle["customer"].id,
+        )
+        self.assertEqual(capacity["max_open_station_count"], 6)
+        self.assertEqual(capacity["bottleneck_fixture_code"], "FX-A")
+
+    def test_copy_fixture_requirements_is_safe_by_default_and_can_overwrite(self) -> None:
+        bundle = self.seed_customer_bundle()
+        target_station = self.repo.create_station(
+            customer_id=bundle["customer"].id,
+            code="ST-002",
+            name="Station 2",
+        )
+        self.db.commit()
+        self.production_service.create_model_station(
+            ModelStationCreate(
+                customer_id=bundle["customer"].id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+            )
+        )
+        for fixture, required_qty in (
+            (bundle["fixture_a"], 2),
+            (bundle["fixture_b"], 3),
+        ):
+            self.production_service.create_fixture_requirement(
+                FixtureRequirementCreate(
+                    customer_id=bundle["customer"].id,
+                    model_id=bundle["model"].id,
+                    station_id=bundle["station"].id,
+                    fixture_id=fixture.id,
+                    required_qty=required_qty,
+                )
+            )
+        self.production_service.create_fixture_requirement(
+            FixtureRequirementCreate(
+                customer_id=bundle["customer"].id,
+                model_id=bundle["model"].id,
+                station_id=target_station.id,
+                fixture_id=bundle["fixture_a"].id,
+                required_qty=5,
+            )
+        )
+
+        safe_result = self.production_service.copy_fixture_requirements(
+            FixtureRequirementCopy(
+                customer_id=bundle["customer"].id,
+                source_model_id=bundle["model"].id,
+                source_station_id=bundle["station"].id,
+                target_model_id=bundle["model"].id,
+                target_station_id=target_station.id,
+            )
+        )
+        self.assertEqual(
+            safe_result,
+            {
+                "source_requirement_count": 2,
+                "created_count": 1,
+                "updated_count": 0,
+                "skipped_count": 1,
+                "mapping_created": False,
+            },
+        )
+        target_rows = self.production_service.repo.list_station_requirements(
+            target_station.id,
+            model_id=bundle["model"].id,
+            customer_id=bundle["customer"].id,
+        )
+        self.assertEqual(
+            {row.fixture_id: row.required_qty for row in target_rows},
+            {
+                bundle["fixture_a"].id: 5,
+                bundle["fixture_b"].id: 3,
+            },
+        )
+
+        overwrite_result = self.production_service.copy_fixture_requirements(
+            FixtureRequirementCopy(
+                customer_id=bundle["customer"].id,
+                source_model_id=bundle["model"].id,
+                source_station_id=bundle["station"].id,
+                target_model_id=bundle["model"].id,
+                target_station_id=target_station.id,
+                overwrite_existing=True,
+            )
+        )
+        self.assertEqual(overwrite_result["updated_count"], 1)
+        self.assertEqual(overwrite_result["skipped_count"], 1)
+        target_rows = self.production_service.repo.list_station_requirements(
+            target_station.id,
+            model_id=bundle["model"].id,
+            customer_id=bundle["customer"].id,
+        )
+        self.assertEqual(
+            {row.fixture_id: row.required_qty for row in target_rows},
+            {
+                bundle["fixture_a"].id: 2,
+                bundle["fixture_b"].id: 3,
+            },
+        )
+        audit_log = self.db.scalar(
+            select(AuditLog)
+            .where(AuditLog.entity_type == "fixture_requirement", AuditLog.action == "copy")
+            .order_by(AuditLog.id.desc())
+        )
+        self.assertIsNotNone(audit_log)
+        self.assertIn("ST-001", audit_log.summary)
+        self.assertIn("ST-002", audit_log.summary)
 
     def test_shared_station_keeps_requirements_scoped_by_model(self) -> None:
         bundle = self.seed_customer_bundle()
@@ -1084,6 +1245,78 @@ class InventoryServiceTests(ServiceTestCase):
             {"RCV-LEGACY-12345"},
         )
 
+    def test_transaction_overview_page_returns_paginated_detail_rows(self) -> None:
+        bundle = self.seed_customer_bundle()
+        customer_id = bundle["customer"].id
+
+        self.inventory_service.receipt(
+            StockTransactionCreate(
+                customer_id=customer_id,
+                created_by="Admin",
+                occurred_at=datetime(2026, 1, 1, 8, 0, tzinfo=timezone.utc),
+                transaction_no="OV-001",
+                note="tx note",
+                items=[
+                    {
+                        "fixture_id": bundle["fixture_a"].id,
+                        "ownership_type": "self_purchased",
+                        "identifier": "001",
+                        "quantity": 2,
+                    }
+                ],
+            )
+        )
+        self.inventory_service.receipt(
+            StockTransactionCreate(
+                customer_id=customer_id,
+                created_by="Admin",
+                occurred_at=datetime(2026, 1, 2, 8, 0, tzinfo=timezone.utc),
+                transaction_no="OV-002",
+                items=[
+                    {
+                        "fixture_id": bundle["fixture_b"].id,
+                        "ownership_type": "customer_supplied",
+                        "identifier": "002",
+                        "quantity": 1,
+                        "note": "item note",
+                    }
+                ],
+            )
+        )
+        self.inventory_service.receipt(
+            StockTransactionCreate(
+                customer_id=customer_id,
+                created_by="Alice",
+                occurred_at=datetime(2026, 1, 3, 8, 0, tzinfo=timezone.utc),
+                transaction_no="OV-003",
+                items=[
+                    {
+                        "fixture_id": bundle["fixture_a"].id,
+                        "ownership_type": "self_purchased",
+                        "identifier": "003",
+                        "quantity": 5,
+                    }
+                ],
+            )
+        )
+
+        first_page = self.inventory_service.list_transaction_overview_page(page=1, page_size=2, customer_id=customer_id)
+        self.assertEqual(first_page["page"], 1)
+        self.assertEqual(first_page["page_size"], 2)
+        self.assertEqual(first_page["total"], 3)
+        self.assertEqual([row["transaction_no"] for row in first_page["items"]], ["OV-003", "OV-002"])
+        self.assertEqual(first_page["items"][1]["note"], "item note")
+
+        filtered = self.inventory_service.list_transaction_overview_page(
+            page=1,
+            page_size=10,
+            customer_id=customer_id,
+            fixture_code="FX-A",
+        )
+        self.assertEqual(filtered["total"], 2)
+        self.assertEqual({row["fixture_code"] for row in filtered["items"]}, {"FX-A"})
+        self.assertEqual(filtered["items"][1]["note"], "tx note")
+
     def test_return_error_message_includes_item_index_and_identifier_context(self) -> None:
         bundle = self.seed_customer_bundle()
         self.inventory_service.receipt(
@@ -1295,6 +1528,75 @@ class ProductionApiTests(ServiceTestCase):
         )
         self.assertEqual(query_b.status_code, 200)
         self.assertEqual({row["fixture_code"] for row in query_b.json()["fixtures"]}, {"FX-C"})
+
+    def test_copy_fixture_requirements_supports_cross_model_target(self) -> None:
+        bundle = self.seed_customer_bundle()
+        self.repo.replace_allowed_users_for_customer(bundle["customer"].id, [self.admin["id"]])
+        target_model = self.repo.create_model(
+            customer_id=bundle["customer"].id,
+            code="M-002",
+            name="Model 2",
+        )
+        target_station = self.repo.create_station(
+            customer_id=bundle["customer"].id,
+            code="ST-002",
+            name="Station 2",
+        )
+        self.db.commit()
+        self.production_service.create_model_station(
+            ModelStationCreate(
+                customer_id=bundle["customer"].id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+            )
+        )
+        self.production_service.create_fixture_requirement(
+            FixtureRequirementCreate(
+                customer_id=bundle["customer"].id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+                fixture_id=bundle["fixture_a"].id,
+                required_qty=2,
+            )
+        )
+
+        response = self.client.post(
+            f"{settings.api_v2_prefix}/production/fixture-requirements/copy",
+            headers=self._auth_headers(),
+            json={
+                "customer_id": bundle["customer"].id,
+                "source_model_id": bundle["model"].id,
+                "source_station_id": bundle["station"].id,
+                "target_model_id": target_model.id,
+                "target_station_id": target_station.id,
+                "overwrite_existing": False,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "source_requirement_count": 1,
+                "created_count": 1,
+                "updated_count": 0,
+                "skipped_count": 0,
+                "mapping_created": True,
+            },
+        )
+        target_query = self.client.get(
+            f"{settings.api_v2_prefix}/production/models/{target_model.id}/query",
+            params={
+                "station_id": target_station.id,
+                "customer_id": bundle["customer"].id,
+            },
+            headers=self._auth_headers(),
+        )
+        self.assertEqual(target_query.status_code, 200)
+        self.assertEqual(
+            {row["fixture_code"] for row in target_query.json()["fixtures"]},
+            {"FX-A"},
+        )
 
     def test_non_admin_customer_scope_blocks_unassigned_customer(self) -> None:
         customer_a = self.repo.create_customer(code="C-001", name="Customer 1")

@@ -4,7 +4,7 @@ defineProps<{
   disabled?: boolean;
   placeholder?: string;
   menuOpen: boolean;
-  suggestions: Array<{ id: number; code: string }>;
+  suggestions: Array<{ id: number; code: string; name?: string | null }>;
 }>();
 
 const emit = defineEmits<{
@@ -36,7 +36,8 @@ const emit = defineEmits<{
         type="button"
         @mousedown.prevent="emit('select', suggestion.code)"
       >
-        {{ suggestion.code }}
+        <strong>{{ suggestion.code }}</strong>
+        <span v-if="suggestion.name">{{ suggestion.name }}</span>
       </button>
     </div>
   </div>
@@ -71,6 +72,8 @@ const emit = defineEmits<{
   color: #31435e;
   font: inherit;
   cursor: pointer;
+  display: grid;
+  gap: 2px;
 }
 
 .autocomplete-option:last-child {
@@ -79,6 +82,15 @@ const emit = defineEmits<{
 
 .autocomplete-option:hover {
   background: #f3f7ff;
+}
+
+.autocomplete-option strong {
+  color: #22314a;
+}
+
+.autocomplete-option span {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 input {

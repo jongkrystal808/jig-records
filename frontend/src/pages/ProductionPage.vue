@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { onBeforeRouteLeave, useRoute, useRouter, type LocationQueryRaw } from "vue-router";
 
 import { api } from "@/api";
-import { globalFixtureKeyword, selectedCustomerId } from "@/appState";
+import { authSession, globalFixtureKeyword, selectedCustomerId, setCustomerSwitchGuard } from "@/appState";
 import ProductionBatchImportModal from "@/components/production/ProductionBatchImportModal.vue";
 import ProductionDetailSection from "@/components/production/ProductionDetailSection.vue";
 import ProductionHeaderSection from "@/components/production/ProductionHeaderSection.vue";
+import ProductionRequirementCopyModal from "@/components/production/ProductionRequirementCopyModal.vue";
 import { useProductionBatchImport } from "@/composables/useProductionBatchImport";
 import { useProductionEditorState } from "@/composables/useProductionEditorState";
 import { pushToast } from "@/toastState";
-import type { Fixture, FixtureRequirementListItem, MachineModel, ModelQuery, ModelQueryStationRequirement, ModelStation, Station, StationCapacity } from "@/types";
+import type { Fixture, FixtureRequirementListItem, MachineModel, ModelQuery, ModelQueryStationRequirement, ModelStation, Station, StationCapacity, StockSummary } from "@/types";
 import { formatLocalDate } from "@/utils/date";
 import { matchesFixtureKeywords, parseFixtureKeywords } from "@/utils/fixtureSearch";
+import { getAvailableRequirementStations } from "@/utils/productionStations";
+import { calculateProjectedStationCapacity } from "@/utils/productionCapacityPreview";
 import ProductionCapacityPanel from "@/components/production/ProductionCapacityPanel.vue";
 
 const route = useRoute();
@@ -23,6 +26,7 @@ const stations = ref<Station[]>([]);
 const fixtures = ref<Fixture[]>([]);
 const mappings = ref<ModelStation[]>([]);
 const fixtureRequirements = ref<FixtureRequirementListItem[]>([]);
+const stockRows = ref<StockSummary[]>([]);
 const modelQuery = ref<ModelQuery | null>(null);
 const stationCapacity = ref<StationCapacity | null>(null);
 
@@ -30,6 +34,10 @@ const loading = ref(false);
 const loadedAt = ref("");
 const updatedAt = ref("");
 const bottleneckHighlightTrigger = ref(0);
+const hasMounted = ref(false);
+const editorCustomerId = ref<number | null>(null);
+const showRequirementCopyModal = ref(false);
+const savingRequirementCopy = ref(false);
 
 function nowString(): string {
   return formatLocalDate(new Date());
@@ -44,32 +52,38 @@ const selectedStation = computed(() => stations.value.find((row) => row.id === r
 const selectedModelCode = computed(() => selectedModel.value?.code ?? "");
 const modelMap = computed(() => new Map(models.value.map((row) => [row.id, row.code])));
 const stationMap = computed(() => new Map(stations.value.map((row) => [row.id, row.code])));
+const stationRecordMap = computed(() => new Map(stations.value.map((row) => [row.id, row])));
+const stockMap = computed(() => new Map(stockRows.value.map((row) => [row.fixture_id, row])));
+const modelQueryStationMap = computed(
+  () => new Map((modelQuery.value?.stations ?? []).map((row) => [row.station_id, row]))
+);
 const globalFixtureKeywords = computed(() => parseFixtureKeywords(globalFixtureKeyword.value));
 const mappingRows = computed(() =>
-  mappings.value.map((row) => ({
-    id: row.id,
-    model_id: row.model_id,
-    modelCode: modelMap.value.get(row.model_id) ?? `model ${row.model_id}`,
-    station_id: row.station_id,
-    stationCode: stationMap.value.get(row.station_id) ?? `station ${row.station_id}`
-  }))
+  mappings.value.map((row) => {
+    const station = stationRecordMap.value.get(row.station_id);
+    const capacity = modelQueryStationMap.value.get(row.station_id);
+    return {
+      id: row.id,
+      model_id: row.model_id,
+      modelCode: modelMap.value.get(row.model_id) ?? `model ${row.model_id}`,
+      station_id: row.station_id,
+      stationCode: station?.code ?? `station ${row.station_id}`,
+      stationName: station?.name ?? "",
+      maxOpenStationCount: capacity?.max_open_station_count ?? null,
+      bottleneckFixtureCode: capacity?.bottleneck_fixture_code ?? null
+    };
+  })
 );
 const selectedModelStationRows = computed(() => mappingRows.value.filter((row) => row.model_id === modelId.value));
-const selectedModelStationIds = computed(() => new Set(selectedModelStationRows.value.map((row) => row.station_id)));
 const availableRequirementStations = computed(() =>
-  stations.value
-    .filter((row) => selectedModelStationIds.value.has(row.id))
-    .slice()
-    .sort((a, b) => a.code.localeCompare(b.code))
+  getAvailableRequirementStations(stations.value, mappings.value, modelId.value)
 );
-const selectedStationId = computed(() => requirementStationId.value);
 const selectedStationCode = computed(() => selectedStation.value?.code ?? "");
-const selectedStationRequirementRows = computed(() =>
+const selectedStationAllRequirementRows = computed(() =>
   fixtureRequirements.value.filter(
     (row) =>
       row.model_id === modelId.value &&
-      row.station_id === requirementStationId.value &&
-      matchesFixtureKeywords(row.fixture_code, globalFixtureKeywords.value)
+      row.station_id === requirementStationId.value
   )
 );
 const selectedStationQueryRows = computed<ModelQueryStationRequirement[]>(() => {
@@ -82,6 +96,23 @@ const selectedStationQueryRows = computed<ModelQueryStationRequirement[]>(() => 
       matchesFixtureKeywords(row.fixture_code, globalFixtureKeywords.value)
   );
 });
+const selectedStationRequirementRows = computed(() => {
+  const queryByFixtureId = new Map(selectedStationQueryRows.value.map((row) => [row.fixture_id, row]));
+  return selectedStationAllRequirementRows.value
+    .filter((row) => matchesFixtureKeywords(row.fixture_code, globalFixtureKeywords.value))
+    .map((row) => {
+      const queryRow = queryByFixtureId.get(row.fixture_id);
+      const stockQty = queryRow?.stock_qty ?? stockMap.value.get(row.fixture_id)?.stock_qty ?? 0;
+      const maxOpenStationCount = Math.floor(stockQty / row.required_qty);
+      return {
+        ...row,
+        stockQty,
+        maxOpenStationCount,
+        isBottleneck: stationCapacity.value?.bottleneck_fixture_code === row.fixture_code
+      };
+    });
+});
+const canEditProduction = computed(() => authSession.value?.role !== "guest");
 const currentStationHasBottleneck = computed(() => selectedStationQueryRows.value.some((row) => row.stock_status !== "normal"));
 const stationConstraintTitle = computed(() => (currentStationHasBottleneck.value ? "瓶頸治具" : "目前限制治具"));
 const stationConstraintHint = computed(() => {
@@ -99,57 +130,38 @@ const displayedModelQuery = computed(() => {
     fixtures: modelQuery.value.fixtures.filter((row) => matchesFixtureKeywords(row.fixture_code, globalFixtureKeywords.value))
   };
 });
-const detailMode = computed<"overview" | "mapping" | "requirements">(() => {
-  if (route.name === "production-mapping") return "mapping";
-  if (route.name === "production-requirements") return "requirements";
+const detailMode = computed<"overview" | "configure">(() => {
+  if (route.name === "production-mapping" || route.name === "production-requirements") return "configure";
   return "overview";
 });
 const isMainOverview = computed(() => detailMode.value === "overview");
-const detailPanelMode = computed<"mapping" | "requirements">(() => (detailMode.value === "requirements" ? "requirements" : "mapping"));
-const mappingSummaryText = computed(() => {
-  const currentModelCode = selectedModel.value?.code || "-";
-  return `目前機種：${currentModelCode} / ${selectedModelStationRows.value.length} 筆站點`;
+const returnToPath = computed(() => {
+  const raw = Array.isArray(route.query.return_to) ? route.query.return_to[0] : route.query.return_to;
+  return typeof raw === "string" && raw.startsWith("/") ? raw : "/search";
 });
-const requirementSummaryText = computed(() => {
-  const currentStationCode = selectedStation.value?.code || "-";
-  return `目前站點：${currentStationCode} / ${selectedStationRequirementRows.value.length} 筆治具`;
-});
-const requirementNeedsMapping = computed(() => selectedModelStationRows.value.length === 0);
-
+const backLabel = computed(() => (returnToPath.value.startsWith("/search") ? "返回搜尋" : "返回來源"));
 const {
   modelId,
   mappingStationId,
   requirementStationId,
   fixtureId,
   requiredQty,
-  mappingModelCodeInput,
   mappingStationCodeInput,
-  requirementStationCodeInput,
   fixtureCodeInput,
   editingMappingId,
   editingRequirementId,
   openAutocompleteKey,
-  filteredModelSuggestions,
   filteredStationSuggestions,
-  filteredRequirementStationSuggestions,
   filteredFixtureSuggestions,
   hasUnsavedMappingChanges,
   hasUnsavedRequirementChanges,
   updateModelId,
   updateSelectedStationId,
   updateRequiredQty,
-  openMappingModelAutocomplete,
-  handleMappingModelInput,
-  blurMappingModelAutocomplete,
-  selectModelSuggestion,
   openMappingStationAutocomplete,
   handleMappingStationInput,
   blurMappingStationAutocomplete,
   selectMappingStationSuggestion,
-  openRequirementStationAutocomplete,
-  handleRequirementStationInput,
-  blurRequirementStationAutocomplete,
-  selectRequirementStationSuggestion,
   openFixtureAutocomplete,
   handleFixtureInput,
   blurFixtureAutocomplete,
@@ -172,6 +184,23 @@ const {
   selectedModel,
   selectedStation
 });
+
+const projectedCapacity = computed(() =>
+  calculateProjectedStationCapacity({
+    requirements: selectedStationAllRequirementRows.value,
+    stocks: stockRows.value,
+    fixtureId: fixtureId.value,
+    fixtureCode: fixtureCodeInput.value,
+    requiredQty: requiredQty.value,
+    editingRequirementId: editingRequirementId.value
+  })
+);
+const selectedFixtureAlreadyConfigured = computed(
+  () =>
+    editingRequirementId.value === null &&
+    fixtureId.value !== null &&
+    selectedStationAllRequirementRows.value.some((row) => row.fixture_id === fixtureId.value)
+);
 
 const {
   showMappingBatchModal,
@@ -231,22 +260,94 @@ function applyRouteModelSelection(): void {
   }
 }
 
-function openMappingPage(): void {
-  if (detailMode.value !== "mapping" && hasUnsavedRequirementChanges.value && !window.confirm("目前 Requirement 表單有未儲存的修改，切換到 Mapping 後將會捨棄。要繼續嗎？")) {
-    return;
+function buildProductionRouteQuery(): LocationQueryRaw {
+  const query: LocationQueryRaw = {};
+  for (const [key, value] of Object.entries(route.query)) {
+    if (typeof value === "string") {
+      query[key] = value;
+      continue;
+    }
+    if (Array.isArray(value) && typeof value[0] === "string") {
+      query[key] = value[0];
+    }
   }
-  router.push({ name: "production-mapping" });
+  if (modelId.value !== null) {
+    query.model_id = String(modelId.value);
+  } else {
+    delete query.model_id;
+  }
+  return query;
 }
 
-function openRequirementPage(): void {
-  if (detailMode.value !== "requirements" && hasUnsavedMappingChanges.value && !window.confirm("目前 Mapping 表單有未儲存的修改，切換到 Requirement 後將會捨棄。要繼續嗎？")) {
+function hasUnsavedProductionChanges(): boolean {
+  return hasUnsavedRequirementChanges.value || hasUnsavedMappingChanges.value;
+}
+
+function confirmLeaveProductionContext(message = "目前有未儲存的修改，離開後會遺失。要繼續嗎？"): boolean {
+  if (!hasUnsavedProductionChanges()) {
+    return true;
+  }
+  return window.confirm(message);
+}
+
+function openConfigurationPage(): void {
+  if (
+    detailMode.value !== "configure" &&
+    hasUnsavedProductionChanges() &&
+    !window.confirm("切換到產能設定後會沿用目前機種，未儲存的修改可能會捨棄。要繼續嗎？")
+  ) {
     return;
   }
-  router.push({ name: "production-requirements" });
+  void router.push({ name: "production-mapping", query: buildProductionRouteQuery() });
 }
 
 function closeDetailPage(): void {
-  router.push({ name: "production" });
+  void router.push({ name: "production", query: buildProductionRouteQuery() });
+}
+
+function handleBackNavigation(): void {
+  if (!confirmLeaveProductionContext()) {
+    return;
+  }
+  void router.push(returnToPath.value);
+}
+
+function handleBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!hasUnsavedProductionChanges()) {
+    return;
+  }
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+function selectStationForRequirement(stationId: number): void {
+  if (stationId === requirementStationId.value) {
+    return;
+  }
+  if (
+    hasUnsavedRequirementChanges.value &&
+    !window.confirm("目前治具需求表單有未儲存的修改，切換站點後會遺失。要繼續嗎？")
+  ) {
+    return;
+  }
+  updateSelectedStationId(stationId);
+  resetRequirementEditorWithoutPrompt();
+}
+
+function selectModelForWorkspace(nextModelId: number | null): void {
+  if (nextModelId === modelId.value) {
+    return;
+  }
+  if (
+    hasUnsavedProductionChanges() &&
+    !window.confirm("目前有未儲存的修改，切換機種後會遺失。要繼續嗎？")
+  ) {
+    return;
+  }
+  updateModelId(nextModelId);
+  resetMappingEditorWithoutPrompt();
+  syncRequirementStationSelection();
+  resetRequirementEditorWithoutPrompt();
 }
 
 function focusBottleneckEvidence(): void {
@@ -272,33 +373,42 @@ async function loadData(showLoading = true): Promise<void> {
     loading.value = true;
   }
   try {
+    const shouldResetEditorContext =
+      !hasMounted.value || editorCustomerId.value !== selectedCustomerId.value;
     modelQuery.value = null;
     stationCapacity.value = null;
     const customerId = selectedCustomerId.value ?? undefined;
-    const [modelRows, stationRows, fixtureRows, mappingRows, requirementRows] = await Promise.all([
+    const [modelRows, stationRows, fixtureRows, mappingRows, requirementRows, inventoryRows] = await Promise.all([
       customerId ? api.listModels(customerId) : Promise.resolve([]),
       customerId ? api.listStations(customerId) : Promise.resolve([]),
       api.listFixtures(customerId),
       customerId ? api.listModelStations(customerId) : Promise.resolve([]),
-      customerId ? api.listFixtureRequirements(customerId) : Promise.resolve([])
+      customerId ? api.listFixtureRequirements(customerId) : Promise.resolve([]),
+      api.listStock(customerId)
     ]);
     models.value = modelRows;
     stations.value = stationRows;
     fixtures.value = fixtureRows;
     mappings.value = mappingRows;
     fixtureRequirements.value = requirementRows;
+    stockRows.value = inventoryRows;
 
     modelId.value = modelRows.find((row) => row.id === modelId.value)?.id ?? modelRows[0]?.id ?? null;
     applyRouteModelSelection();
-    mappingStationId.value = stationRows.find((row) => row.id === mappingStationId.value)?.id ?? stationRows[0]?.id ?? null;
-    fixtureId.value = fixtureRows.find((row) => row.id === fixtureId.value)?.id ?? fixtureRows[0]?.id ?? null;
     syncRequirementStationSelection();
-    if (editingMappingId.value !== null && !mappingRows.some((row) => row.id === editingMappingId.value)) {
+    if (
+      shouldResetEditorContext ||
+      (editingMappingId.value !== null && !mappingRows.some((row) => row.id === editingMappingId.value))
+    ) {
       resetMappingEditorWithoutPrompt();
     }
-    if (editingRequirementId.value !== null && !requirementRows.some((row) => row.id === editingRequirementId.value)) {
+    if (
+      shouldResetEditorContext ||
+      (editingRequirementId.value !== null && !requirementRows.some((row) => row.id === editingRequirementId.value))
+    ) {
       resetRequirementEditorWithoutPrompt();
     }
+    editorCustomerId.value = selectedCustomerId.value;
 
     if (!loadedAt.value) loadedAt.value = nowString();
     touchUpdatedAt();
@@ -312,6 +422,10 @@ async function loadData(showLoading = true): Promise<void> {
 }
 
 async function saveMapping(): Promise<void> {
+  if (!canEditProduction.value) {
+    pushToast("訪客模式只能查看產能設定。", "warning");
+    return;
+  }
   if (!ensureMappingSelections()) return;
   savingMapping.value = true;
   try {
@@ -324,39 +438,59 @@ async function saveMapping(): Promise<void> {
     const payload = { customer_id: selectedCustomerId.value, model_id: currentModelId, station_id: currentStationId };
     if (editingMappingId.value === null) {
       await api.createModelStation(payload);
-      pushToast("Model-Station Mapping 已新增", "success");
+      pushToast("站點設定已新增", "success");
     } else {
       await api.updateModelStation(editingMappingId.value, payload);
-      resetMappingEditorWithoutPrompt();
-      pushToast("Model-Station Mapping 已更新", "success");
+      pushToast("站點設定已更新", "success");
     }
     await loadData(false);
+    updateSelectedStationId(currentStationId);
+    resetMappingEditorWithoutPrompt();
+    resetRequirementEditorWithoutPrompt();
     await Promise.all([refreshCapacity(), refreshModelQuery()]);
   } catch (err) {
-    pushToast(err instanceof Error ? err.message : editingMappingId.value === null ? "新增 mapping 失敗" : "更新 mapping 失敗", "error");
+    pushToast(err instanceof Error ? err.message : editingMappingId.value === null ? "新增站點設定失敗" : "更新站點設定失敗", "error");
   } finally {
     savingMapping.value = false;
   }
 }
 
 async function removeMapping(rowId: number): Promise<void> {
+  if (!canEditProduction.value) {
+    return;
+  }
   if (!selectedCustomerId.value) {
     pushToast("請先選擇客戶。", "warning");
     return;
   }
-  if (!window.confirm("確定要刪除這筆機種站點對應嗎？")) return;
+  const mapping = mappings.value.find((row) => row.id === rowId);
+  const affectedRequirementCount = mapping
+    ? fixtureRequirements.value.filter(
+        (row) => row.model_id === mapping.model_id && row.station_id === mapping.station_id
+      ).length
+    : 0;
+  if (affectedRequirementCount > 0 && mapping) {
+    selectStationForRequirement(mapping.station_id);
+    pushToast(`此站點仍有 ${affectedRequirementCount} 筆治具需求，請先從右側移除後再刪除站點。`, "warning");
+    return;
+  }
+  if (!window.confirm("此站點目前沒有治具需求。確定要刪除這筆站點設定嗎？")) return;
   try {
     await api.deleteModelStation(rowId, selectedCustomerId.value);
     if (editingMappingId.value === rowId) resetMappingEditorWithoutPrompt();
     await loadData(false);
     await Promise.all([refreshCapacity(), refreshModelQuery()]);
-    pushToast("Mapping 已刪除", "success");
+    pushToast("站點設定已刪除", "success");
   } catch (err) {
-    pushToast(err instanceof Error ? err.message : "刪除 mapping 失敗", "error");
+    pushToast(err instanceof Error ? err.message : "刪除站點設定失敗", "error");
   }
 }
 
 async function saveRequirement(): Promise<void> {
+  if (!canEditProduction.value) {
+    pushToast("訪客模式只能查看產能設定。", "warning");
+    return;
+  }
   if (!ensureRequirementSelections()) return;
   savingRequirement.value = true;
   try {
@@ -370,7 +504,7 @@ async function saveRequirement(): Promise<void> {
       return;
     }
     if (!hasValidRequirementStationSelection()) {
-      pushToast("請先替目前機種建立站點對應，再設定該站點的治具需求。", "warning");
+      pushToast("請先選擇有效的站點。", "warning");
       return;
     }
     const currentStationId = requirementStationId.value as number;
@@ -382,15 +516,26 @@ async function saveRequirement(): Promise<void> {
       fixture_id: currentFixtureId,
       required_qty: requiredQty.value
     };
-    if (editingRequirementId.value === null) {
+    const existingRequirement = fixtureRequirements.value.find(
+      (row) =>
+        row.model_id === currentModelId &&
+        row.station_id === currentStationId &&
+        row.fixture_id === currentFixtureId
+    );
+    const targetRequirementId = editingRequirementId.value ?? existingRequirement?.id ?? null;
+    if (targetRequirementId === null) {
       await api.createFixtureRequirement(payload);
-      pushToast("Fixture Requirement 已儲存", "success");
+      pushToast("治具需求已加入", "success");
     } else {
-      await api.updateFixtureRequirement(editingRequirementId.value, payload);
-      resetRequirementEditorWithoutPrompt();
-      pushToast("Fixture Requirement 已更新", "success");
+      await api.updateFixtureRequirement(targetRequirementId, payload);
+      pushToast(
+        editingRequirementId.value === null ? "此治具已存在，需求數量已更新" : "治具需求已更新",
+        "success"
+      );
     }
     await loadData(false);
+    updateSelectedStationId(currentStationId);
+    resetRequirementEditorWithoutPrompt();
     await Promise.all([refreshCapacity(), refreshModelQuery()]);
     touchUpdatedAt();
   } catch (err) {
@@ -401,6 +546,9 @@ async function saveRequirement(): Promise<void> {
 }
 
 async function removeRequirement(requirementId: number): Promise<void> {
+  if (!canEditProduction.value) {
+    return;
+  }
   if (!selectedCustomerId.value) {
     pushToast("請先選擇客戶。", "warning");
     return;
@@ -414,6 +562,69 @@ async function removeRequirement(requirementId: number): Promise<void> {
     pushToast("Requirement 已刪除", "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "刪除 requirement 失敗", "error");
+  }
+}
+
+function openRequirementCopyModal(): void {
+  if (!canEditProduction.value || modelId.value === null || requirementStationId.value === null) {
+    return;
+  }
+  if (selectedStationAllRequirementRows.value.length === 0) {
+    pushToast("目前站點沒有可複製的治具需求。", "warning");
+    return;
+  }
+  if (
+    hasUnsavedRequirementChanges.value &&
+    !window.confirm("開啟複製流程會清除目前未儲存的治具需求表單。要繼續嗎？")
+  ) {
+    return;
+  }
+  resetRequirementEditorWithoutPrompt();
+  showRequirementCopyModal.value = true;
+}
+
+async function copyRequirementSettings(payload: {
+  targetModelId: number;
+  targetStationId: number;
+  overwriteExisting: boolean;
+}): Promise<void> {
+  if (
+    !selectedCustomerId.value ||
+    modelId.value === null ||
+    requirementStationId.value === null
+  ) {
+    pushToast("缺少來源機種、站點或客戶資料。", "warning");
+    return;
+  }
+  savingRequirementCopy.value = true;
+  const sourceModelId = modelId.value;
+  const sourceStationId = requirementStationId.value;
+  try {
+    const result = await api.copyFixtureRequirements({
+      customer_id: selectedCustomerId.value,
+      source_model_id: sourceModelId,
+      source_station_id: sourceStationId,
+      target_model_id: payload.targetModelId,
+      target_station_id: payload.targetStationId,
+      overwrite_existing: payload.overwriteExisting
+    });
+    showRequirementCopyModal.value = false;
+    await loadData(false);
+    updateModelId(payload.targetModelId);
+    updateSelectedStationId(payload.targetStationId);
+    resetMappingEditorWithoutPrompt();
+    resetRequirementEditorWithoutPrompt();
+    await Promise.all([refreshCapacity(), refreshModelQuery()]);
+    pushToast(
+      `複製完成：新增 ${result.created_count}、更新 ${result.updated_count}、跳過 ${result.skipped_count}${
+        result.mapping_created ? "，並已加入目標站點" : ""
+      }。`,
+      "success"
+    );
+  } catch (err) {
+    pushToast(err instanceof Error ? err.message : "複製站點治具需求失敗", "error");
+  } finally {
+    savingRequirementCopy.value = false;
   }
 }
 
@@ -459,17 +670,17 @@ async function exportModelStationsCsv(): Promise<void> {
       pushToast("請先選擇客戶。", "warning");
       return;
     }
-    downloadCsv("model-stations.csv", await api.exportModelStationsCsv(selectedCustomerId.value ?? undefined));
+    downloadCsv("station-settings.csv", await api.exportModelStationsCsv(selectedCustomerId.value ?? undefined));
   } catch (err) {
-    pushToast(err instanceof Error ? err.message : "匯出 mapping 失敗", "error");
+    pushToast(err instanceof Error ? err.message : "匯出站點設定失敗", "error");
   }
 }
 
 async function downloadModelStationTemplate(): Promise<void> {
   try {
-    downloadCsv("model-stations-template.csv", await api.downloadModelStationTemplateCsv());
+    downloadCsv("station-settings-template.csv", await api.downloadModelStationTemplateCsv());
   } catch (err) {
-    pushToast(err instanceof Error ? err.message : "下載 mapping 範本失敗", "error");
+    pushToast(err instanceof Error ? err.message : "下載站點設定範本失敗", "error");
   }
 }
 
@@ -484,9 +695,9 @@ async function importModelStationsCsv(source: Event | File): Promise<void> {
     }
     const result = await api.importModelStationsCsv(selectedCustomerId.value ?? undefined, await file.text(), file.name);
     await loadData(false);
-    pushToast(`匯入 mapping 完成，共 ${result.imported_count} 筆。`, "success");
+    pushToast(`匯入站點設定完成，共 ${result.imported_count} 筆。`, "success");
   } catch (err) {
-    pushToast(err instanceof Error ? err.message : "匯入 mapping 失敗", "error");
+    pushToast(err instanceof Error ? err.message : "匯入站點設定失敗", "error");
   } finally {
     if (input) {
       input.value = "";
@@ -561,6 +772,14 @@ watch(selectedCustomerId, async () => {
 });
 
 watch(
+  () => hasUnsavedProductionChanges(),
+  (value) => {
+    setCustomerSwitchGuard("production-page", value, "產能頁有未儲存的修改");
+  },
+  { immediate: true }
+);
+
+watch(
   () => route.query.model_id,
   async () => {
     applyRouteModelSelection();
@@ -571,6 +790,36 @@ watch(
 onMounted(async () => {
   await loadData();
   await Promise.all([refreshCapacity(), refreshModelQuery()]);
+  window.addEventListener("beforeunload", handleBeforeUnload);
+  hasMounted.value = true;
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("beforeunload", handleBeforeUnload);
+  setCustomerSwitchGuard("production-page", false, "產能頁有未儲存的修改");
+});
+
+watch(
+  modelId,
+  async () => {
+    if (!hasMounted.value) {
+      return;
+    }
+    const nextQuery = buildProductionRouteQuery();
+    const currentModelId = Array.isArray(route.query.model_id) ? route.query.model_id[0] : route.query.model_id;
+    const nextModelId = typeof nextQuery.model_id === "string" ? nextQuery.model_id : "";
+    if ((currentModelId ?? "") === nextModelId) {
+      return;
+    }
+    await router.replace({ name: route.name ?? "production", query: nextQuery });
+  }
+);
+
+onBeforeRouteLeave(() => {
+  if (!confirmLeaveProductionContext()) {
+    return false;
+  }
+  return true;
 });
 </script>
 
@@ -589,12 +838,12 @@ onMounted(async () => {
       :station-constraint-hint="stationConstraintHint"
       :is-main-overview="isMainOverview"
       :detail-mode="detailMode"
-      @back="router.push({ name: 'search' })"
+      :back-label="backLabel"
+      @back="handleBackNavigation"
       @open-overview="closeDetailPage"
-      @open-mapping="openMappingPage"
-      @open-requirements="openRequirementPage"
+      @open-configure="openConfigurationPage"
       @focus-bottleneck="focusBottleneckEvidence"
-      @update:model-id="updateModelId"
+      @update:model-id="selectModelForWorkspace"
     />
 
     <section v-if="isMainOverview" class="top-grid">
@@ -606,6 +855,7 @@ onMounted(async () => {
         :selected-station-id="requirementStationId"
         :station-capacity="stationCapacity"
         :model-query="displayedModelQuery"
+        :available-stations="availableRequirementStations"
         :selected-station-query-rows="selectedStationQueryRows"
         :highlight-fixture-code="stationCapacity?.bottleneck_fixture_code || ''"
         :highlight-trigger="bottleneckHighlightTrigger"
@@ -617,56 +867,47 @@ onMounted(async () => {
 
     <ProductionDetailSection
       v-else
-      :detail-mode="detailPanelMode"
+      :can-edit="canEditProduction"
       :loading="loading"
       :saving-mapping="savingMapping"
       :saving-requirement="savingRequirement"
       :editing-mapping-id="editingMappingId"
       :editing-requirement-id="editingRequirementId"
       :selected-model-code="selectedModel?.code || ''"
+      :selected-requirement-station-id="requirementStationId"
       :selected-station-code="selectedStationCode"
+      :selected-station-name="selectedStation?.name || ''"
+      :station-capacity-count="stationCapacity?.max_open_station_count ?? null"
+      :station-bottleneck-fixture-code="stationCapacity?.bottleneck_fixture_code || ''"
+      :projected-capacity="projectedCapacity"
+      :selected-fixture-already-configured="selectedFixtureAlreadyConfigured"
       :selected-model-station-rows="selectedModelStationRows"
       :selected-station-requirement-rows="selectedStationRequirementRows"
-      :requirement-needs-mapping="requirementNeedsMapping"
-      :mapping-model-code-input="mappingModelCodeInput"
+      :source-requirement-count="selectedStationAllRequirementRows.length"
       :mapping-station-code-input="mappingStationCodeInput"
-      :requirement-station-code-input="requirementStationCodeInput"
       :fixture-code-input="fixtureCodeInput"
       :required-qty="requiredQty"
       :open-autocomplete-key="openAutocompleteKey"
-      :filtered-model-suggestions="filteredModelSuggestions"
       :filtered-station-suggestions="filteredStationSuggestions"
-      :filtered-requirement-station-suggestions="filteredRequirementStationSuggestions"
       :filtered-fixture-suggestions="filteredFixtureSuggestions"
-      :models="models"
-      :stations="stations"
-      :available-requirement-stations="availableRequirementStations"
-      :fixtures="fixtures"
       :on-open-mapping-batch-modal="() => (showMappingBatchModal = true)"
       :on-open-requirement-batch-modal="() => (showRequirementBatchModal = true)"
+      :on-open-requirement-copy-modal="openRequirementCopyModal"
       :on-import-model-stations-csv="importModelStationsCsv"
       :on-import-fixture-requirements-csv="importFixtureRequirementsCsv"
       :on-save-mapping="saveMapping"
       :on-reset-mapping-editor="resetMappingEditor"
       :on-start-edit-mapping="startEditMapping"
       :on-remove-mapping="removeMapping"
+      :on-select-mapping-station="selectStationForRequirement"
       :on-save-requirement="saveRequirement"
       :on-reset-requirement-editor="resetRequirementEditor"
       :on-start-edit-requirement="startEditRequirement"
       :on-remove-requirement="removeRequirement"
-      :on-open-mapping-page="openMappingPage"
-      :on-mapping-model-focus="openMappingModelAutocomplete"
-      :on-mapping-model-input="handleMappingModelInput"
-      :on-mapping-model-blur="blurMappingModelAutocomplete"
-      :on-select-model-suggestion="selectModelSuggestion"
       :on-mapping-station-focus="openMappingStationAutocomplete"
       :on-mapping-station-input="handleMappingStationInput"
       :on-mapping-station-blur="blurMappingStationAutocomplete"
       :on-select-mapping-station-suggestion="selectMappingStationSuggestion"
-      :on-requirement-station-focus="openRequirementStationAutocomplete"
-      :on-requirement-station-input="handleRequirementStationInput"
-      :on-requirement-station-blur="blurRequirementStationAutocomplete"
-      :on-select-requirement-station-suggestion="selectRequirementStationSuggestion"
       :on-fixture-focus="openFixtureAutocomplete"
       :on-fixture-input="handleFixtureInput"
       :on-fixture-blur="blurFixtureAutocomplete"
@@ -674,14 +915,31 @@ onMounted(async () => {
       :on-required-qty-change="updateRequiredQty"
     />
 
+    <ProductionRequirementCopyModal
+      v-if="canEditProduction"
+      :open="showRequirementCopyModal"
+      :saving="savingRequirementCopy"
+      :source-model-id="modelId"
+      :source-model-code="selectedModelCode"
+      :source-station-id="requirementStationId"
+      :source-station-code="selectedStationCode"
+      :models="models"
+      :stations="stations"
+      :mappings="mappings"
+      :requirements="fixtureRequirements"
+      @close="showRequirementCopyModal = false"
+      @submit="copyRequirementSettings"
+    />
+
     <ProductionBatchImportModal
+      v-if="canEditProduction"
       :open="showMappingBatchModal"
-      title="批次貼上匯入 Model-Station Mapping"
+      title="批次貼上匯入站點設定"
       description="每行一筆：`機種編號,站點編號`。若找不到會先比對相似資料，再讓你確認、替換或新增。"
       :text="mappingBatchText"
       placeholder="例如：&#10;EDS,EDS_T1&#10;EDS,EDS_T2"
       :saving="savingMapping"
-      submit-label="匯入 Mapping"
+      submit-label="匯入站點設定"
       :ready-count="mappingReadyRows.length"
       :pending-count="mappingPendingRows.length"
       :error-count="mappingErrorRows.length"
@@ -753,6 +1011,7 @@ onMounted(async () => {
     </ProductionBatchImportModal>
 
     <ProductionBatchImportModal
+      v-if="canEditProduction"
       :open="showRequirementBatchModal"
       title="批次貼上匯入 Fixture Requirement"
       description="每行一筆：`站點編號,治具編號,數量`。若找不到會先比對相似資料，再讓你確認、替換或新增。"

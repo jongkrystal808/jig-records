@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed } from "vue";
 
 import UiSplitDetailLayout from "@/components/UiSplitDetailLayout.vue";
 import UiStatusPill from "@/components/UiStatusPill.vue";
@@ -10,6 +10,7 @@ const TRANSACTION_PREVIEW_COUNT = 8;
 
 const props = defineProps<{
   fixture: Fixture | null;
+  canOperateInventory: boolean;
   stock: StockSummary | null;
   imageUrl: string;
   imageLoadFailed: boolean;
@@ -22,54 +23,23 @@ const props = defineProps<{
   formatCount: (value: number) => string;
   formatDate: (value: string | null | undefined) => string;
   stockTone: (status: StockStatus | undefined) => "normal" | "warn" | "danger" | "muted";
-  transactionHistoryLoaded: boolean;
-  transactionHistoryLoading: boolean;
 }>();
 
 const emit = defineEmits<{
-  loadTransactionHistory: [];
+  openTransactionOverview: [];
+  openBatchImport: [];
 }>();
 
 function transactionTypeLabel(value: MaterialTransaction["transaction_type"]): string {
   return value === "receipt" ? "收料" : "退料";
 }
 
-// Keep transaction expansion local to the panel so the page only provides recent rows and not presentation state.
-const transactionsExpanded = ref(false);
-const visibleTransactions = computed(() =>
-  transactionsExpanded.value ? props.transactions : props.transactions.slice(0, TRANSACTION_PREVIEW_COUNT)
-);
-const hiddenTransactionCount = computed(() => Math.max(props.transactions.length - TRANSACTION_PREVIEW_COUNT, 0));
-const shouldShowTransactionHistoryAction = computed(
-  () => props.transactions.length > 0 && (!props.transactionHistoryLoaded || hiddenTransactionCount.value > 0 || transactionsExpanded.value)
-);
-const transactionToggleLabel = computed(() => {
-  if (transactionsExpanded.value) {
-    return "收合";
-  }
-  if (!props.transactionHistoryLoaded) {
-    return "查看更多歷史記錄";
-  }
-  return `顯示更多（+${hiddenTransactionCount.value}）`;
-});
-
-function toggleTransactions(): void {
-  if (transactionsExpanded.value) {
-    transactionsExpanded.value = false;
-    return;
-  }
-  transactionsExpanded.value = true;
-  if (!props.transactionHistoryLoaded) {
-    emit("loadTransactionHistory");
-  }
+function displayTransactionNo(value: string | null): string {
+  return value?.trim() || "（無單號）";
 }
 
-watch(
-  () => props.fixture?.id,
-  () => {
-    transactionsExpanded.value = false;
-  }
-);
+const visibleTransactions = computed(() => props.transactions.slice(0, TRANSACTION_PREVIEW_COUNT));
+const shouldShowTransactionOverviewAction = computed(() => props.transactions.length > 0);
 </script>
 
 <template>
@@ -108,6 +78,10 @@ watch(
           <img v-if="imageUrl && !imageLoadFailed" :src="imageUrl" :alt="fixture?.code || 'fixture image'" />
           <div v-else class="ui-image-placeholder">目前沒有可顯示的圖片</div>
         </div>
+
+        <div v-if="fixture && canOperateInventory" class="section-actions section-actions-left">
+          <button class="section-toggle-btn" type="button" @click="emit('openBatchImport')">以此治具收 / 退料</button>
+        </div>
       </section>
     </template>
 
@@ -123,7 +97,7 @@ watch(
       </section>
 
       <section v-if="visibleSections.transactions" class="ui-panel-card">
-        <div class="ui-section-head"><h3>收退料記錄</h3><span class="section-meta">{{ transactions.length }} 筆</span></div>
+        <div class="ui-section-head"><h3>收退料記錄</h3><span class="section-meta">近期 {{ visibleTransactions.length }} 筆</span></div>
         <table v-if="transactions.length > 0" class="ui-info-table">
           <thead>
             <tr><th>類型</th><th>日期</th><th>單號</th><th>datecode/編號</th><th>數量</th></tr>
@@ -132,15 +106,15 @@ watch(
             <tr v-for="tx in visibleTransactions" :key="tx.id">
               <td><span class="status-pill" :class="tx.transaction_type">{{ transactionTypeLabel(tx.transaction_type) }}</span></td>
               <td>{{ formatDate(tx.occurred_at) }}</td>
-              <td>{{ tx.transaction_no }}</td>
+              <td>{{ displayTransactionNo(tx.transaction_no) }}</td>
               <td>{{ tx.items[0]?.identifier || "-" }}</td>
               <td>{{ formatCount(tx.items.reduce((sum, item) => sum + item.quantity, 0)) }}</td>
             </tr>
           </tbody>
         </table>
-        <div v-if="shouldShowTransactionHistoryAction" class="section-actions">
-          <button class="section-toggle-btn" type="button" :disabled="transactionHistoryLoading" @click="toggleTransactions">
-            {{ transactionHistoryLoading ? "載入歷史記錄中..." : transactionToggleLabel }}
+        <div v-if="shouldShowTransactionOverviewAction" class="section-actions">
+          <button class="section-toggle-btn" type="button" @click="emit('openTransactionOverview')">
+            到總檢視看完整歷史
           </button>
         </div>
         <div v-else class="ui-empty-text">尚無相關收退料資料</div>
@@ -204,6 +178,10 @@ p {
   display: flex;
   justify-content: flex-end;
   margin-top: 10px;
+}
+
+.section-actions-left {
+  justify-content: flex-start;
 }
 
 .section-toggle-btn {

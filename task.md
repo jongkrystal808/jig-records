@@ -57,10 +57,10 @@
 
 ## Current Snapshot
 
-- 目前 `App.vue` 已改為頂部 shell，不再使用左側常駐導覽；頂欄包含登入狀態、客戶切換、今日統計、全域 `收/退料` 與 `收退料資訊匯出` 入口，以及 `更多功能` 選單。
+- 目前 `App.vue` 已改為頂部 shell，不再使用左側常駐導覽；頂欄包含登入狀態、客戶切換、今日統計、全域 `收/退料` 與 `匯出中心` 入口，以及 `更多功能` 選單。
 - 目前 shell 仍沒有桌面版 mini sidebar；手機版則維持漢堡選單 / overlay 導覽。
 - 新手教學入口已搬到全域 shell：桌面版在 `AppTopbar`，手機版在 `AppMobileDrawer`；教學啟動方式改為開啟 flow picker，而不是綁在 `SearchWorkspacePage` 浮動按鈕。
-- 新手教學 flow 已再收斂成四張卡：`查詢工作台`、`批次收 / 退料 & 收退料總檢視`、`治具 / 機種 / 站點主資料`、`機種站點對應 & 站點治具需求`。
+- 新手教學 flow 目前是五張卡：`查詢工作台`、`批次收 / 退料 & 收退料總檢視`、`治具 / 機種 / 站點主資料`、`產能設定與治具需求`、`收退料帳目管理 / 治具資料品質`。
 - `SearchWorkspacePage` 已移除 `相近編號` 提示框，查詢首頁目前只保留最近收 / 退料治具快捷入口與結果區導向流程。
 - `MasterPage` 已有前端分頁；`SearchWorkspacePage` 也已改為 bounded search contract + `load more`。
 - `SearchWorkspacePage` 目前仍沒有可收合的篩選區。
@@ -74,12 +74,27 @@
   - 其餘值：視為 legacy `identifier / datecode`，寫入與查詢都以原值處理。
 - 這套規則已集中到 `backend/app/utils/identifier_rules.py`，並有獨立單元測試覆蓋。
 - `BatchImportPanel.vue` 現在會在退料解析階段直接比對目前 `identifier` 庫存，預覽表就能指出哪一筆 `datecode/編號` 無庫存或同批累計退料超量。
+- `BatchImportPanel.vue` 的 `來源` 已改成整批單一選擇：預設 `客供`、可切 `自購`，本批所有 items 送出時共用同一個 `ownership_type`。
 - 收/退料送出失敗時現在會直接顯示 UI toast；後端錯誤訊息也補上「第幾筆 / 第幾列」上下文，不需要再到 F12 console 才能定位。
 - `MasterPage.vue` 已新增 admin-only 的 `收退料帳目管理` 分頁，支援案件清單篩選、明細檢視、撤回單筆交易，以及依客戶全量重算庫存摘要。
+- `收退料帳目管理` 已改成 server-side transaction paging：不再只抓最近 200 筆，改由後端回傳 `page / page_size / total`，並在後端處理單號 / 操作人 / 治具 / 類型篩選。
 - `inventory` 後端已補 `reverse_transaction` 與 `recalculate_inventory_state` 管理 API；撤回會刪除整筆交易後重算庫存，並寫入 audit log。
 - `ProductionPage.vue` 的 batch domain logic 已從 page 抽出：解析、相似比對、逐列狀態同步與批次提交現在集中到 `frontend/src/composables/useProductionBatchImport.ts` 與 `frontend/src/utils/productionBatchImport.ts`。
 - `ProductionPage.vue` 的 editor / autocomplete state 也已抽到 `frontend/src/composables/useProductionEditorState.ts`；四個重複的 autocomplete input 則已收斂成 `frontend/src/components/UiAutocompleteInput.vue`。
 - `ProductionPage.vue` 現在基本只保留 route/data orchestration，原本內嵌的 batch/editor 細節已移出頁面主檔。
+- `ProductionPage.vue` 現在是 `總覽` / `產能設定` 雙模式：`/production` 顯示站點總覽與瓶頸 drill-down，`/production/mapping` 與 `/production/requirements` 共用同一個設定工作區。
+- `ProductionPage.vue` 目前會把 `model_id` 與 `return_to` 保留在 route query；若有 `return_to` 就顯示 `返回來源`，否則 fallback 回 `/search`。
+- `ProductionPage.vue` 的未儲存 mapping / requirement 變更已接到 customer switch guard 與 route leave / browser unload confirm，避免切客戶或離頁時直接丟資料。
+- `ProductionDetailSection.vue` 已改為 `選機種 -> 選站點 -> 配置治具` 的響應式 master-detail 工作區；新增站點不再重輸機種，新增治具不再重輸站點。
+- 產能設定的新建表單預設保持空白，不再自動塞入第一個站點 / 第一支治具；切換機種或站點時也會保護未儲存草稿。
+- 產能頁 dirty-state 只比較可實際儲存的輸入欄位；總覽切換機種 / 站點、進入產能設定或重新整理，不再因自動繼承的 context 誤報未儲存修改。
+- mapped station 即使尚未設定治具需求，也會保留在總覽及設定清單；治具需求表直接顯示庫存、可開站數與限制狀態。
+- 治具需求送出前會以目前庫存預估儲存後最大開站數；guest 產能頁則只保留唯讀檢視，不顯示任何寫入操作。
+- 產能設定第三階段已完成：可將目前站點的整套治具需求複製到同機種其他站點，或跨機種複製到指定站點。
+- 複製預設採安全模式，目標已有相同治具時只顯示衝突並跳過；只有明確勾選覆蓋才會更新不同數量，完全相同的資料仍跳過。
+- 跨機種目標尚未綁定站點時，後端會在同一交易中自動建立 `model_station`；完成後 UI 直接切到目標機種 / 站點並顯示新增、更新、跳過數量。
+- `SearchWorkspacePage.vue` 的治具 / 機種內嵌編輯草稿已接到 customer switch guard，切換頂欄客戶時也會提示未儲存修改。
+- `frontend/src/utils/productionStations.ts` 已把產能頁可選站點收斂成「目前機種已綁定站點」，避免總覽或治具需求預設落到未對應站點而觸發 NG capacity request。
 - `RequestValidationError` payload 已修正為 JSON-safe 序列化，欄位驗證失敗會穩定回傳 `422`。
 - `auth token` 目前以受信任內網為前提，`sessionStorage + Bearer token` 方案暫不列為本輪必要整改。
 - `main.py` 與 Docker image 預設啟動路徑已改為明確 bootstrap launcher；`docker-compose` 的 `api` service 會顯式關閉重複 bootstrap，維持由獨立 `bootstrap` service 先初始化。
@@ -94,13 +109,22 @@
 - 查詢頁已移除 `相近編號` 提示框，只保留最近收 / 退料治具快捷入口。
 - 查詢頁送出搜尋後，會在版面穩定後自動捲動到結果區，不再被 `最近收 / 退料治具` 區塊擠偏。
 - `AppTopbar.vue` 已把 `今日收料 / 今日退料 / 低水位` 從 hover-only 改成 click/tap popover，並支援鍵盤與 `Esc` 關閉。
-- `AppTopbar.vue` 現在於 `1200px` 以下直接切 compact header，不再保留 961-1200px 的雙列桌面頂欄。
+- 頂欄今日統計已改走 `GET /api/v2/inventory/dashboard-summary`：不再由前端抓最近 200 筆交易自行推算，改由後端一次回傳今日收料數、今日退料數、低水位數、最近收料 10 筆、最近退料 10 筆與低水位預覽。
+- `AppTopbar.vue` 現在於 `1366px` 以下直接切 compact header，不再保留中寬桌面下的雙列頂欄。
 - `AppMobileDrawer.vue` 已補可捲動 drawer、sticky header，並把主要功能入口排在統計資訊前方。
 - shell / search / drawer 已補一批無障礙語意：customer picker 名稱、搜尋 input 名稱、mode switch `aria-pressed`、drawer overlay `關閉選單`。
 - 收退料送出已新增 2 分鐘重複交易防呆；遇到相同使用者、相同交易簽章時會先跳確認提示。
 - 若使用者確認重送但沿用同一 `transaction_no`，後端仍會明確提示需修改單號，不會建立第二筆同單號交易。
 - `MasterPage` 已新增 admin-only `治具資料品質` 分頁，可檢查名稱、儲位、圖片、最低水位、機種關聯與 `Identifier`/總庫存一致性。
 - `治具資料品質` 分頁已支援依問題類型篩選、匯出品質 CSV，並依問題類型導向不同頁面。
+- `治具資料品質` 中的 `沒有儲位 / 沒有最低水位` 已改成表格內直接填寫與更新，不需先開彈窗。
+- 儲位欄位規則統一為分欄填寫：`產線儲位`、`部門儲位` 各自獨立，固定提示為「產線儲位、部門儲位分開填寫，只填一個也可」。
+- `治具資料品質` 中的 `沒有任何機種關聯` 會直接導向 `產能管理 / 治具需求`。
+- 全域 `匯出中心` 已整合收退料、主資料、站點設定、治具需求與治具資料品質匯出，不必再記各頁匯出入口。
+- 匯出中心資料集現在會依角色過濾：admin 才看得到 `治具資料品質`，guest / user 不會再看到點了只回 `403` 的選項。
+- 已修正 `GET /api/v2/inventory/admin/transactions` 在 MySQL 的 `500`：admin 收退料帳目管理的 transaction 分頁子查詢不再用 `DISTINCT id` 搭配 `occurred_at` 排序，改為 `transaction id desc`，避免帳目管理整頁無法載入。
+- 收退料 `transaction_no` 規則已正式收斂為前後端都必填：backend 不再自動產生單號，避免和重複交易防呆形成「前端強制人工、後端默默補號」的雙軌狀態。
+- 但歷史讀取已容許舊資料無單號：`/inventory/transactions`、`/inventory/admin/transactions`、`/inventory/transactions/overview` 都會接受 legacy `NULL / 空字串 transaction_no`，前端統一顯示為 `（無單號）`。
 - `MasterPage` 各分頁已具備獨立 URL：`/master/fixtures`、`/master/models`、`/master/stations`、`/master/customers`、`/master/users`、`/master/ledger`、`/master/quality`。
 - 查詢頁已支援從 route query 帶入 `mode` 與 `q`，供跨頁跳轉直接落到指定治具查詢結果。
 - 現行權限與資料行為以 backend router/service/repository 為準；架構文件若有落差需回頭依程式校正。
@@ -111,7 +135,21 @@
 - 目標 MySQL 已升級至 Alembic `0014_fixture_deletion`，transaction item 的 `fixture_id` 可為空並使用 `ON DELETE SET NULL`。
 - 現行 backend customer scope 對 `admin` 與 `user` 都依 `user_customers` 指派；`manage` 權限不會略過客戶範圍。
 - `資料維護` 主清單與 `收退料帳目管理` 清單已把頁數提示、總筆數提示與翻頁動作移到清單最上方，不再放在表格底部。
+- `治具資料品質` 的 `Identifier 庫存與總庫存不一致` 現在跳到 `收退料帳目管理` 時，會自動帶入該治具的篩選條件。
 - `InventoryOverviewPanel.vue` 的總檢視篩選區已改成主篩選 + `進階篩選`，並使用 `4 / 3 / 2 / 1` 欄 responsive 版面，避免筆電第一屏被表單吃滿。
+- `InventoryPage.vue` 的總檢視查詢已改接分頁 detail-row API，查詢條件、頁碼、每頁筆數與 `return_to` 會同步進 route query。
+- `App.vue` / `appState.ts` 現在會從 `sessionStorage` 還原登入 session 與目前客戶，並在切換客戶時整合各頁未儲存防呆訊息。
+- `AppTopbar.vue` 的低水位 popover 已可直接對單一治具點 `收 / 退料`，會用預填治具代碼打開全域批次 modal；訪客不顯示這個 CTA。
+- `BatchImportPanel.vue` 已支援預填治具快捷區；同一批內相同 `治具 + identifier` 的 ready 列會在送出前合併成單筆 payload。
+- `BatchImportPanel.vue` 現在會依入口決定預設操作方式：有預填治具時先進快速模式，只顯示 `datecode/編號 + 數量 + 加入批次`；大型批次貼上框需使用者手動展開。
+- 全域 `收退料` Modal 現在不會再因 `關閉`、`Esc` 或 `收退料總檢視` 直接丟掉草稿；未送出時會先統一跳確認。
+- 全域 `收退料` Modal 也已新增 `sessionStorage` 草稿暫存；同客戶重新打開 modal 時可恢復上次未送出的批次內容。
+- 但批次 `來源` 不會跟著草稿或上次操作保留；`清空`、成功送出與重新開啟後都會回到 `客供` 預設，避免誤送 `自購`。
+- `SearchWorkspacePage.vue` 現在會保留 `mode / q / page / selected_id / detail` 查詢狀態，並在 fixture / model 編輯時加上未儲存離頁確認。
+- 查詢頁治具 detail 已把「完整歷史」動作改為跳轉 `/inventory/overview`，並只帶 `fixture_code + return_to`，避免用最近 8 筆預覽資料反推日期範圍而漏掉更早交易。
+- 查詢頁治具 detail 的 `以此治具收 / 退料` 與頂欄低水位 popover 的 `收 / 退料` 現在都會在訪客模式下直接隱藏，和頂欄主 `治具收/退料` 按鈕保持一致。
+- `ProductionPage.vue` 現在以 `站點設定` 作為 operator-facing 文案；建立或更新治具需求時若底層 `model_station` 不存在，後端會自動補建。
+- `MasterService.build_fixture_quality_report()` 已修正 `missing_storage_location` 判定：只要 `產線儲位` 或 `部門儲位` 任一存在，就不算缺儲位。
 - `MasterPage.vue` 主資料頁雙欄會維持到約 `1100px`；手機寬度改成 `清單 -> 明細` 流程，不再長頁上下來回捲動。
 - `MasterListPanel.vue` 的主資料表格列已支援 `tab` 聚焦與 `Enter / Space` 開啟明細。
 
@@ -206,6 +244,13 @@
 - [x] `ProductionPage.vue` 移除 editor / autocomplete state 與 selection sync 細節
 - [x] 新增 `useProductionEditorState.ts` composable 集中管理編輯狀態、未儲存變更判斷與 autocomplete handlers
 - [x] 新增 `UiAutocompleteInput.vue` 共用元件，收斂 `ProductionDetailSection.vue` 內四個重複欄位模板
+
+### 10.3.1) Production route / station workflow 校正
+- [x] `ProductionPage.vue` 以 `總覽` / `產能設定` 雙模式收斂 route workflow
+- [x] `model_id` 與 `return_to` 由 production route query 持續同步，刷新與跨頁返回都保留上下文
+- [x] 未儲存的 mapping / requirement 變更接入 customer switch guard、route leave 與 browser unload confirm
+- [x] 站點可選範圍統一收斂為目前機種已綁定站點，不再預設落到同客戶但未對應的站點
+- [x] 新增 `frontend/src/utils/productionStations.ts` 與前端測試，固定 model-scoped station derivation 行為
 
 ### 10.4) 收退料帳目管理與庫存修復
 - [x] `MasterPage.vue` 新增 admin-only `ledger` 分頁
@@ -492,7 +537,7 @@
 - 已補強收退料與產能頁教學文案，明確說明：
   - 收退料批次貼上支援的格式
   - 收料遇到未建治具時的 `needs-confirm / needs-add` 處理方式
-  - 產能頁先做 `Model-Station Mapping`，再做 `Fixture Requirement` 的操作順序
+- 產能頁 UI 已改成以 `站點設定` 與 `治具需求` 呈現；新增治具需求時不再要求先手動建立 `Model-Station Mapping`
 - 已為 `ProductionDetailSection.vue` 補上 onboarding 用的 `data-tour` anchor，讓 mapping / requirement 表單與列表可被精準對位。
 - 已修正導覽偏移問題：
   - `GuidedTour.vue` 改為依實際卡片高度定位，不再使用固定高度估算
@@ -508,6 +553,51 @@
 - 已重新驗證 `frontend\\npm run build` 通過。
 - 已同步更新 `ARCHITECTURE.md`、`ARCHITECTURE_LANDING.md`、`frontend-map.md`、`backend-map.md`、`map.md`，補上版本公告定位與收退料批次貼上 `Tab` 行為說明。
 
+### 2026-07-27
+
+- 已新增收退料總檢視分頁 API：
+  - backend 新增 `GET /api/v2/inventory/transactions/overview`。
+  - response contract 為 `items / page / page_size / total`，每列直接對應單一 transaction item，而不是先回 parent transaction 再由前端展開。
+- `InventoryPage.vue` 已把 `/inventory/overview` 改接上述分頁 API：
+  - route query 會保留 `transaction_type / date_from / date_to / fixture_code / transaction_no / tracking_code / created_by / page / page_size`。
+  - 若從其他頁面帶 `return_to` 進來，總檢視頁會顯示 `返回來源`。
+- `InventoryOverviewPanel.vue` 已補齊：
+  - `共幾筆 / 第幾頁` 提示
+  - `50 / 100` 每頁切換
+  - 指定頁碼跳轉
+  - sticky table header
+- `BatchImportPanel.vue` 已補兩個新行為：
+  - 可接收預填治具代碼，讓 topbar / 查詢頁可直接把單一治具帶進批次 modal。
+  - 送出前會把同批內相同 `fixture_id + identifier` 的 ready 列合併，避免重複 item 只在前端預覽累計、實際 payload 卻仍拆多列。
+- `App.vue` / `AppGlobalModals.vue` / `BatchImportPanel.vue` 已把 modal 草稿保護收斂成單一路徑：
+  - `關閉`
+  - `Esc`
+  - `收退料總檢視`
+  都會先檢查未送出草稿，再決定是否真的離開。
+- `BatchImportPanel.vue` 現在會把全域 modal 草稿暫存到 `sessionStorage`；同客戶下重新打開 modal 時會自動恢復。
+- `App.vue` / `appState.ts` 已把 shell-level 狀態再往前收斂：
+  - session 與 selected customer 直接由 `sessionStorage` 還原
+  - 新增 `customerSwitchGuards`
+  - 新增 `requestInventoryBatchOpen()` 供其他頁面直接要求打開全域收退料 modal
+- `AppTopbar.vue` 的低水位列表已支援直接對單一治具開 `收 / 退料`；`AppGlobalModals.vue` 會把該治具代碼傳給共用 `BatchImportPanel.vue`。
+- `SearchWorkspacePage.vue` 已補 route restore 與 dirty guard：
+  - 支援 `mode / q / page / selected_id / detail`
+  - fixture / model 編輯中離頁、切查詢模式、換結果或重整頁面前都會先確認
+  - fixture detail 的歷史動作改為導向 `/inventory/overview`，並只保留 `fixture_code + return_to`
+- `FixtureInfoPanel.vue` 已改成兩個明確動作：
+  - `以此治具收 / 退料`
+  - `到總檢視看完整歷史`
+- `ProductionPage.vue` / `ProductionDetailSection.vue` 已把 configure flow 再收斂成單一工作區：
+  - operator-facing 文案改成 `站點設定`
+  - 上方站點清單可直接帶動下方 requirement station 選擇
+  - requirement 建立 / 更新時若缺底層 `model_station`，後端 `ProductionService` 會自動補建
+- `FixtureQualityPanel.vue` 與 backend quality report 已對齊新的儲位語意：
+  - `沒有儲位 / 沒有最低水位` 仍可列內修正
+  - 但 `missing_storage_location` 現在只會在 `產線儲位` 與 `部門儲位` 都缺時才成立
+- onboarding 文案已同步改成目前實作：
+  - `收退料明細匯出` 改為全域 `匯出中心`
+  - `產能設定與治具需求` 改成同頁連續操作，而不是先切 Mapping 再切 Requirement
+
 ### 2026-07-16
 
 - 已把 `MasterPage` 分頁正式拆成獨立 URL：
@@ -521,9 +611,9 @@
   - `/master` 會自動導向 `/master/fixtures`。
 - `MasterPage.vue` 現在會依路由反向同步 tab state，因此直接貼網址也能打開正確分頁。
 - `治具資料品質` 的問題跳轉規則已改成依 issue code 分流：
-  - `沒有儲位`、`沒有最低水位`：跳到該治具的 `治具資訊`。
+  - `沒有儲位`、`沒有最低水位`：直接在品質表列內修正並送出。
   - `沒有圖片`：不跳轉。
-  - `沒有任何機種關聯`：跳到查詢頁該治具的查詢結果。
+  - `沒有任何機種關聯`：跳到 `產能管理 / 治具需求`。
 - `SearchWorkspacePage.vue` 已支援從 query string 接收 `mode` 與 `q`，供品質頁等跨頁流程直接帶入搜尋條件。
 - 已重新驗證：
   - `frontend\npm run build` -> pass
@@ -532,7 +622,7 @@
   - backend 新增 `GET /api/v2/master/fixtures/quality?customer_id=...`。
   - 檢查項目目前包含：沒有名稱、沒有儲位、沒有圖片、沒有最低水位、沒有任何機種關聯、`Identifier` 庫存與總庫存不一致。
 - `FixtureQualityPanel.vue` 已支援三個操作：
-  - 點擊異常治具列，直接切回 `fixture` 編輯分頁並選中該治具。
+  - 針對 `沒有儲位 / 沒有最低水位` 的列，直接在表格內編輯並更新。
   - 依單一問題類型篩選異常列。
   - 匯出目前篩選結果為 `fixture-quality-report.csv`。
 - 已新增 backend 測試，驗證品質報表能抓出上述六類問題。
@@ -597,7 +687,7 @@
   - `max_open_station_count` 以機種整體瓶頸值摘要
   - 舊資料庫 numeric identifier 不同零補齊寬度的相容查詢
   - legacy `2024W12` 類 identifier/datecode 的查詢與匯出相容
-- 已把 `InventoryExportPanel`、`InventoryPage` 篩選 placeholder 與 onboarding 文案更新為相容規則，不再把使用者導向必定失敗的 `Datecode` 輸入格式。
+- 已把 `ExportCenterPanel`、`InventoryPage` 篩選 placeholder 與 onboarding 文案更新為相容規則，不再把使用者導向必定失敗的 `Datecode` 輸入格式。
 - 已將 `InventoryPage` 拆成較薄的頁面容器，並抽出：
   - `frontend/src/components/inventory/InventoryOperationBoard.vue`
   - `frontend/src/components/inventory/InventoryOverviewPanel.vue`
@@ -635,7 +725,7 @@
   - `status-pill.batch-state` 與 `ready / needs-confirm / needs-add / error / skipped`：批次匯入狀態膠囊
 - 已將 `MasterPage` 的 toolbar 改接 `btn-compact`，並清掉頁面層殘留的 dead button / status CSS。
 - 已將 `BatchImportPanel` 的 batch row action、accent submit/ghost button、status pill 改接共用 utility，只保留 panel accent 變體本身。
-- 已將 `InventoryExportPanel` 從暖色系收斂回專案主流藍白配色，header pill、filter card、preview chip 與操作按鈕已與全站主色一致，不再保留額外暖色 utility。
+- 已將 `ExportCenterPanel` 收斂到專案主流藍白配色，header pill、filter card、preview chip 與操作按鈕已與全站主色一致。
 - 已將 `frontend/src/api.ts` 從單一大型實作檔收斂為穩定 barrel 入口，對外仍維持 `import { api } from "@/api"` 不變；內部則拆成：
   - `frontend/src/api/core.ts`
   - `frontend/src/api/authClient.ts`
@@ -669,7 +759,7 @@
   - `P1`：修正 `get_model_query` 摘要產能算法；拆除 startup 內的 migration / bootstrap 副作用。
   - `P2`：持續拆分大型前端頁面與 `api.ts` / shell 模組。
 - 已重新同步 `task.md`、`ARCHITECTURE.md`、`frontend-map.md`、`backend-map.md`、`map.md`、`ARCHITECTURE_LANDING.md`，讓文件描述對齊目前 topbar shell、全域收退料/匯出 modal、onboarding 導覽與教學模式。
-- 已在文件中補上 `GuidedTour`、`frontend/src/onboarding.ts`、`InventoryExportPanel.vue`、搜尋頁「相近編號」提示收斂等最新前端結構。
+- 已在文件中補上 `GuidedTour`、`frontend/src/onboarding.ts`、`ExportCenterPanel.vue`、搜尋頁「相近編號」提示收斂等最新前端結構。
 - 已確認 `requirements.txt` 原本就包含 `openpyxl`；本次已補安裝到目前 `.venv`，排除測試因缺套件而在 import 階段直接失敗的問題。
 - 已重新驗證 `npm run build` 通過。
 - 已重新驗證 `.venv\\Scripts\\python.exe -m pytest tests -q`，目前結果為 `4 passed, 1 failed`。

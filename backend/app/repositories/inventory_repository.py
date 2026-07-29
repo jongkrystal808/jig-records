@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.orm import Session
@@ -16,6 +16,125 @@ class InventoryRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
+    @staticmethod
+    def _normalize_transaction_no(value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @staticmethod
+    def _serialize_transaction_item_row(row: dict) -> dict:
+        return {
+            "fixture_id": row["fixture_id"],
+            "fixture_code": row["fixture_code"],
+            "fixture_name": row["fixture_name"],
+            "ownership_type": row["ownership_type"],
+            "identifier": row["identifier"],
+            "quantity": row["quantity"],
+            "note": row["note"],
+        }
+
+    def _build_transaction_id_stmt(
+        self,
+        *,
+        customer_id: int | None = None,
+        fixture_id: int | None = None,
+        transaction_type: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        fixture_code: str | None = None,
+        transaction_no: str | None = None,
+        identifier_exact_matches: list[str] | None = None,
+        identifier_contains: str | None = None,
+        created_by: str | None = None,
+    ):
+        fixture_code_expr = func.coalesce(Fixture.code, MaterialTransactionItem.deleted_fixture_code)
+        stmt = (
+            select(MaterialTransaction.id)
+            .join(MaterialTransactionItem, MaterialTransactionItem.transaction_id == MaterialTransaction.id)
+            .outerjoin(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
+            .distinct()
+        )
+        if customer_id is not None:
+            stmt = stmt.where(MaterialTransaction.customer_id == customer_id)
+        if fixture_id is not None:
+            stmt = stmt.where(MaterialTransactionItem.fixture_id == fixture_id)
+        if transaction_type:
+            stmt = stmt.where(MaterialTransaction.transaction_type == transaction_type)
+        if date_from is not None:
+            stmt = stmt.where(MaterialTransaction.occurred_at >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(MaterialTransaction.occurred_at <= date_to)
+        stmt = self._apply_fixture_code_filter(stmt, fixture_code_expr, fixture_code)
+        if transaction_no:
+            stmt = stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
+        stmt = self._apply_identifier_filter(
+            stmt,
+            identifier_exact_matches=identifier_exact_matches,
+            identifier_contains=identifier_contains,
+        )
+        if created_by:
+            stmt = stmt.where(MaterialTransaction.created_by.ilike(f"%{created_by.strip()}%"))
+        return stmt
+
+    def _list_transaction_items(self, transaction_ids: list[int], *, fixture_id: int | None = None) -> dict[int, list[dict]]:
+        if not transaction_ids:
+            return {}
+        fixture_code_expr = func.coalesce(Fixture.code, MaterialTransactionItem.deleted_fixture_code)
+        fixture_name_expr = func.coalesce(Fixture.name, MaterialTransactionItem.deleted_fixture_name)
+        item_stmt = (
+            select(
+                MaterialTransactionItem.transaction_id,
+                MaterialTransactionItem.fixture_id,
+                MaterialTransactionItem.ownership_type,
+                MaterialTransactionItem.identifier,
+                MaterialTransactionItem.quantity,
+                MaterialTransactionItem.note,
+                fixture_code_expr.label("fixture_code"),
+                fixture_name_expr.label("fixture_name"),
+            )
+            .outerjoin(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
+            .where(MaterialTransactionItem.transaction_id.in_(transaction_ids))
+            .order_by(MaterialTransactionItem.id.asc())
+        )
+        if fixture_id is not None:
+            item_stmt = item_stmt.where(MaterialTransactionItem.fixture_id == fixture_id)
+        item_rows = [dict(row._mapping) for row in self.db.execute(item_stmt).all()]
+        item_map: dict[int, list[dict]] = {}
+        for row in item_rows:
+            item_map.setdefault(row["transaction_id"], []).append(self._serialize_transaction_item_row(row))
+        return item_map
+
+    def _build_transaction_payloads(self, transaction_ids: list[int], *, fixture_id: int | None = None) -> list[dict]:
+        if not transaction_ids:
+            return []
+        tx_stmt = select(MaterialTransaction).where(MaterialTransaction.id.in_(transaction_ids))
+        transactions = list(self.db.scalars(tx_stmt))
+        if not transactions:
+            return []
+        transaction_map = {row.id: row for row in transactions}
+        item_map = self._list_transaction_items(transaction_ids, fixture_id=fixture_id)
+        result: list[dict] = []
+        for transaction_id in transaction_ids:
+            tx = transaction_map.get(transaction_id)
+            if tx is None:
+                continue
+            result.append(
+                {
+                    "id": tx.id,
+                    "customer_id": tx.customer_id,
+                    "transaction_type": tx.transaction_type,
+                    "transaction_no": self._normalize_transaction_no(tx.transaction_no),
+                    "occurred_at": tx.occurred_at,
+                    "created_by": tx.created_by,
+                    "note": tx.note,
+                    "created_at": tx.created_at,
+                    "items": item_map.get(tx.id, []),
+                }
+            )
+        return result
+
     def create_transaction(
         self,
         *,
@@ -23,24 +142,20 @@ class InventoryRepository:
         transaction_type: str,
         occurred_at: datetime,
         created_by: str,
-        transaction_no: str | None,
+        transaction_no: str,
         note: str | None,
     ) -> MaterialTransaction:
-        normalized_transaction_no = (transaction_no or "").strip()
-        temp_no = normalized_transaction_no or f"TMP-{datetime.now(tz=timezone.utc):%Y%m%d%H%M%S%f}-{customer_id}"
+        normalized_transaction_no = transaction_no.strip()
         transaction = MaterialTransaction(
             customer_id=customer_id,
             transaction_type=transaction_type,
-            transaction_no=temp_no,
+            transaction_no=normalized_transaction_no,
             occurred_at=occurred_at,
             created_by=created_by,
             note=note,
         )
         self.db.add(transaction)
         self.db.flush()
-        if not normalized_transaction_no:
-            prefix = "RCV" if transaction_type == "receipt" else "RTN"
-            transaction.transaction_no = f"{prefix}-{occurred_at:%Y%m%d}-{transaction.id:06d}"
         return transaction
 
     def add_transaction_item(
@@ -311,6 +426,54 @@ class InventoryRepository:
             stmt = stmt.where(Fixture.customer_id == customer_id)
         return [dict(row._mapping) for row in self.db.execute(stmt).all()]
 
+    def summarize_transaction_quantities_on_date(self, target_date: date, *, customer_id: int | None = None) -> dict[str, int]:
+        stmt = (
+            select(
+                MaterialTransaction.transaction_type.label("transaction_type"),
+                func.coalesce(func.sum(MaterialTransactionItem.quantity), 0).label("quantity"),
+            )
+            .join(MaterialTransactionItem, MaterialTransactionItem.transaction_id == MaterialTransaction.id)
+            .where(func.date(MaterialTransaction.occurred_at) == target_date.isoformat())
+            .group_by(MaterialTransaction.transaction_type)
+        )
+        if customer_id is not None:
+            stmt = stmt.where(MaterialTransaction.customer_id == customer_id)
+        totals = {"receipt": 0, "return": 0}
+        for row in self.db.execute(stmt).all():
+            totals[str(row.transaction_type)] = int(row.quantity or 0)
+        return totals
+
+    def list_recent_transaction_item_entries(
+        self,
+        limit: int,
+        *,
+        customer_id: int | None = None,
+        transaction_type: str,
+    ) -> list[dict]:
+        fixture_code_expr = func.coalesce(Fixture.code, MaterialTransactionItem.deleted_fixture_code)
+        stmt = (
+            select(
+                MaterialTransaction.id.label("transaction_id"),
+                MaterialTransactionItem.id.label("transaction_item_id"),
+                MaterialTransaction.transaction_no.label("transaction_no"),
+                MaterialTransaction.occurred_at.label("occurred_at"),
+                fixture_code_expr.label("fixture_code"),
+                MaterialTransactionItem.identifier.label("identifier"),
+                MaterialTransactionItem.quantity.label("quantity"),
+            )
+            .join(MaterialTransactionItem, MaterialTransactionItem.transaction_id == MaterialTransaction.id)
+            .outerjoin(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
+            .where(MaterialTransaction.transaction_type == transaction_type)
+            .order_by(MaterialTransaction.occurred_at.desc(), MaterialTransaction.id.desc(), MaterialTransactionItem.id.desc())
+            .limit(limit)
+        )
+        if customer_id is not None:
+            stmt = stmt.where(MaterialTransaction.customer_id == customer_id)
+        rows = [dict(row._mapping) for row in self.db.execute(stmt).all()]
+        for row in rows:
+            row["transaction_no"] = self._normalize_transaction_no(row["transaction_no"])
+        return rows
+
     def list_identifier_stock_summary_rows(self, customer_id: int | None = None, fixture_id: int | None = None) -> list[dict]:
         stock_qty_expr = (
             func.coalesce(
@@ -360,93 +523,128 @@ class InventoryRepository:
         identifier_contains: str | None = None,
         created_by: str | None = None,
     ) -> list[dict]:
+        tx_id_stmt = self._build_transaction_id_stmt(
+            customer_id=customer_id,
+            fixture_id=fixture_id,
+            transaction_type=transaction_type,
+            date_from=date_from,
+            date_to=date_to,
+            fixture_code=fixture_code,
+            transaction_no=transaction_no,
+            identifier_exact_matches=identifier_exact_matches,
+            identifier_contains=identifier_contains,
+            created_by=created_by,
+        )
+        tx_id_stmt = tx_id_stmt.order_by(MaterialTransaction.id.desc()).limit(limit)
+        tx_ids = list(self.db.scalars(tx_id_stmt))
+        return self._build_transaction_payloads(tx_ids, fixture_id=fixture_id)
+
+    def list_transaction_page(
+        self,
+        page: int,
+        page_size: int,
+        customer_id: int | None = None,
+        *,
+        transaction_type: str | None = None,
+        fixture_code: str | None = None,
+        transaction_no: str | None = None,
+        created_by: str | None = None,
+    ) -> dict:
+        tx_id_stmt = self._build_transaction_id_stmt(
+            customer_id=customer_id,
+            transaction_type=transaction_type,
+            fixture_code=fixture_code,
+            transaction_no=transaction_no,
+            created_by=created_by,
+        )
+        total = int(self.db.scalar(select(func.count()).select_from(tx_id_stmt.order_by(None).subquery())) or 0)
+        paged_tx_id_stmt = (
+            tx_id_stmt.order_by(MaterialTransaction.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        tx_ids = list(self.db.scalars(paged_tx_id_stmt))
+        return {
+            "items": self._build_transaction_payloads(tx_ids),
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+        }
+
+    def list_transaction_overview_page(
+        self,
+        page: int,
+        page_size: int,
+        customer_id: int | None = None,
+        *,
+        transaction_type: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        fixture_code: str | None = None,
+        transaction_no: str | None = None,
+        identifier_exact_matches: list[str] | None = None,
+        identifier_contains: str | None = None,
+        created_by: str | None = None,
+    ) -> dict:
         fixture_code_expr = func.coalesce(Fixture.code, MaterialTransactionItem.deleted_fixture_code)
         fixture_name_expr = func.coalesce(Fixture.name, MaterialTransactionItem.deleted_fixture_name)
-        tx_id_stmt = (
-            select(MaterialTransaction.id)
+        note_expr = func.coalesce(MaterialTransactionItem.note, MaterialTransaction.note)
+        stmt = (
+            select(
+                MaterialTransactionItem.id.label("id"),
+                MaterialTransaction.transaction_type.label("transaction_type"),
+                MaterialTransaction.transaction_no.label("transaction_no"),
+                MaterialTransaction.occurred_at.label("occurred_at"),
+                MaterialTransaction.created_by.label("created_by"),
+                MaterialTransactionItem.fixture_id.label("fixture_id"),
+                fixture_code_expr.label("fixture_code"),
+                fixture_name_expr.label("fixture_name"),
+                MaterialTransactionItem.ownership_type.label("ownership_type"),
+                MaterialTransactionItem.identifier.label("identifier"),
+                MaterialTransactionItem.quantity.label("quantity"),
+                note_expr.label("note"),
+            )
             .join(MaterialTransactionItem, MaterialTransactionItem.transaction_id == MaterialTransaction.id)
             .outerjoin(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
-            .distinct()
         )
         if customer_id is not None:
-            tx_id_stmt = tx_id_stmt.where(MaterialTransaction.customer_id == customer_id)
-        if fixture_id is not None:
-            tx_id_stmt = tx_id_stmt.where(MaterialTransactionItem.fixture_id == fixture_id)
+            stmt = stmt.where(MaterialTransaction.customer_id == customer_id)
         if transaction_type:
-            tx_id_stmt = tx_id_stmt.where(MaterialTransaction.transaction_type == transaction_type)
+            stmt = stmt.where(MaterialTransaction.transaction_type == transaction_type)
         if date_from is not None:
-            tx_id_stmt = tx_id_stmt.where(MaterialTransaction.occurred_at >= date_from)
+            stmt = stmt.where(MaterialTransaction.occurred_at >= date_from)
         if date_to is not None:
-            tx_id_stmt = tx_id_stmt.where(MaterialTransaction.occurred_at <= date_to)
-        if fixture_code:
-            tx_id_stmt = tx_id_stmt.where(fixture_code_expr.ilike(f"%{fixture_code.strip()}%"))
+            stmt = stmt.where(MaterialTransaction.occurred_at <= date_to)
+        stmt = self._apply_fixture_code_filter(stmt, fixture_code_expr, fixture_code)
         if transaction_no:
-            tx_id_stmt = tx_id_stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
-        tx_id_stmt = self._apply_identifier_filter(
-            tx_id_stmt,
+            stmt = stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
+        stmt = self._apply_identifier_filter(
+            stmt,
             identifier_exact_matches=identifier_exact_matches,
             identifier_contains=identifier_contains,
         )
         if created_by:
-            tx_id_stmt = tx_id_stmt.where(MaterialTransaction.created_by.ilike(f"%{created_by.strip()}%"))
-        tx_id_stmt = tx_id_stmt.order_by(MaterialTransaction.id.desc()).limit(limit)
-        tx_ids = list(self.db.scalars(tx_id_stmt))
-        if not tx_ids:
-            return []
+            stmt = stmt.where(MaterialTransaction.created_by.ilike(f"%{created_by.strip()}%"))
 
-        tx_stmt = select(MaterialTransaction).where(MaterialTransaction.id.in_(tx_ids)).order_by(MaterialTransaction.id.desc())
-        transactions = list(self.db.scalars(tx_stmt))
-        if not transactions:
-            return []
-
-        item_stmt = (
-            select(
-                MaterialTransactionItem.transaction_id,
-                MaterialTransactionItem.fixture_id,
-                MaterialTransactionItem.ownership_type,
-                MaterialTransactionItem.identifier,
-                MaterialTransactionItem.quantity,
-                MaterialTransactionItem.note,
-                fixture_code_expr.label("fixture_code"),
-                fixture_name_expr.label("fixture_name"),
+        total = int(self.db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0)
+        paged_stmt = (
+            stmt.order_by(
+                MaterialTransaction.occurred_at.desc(),
+                MaterialTransaction.id.desc(),
+                MaterialTransactionItem.id.desc(),
             )
-            .outerjoin(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
-            .where(MaterialTransactionItem.transaction_id.in_(tx_ids))
-            .order_by(MaterialTransactionItem.id.asc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
         )
-        if fixture_id is not None:
-            item_stmt = item_stmt.where(MaterialTransactionItem.fixture_id == fixture_id)
-        item_rows = [dict(row._mapping) for row in self.db.execute(item_stmt).all()]
-        item_map: dict[int, list[dict]] = {}
-        for row in item_rows:
-            item_map.setdefault(row["transaction_id"], []).append(
-                {
-                    "fixture_id": row["fixture_id"],
-                    "fixture_code": row["fixture_code"],
-                    "fixture_name": row["fixture_name"],
-                    "ownership_type": row["ownership_type"],
-                    "identifier": row["identifier"],
-                    "quantity": row["quantity"],
-                    "note": row["note"],
-                }
-            )
-
-        result: list[dict] = []
-        for tx in transactions:
-            result.append(
-                {
-                    "id": tx.id,
-                    "customer_id": tx.customer_id,
-                    "transaction_type": tx.transaction_type,
-                    "transaction_no": tx.transaction_no,
-                    "occurred_at": tx.occurred_at,
-                    "created_by": tx.created_by,
-                    "note": tx.note,
-                    "created_at": tx.created_at,
-                    "items": item_map.get(tx.id, []),
-                }
-            )
-        return result
+        rows = [dict(row._mapping) for row in self.db.execute(paged_stmt).all()]
+        for row in rows:
+            row["transaction_no"] = self._normalize_transaction_no(row["transaction_no"])
+        return {
+            "items": rows,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+        }
 
     def list_transaction_item_rows(
         self,
@@ -488,8 +686,7 @@ class InventoryRepository:
             stmt = stmt.where(MaterialTransaction.occurred_at >= date_from)
         if date_to is not None:
             stmt = stmt.where(MaterialTransaction.occurred_at <= date_to)
-        if fixture_code:
-            stmt = stmt.where(fixture_code_expr.ilike(f"%{fixture_code.strip()}%"))
+        stmt = self._apply_fixture_code_filter(stmt, fixture_code_expr, fixture_code)
         if transaction_no:
             stmt = stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
         stmt = self._apply_identifier_filter(
@@ -517,6 +714,17 @@ class InventoryRepository:
         if not clauses:
             return stmt
         return stmt.where(or_(*clauses))
+
+    @staticmethod
+    def _apply_fixture_code_filter(stmt, fixture_code_expr, fixture_code: str | None):
+        if not fixture_code:
+            return stmt
+        keywords = [value.strip() for value in fixture_code.split(",") if value.strip()]
+        if not keywords:
+            return stmt
+        if len(keywords) == 1:
+            return stmt.where(fixture_code_expr.ilike(f"%{keywords[0]}%"))
+        return stmt.where(or_(*[fixture_code_expr.ilike(f"%{keyword}%") for keyword in keywords]))
 
     def summarize_transactions_by_fixture(self, customer_id: int | None = None) -> dict[int, dict]:
         stock_qty_expr = func.coalesce(

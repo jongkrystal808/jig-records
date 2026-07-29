@@ -5,7 +5,10 @@ import { RouterView, useRoute, useRouter } from "vue-router";
 import { api } from "@/api";
 import {
   authSession,
+  customerSwitchGuards,
   customers,
+  inventoryBatchShortcutFixtureCode,
+  inventoryBatchShortcutRequestId,
   onboardingActive,
   onboardingFlowId,
   onboardingPickerOpen,
@@ -23,33 +26,48 @@ import GuidedTour from "@/components/common/GuidedTour.vue";
 import OnboardingFlowPicker from "@/components/common/OnboardingFlowPicker.vue";
 import { getOnboardingFlow, onboardingFlows } from "@/onboarding";
 import { dismissToast, pushToast, toasts } from "@/toastState";
-import type { MaterialTransaction } from "@/types";
-import { formatLocalDateKey as formatDateKey } from "@/utils/date";
 import type { OnboardingFlowId } from "@/onboarding";
 
 const SESSION_KEY = "jig-record-session";
 const CUSTOMER_KEY = "jig-record-customer-id";
+
+type TopbarRecentEntry = {
+  id: string;
+  occurredAt: string;
+  transactionNo: string | null;
+  fixtureCode: string;
+  identifier: string;
+  quantity: number;
+};
 
 const route = useRoute();
 const router = useRouter();
 const todayReceiptQty = ref(0);
 const todayReturnQty = ref(0);
 const lowStockCount = ref(0);
-const recentTodayTransactions = ref<MaterialTransaction[]>([]);
-const topbarAlerts = ref<Array<{ fixture_id: number; fixture_code: string; fixture_name: string; stock_qty: number; min_stock_qty: number; stock_status: "low_stock" | "out_of_stock" }>>([]);
+const recentReceiptEntries = ref<TopbarRecentEntry[]>([]);
+const recentReturnEntries = ref<TopbarRecentEntry[]>([]);
+const lowStockPreviewEntries = ref<Array<{ fixture_id: number; fixture_code: string; fixture_name: string; stock_qty: number; min_stock_qty: number; stock_status: "low_stock" | "out_of_stock" }>>([]);
+const hasMoreLowStockEntries = ref(false);
 const loginForm = ref({ username: "", password: "" });
 const loggingIn = ref(false);
 const moreMenuOpen = ref(false);
 const mobileMenuOpen = ref(false);
 const batchModalOpen = ref(false);
 const exportModalOpen = ref(false);
+const batchPresetFixtureCode = ref("");
+const batchDraftState = ref({
+  hasPendingDraft: false,
+  pendingRowCount: 0,
+  promptMessage: ""
+});
 
 const currentCustomerId = computed(() => selectedCustomerId.value ?? undefined);
+const currentRole = computed(() => authSession.value?.role ?? "guest");
 const selectedCustomer = computed(() => customers.value.find((row) => row.id === selectedCustomerId.value) ?? null);
 const canEnterMaster = computed(() => authSession.value?.role !== "guest");
 const canOperateInventory = computed(() => authSession.value?.role !== "guest");
 const canAccessAdminOnboarding = computed(() => authSession.value?.role === "admin");
-const today = computed(() => formatDateKey(new Date()));
 const currentOnboardingFlow = computed(() => getOnboardingFlow(onboardingFlowId.value));
 const currentOnboardingSteps = computed(() => currentOnboardingFlow.value?.steps ?? []);
 const currentOnboardingStep = computed(() => currentOnboardingSteps.value[onboardingStepIndex.value] ?? null);
@@ -93,7 +111,7 @@ function closeActiveModal(): void {
     return;
   }
   if (batchModalOpen.value) {
-    batchModalOpen.value = false;
+    closeBatchModal();
   }
 }
 
@@ -221,68 +239,42 @@ async function startOnboardingFlow(flowId: OnboardingFlowId): Promise<void> {
 
 async function loadTopbarStats(): Promise<void> {
   try {
-    const [alerts, transactions] = await Promise.all([
-      api.listAlerts(currentCustomerId.value),
-      api.listTransactions(200, currentCustomerId.value)
-    ]);
-    topbarAlerts.value = alerts;
-    recentTodayTransactions.value = transactions.filter((tx) => formatDateKey(new Date(tx.occurred_at)) === today.value);
-    lowStockCount.value = alerts.length;
-    todayReceiptQty.value = recentTodayTransactions.value
-      .filter((tx) => tx.transaction_type === "receipt")
-      .reduce((sum, tx) => sum + tx.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
-    todayReturnQty.value = recentTodayTransactions.value
-      .filter((tx) => tx.transaction_type === "return")
-      .reduce((sum, tx) => sum + tx.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
+    const summary = await api.listDashboardSummary(currentCustomerId.value);
+    lowStockPreviewEntries.value = summary.low_stock_preview_entries;
+    hasMoreLowStockEntries.value = summary.has_more_low_stock_entries;
+    lowStockCount.value = summary.low_stock_count;
+    todayReceiptQty.value = summary.today_receipt_qty;
+    todayReturnQty.value = summary.today_return_qty;
+    recentReceiptEntries.value = summary.recent_receipt_entries.map((entry) => ({
+      id: `receipt-${entry.transaction_item_id}`,
+      occurredAt: entry.occurred_at,
+      transactionNo: entry.transaction_no,
+      fixtureCode: entry.fixture_code,
+      identifier: entry.identifier || "-",
+      quantity: entry.quantity
+    }));
+    recentReturnEntries.value = summary.recent_return_entries.map((entry) => ({
+      id: `return-${entry.transaction_item_id}`,
+      occurredAt: entry.occurred_at,
+      transactionNo: entry.transaction_no,
+      fixtureCode: entry.fixture_code,
+      identifier: entry.identifier || "-",
+      quantity: entry.quantity
+    }));
   } catch {
-    topbarAlerts.value = [];
-    recentTodayTransactions.value = [];
+    recentReceiptEntries.value = [];
+    recentReturnEntries.value = [];
+    lowStockPreviewEntries.value = [];
+    hasMoreLowStockEntries.value = false;
     todayReceiptQty.value = 0;
     todayReturnQty.value = 0;
     lowStockCount.value = 0;
   }
 }
 
-const recentReceiptEntries = computed(() =>
-  recentTodayTransactions.value
-    .filter((tx) => tx.transaction_type === "receipt")
-    .flatMap((tx) =>
-      tx.items.map((item, index) => ({
-        id: `${tx.id}-${index}`,
-        occurredAt: tx.occurred_at,
-        transactionNo: tx.transaction_no,
-        fixtureCode: item.fixture_code,
-        identifier: item.identifier || "-",
-        quantity: item.quantity
-      }))
-    )
-    .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
-    .slice(0, 10)
-);
-
-const recentReturnEntries = computed(() =>
-  recentTodayTransactions.value
-    .filter((tx) => tx.transaction_type === "return")
-    .flatMap((tx) =>
-      tx.items.map((item, index) => ({
-        id: `${tx.id}-${index}`,
-        occurredAt: tx.occurred_at,
-        transactionNo: tx.transaction_no,
-        fixtureCode: item.fixture_code,
-        identifier: item.identifier || "-",
-        quantity: item.quantity
-      }))
-    )
-    .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
-    .slice(0, 10)
-);
-
 function formatHoverDate(value: string): string {
   return dateTimeFormatter.format(new Date(value));
 }
-
-const lowStockPreviewEntries = computed(() => topbarAlerts.value.slice(0, 20));
-const hasMoreLowStockEntries = computed(() => topbarAlerts.value.length > 20);
 
 async function login(): Promise<void> {
   loggingIn.value = true;
@@ -317,14 +309,16 @@ async function guestEntry(): Promise<void> {
 
 function logout(): void {
   resetSession();
-  topbarAlerts.value = [];
-  recentTodayTransactions.value = [];
+  recentReceiptEntries.value = [];
+  recentReturnEntries.value = [];
+  lowStockPreviewEntries.value = [];
+  hasMoreLowStockEntries.value = false;
   todayReceiptQty.value = 0;
   todayReturnQty.value = 0;
   lowStockCount.value = 0;
   mobileMenuOpen.value = false;
   moreMenuOpen.value = false;
-  batchModalOpen.value = false;
+  closeBatchModal(true);
   exportModalOpen.value = false;
   pushToast("已登出", "info");
 }
@@ -344,13 +338,46 @@ function openLowStockPage(): void {
   void router.push(canOperateInventory.value ? "/inventory" : "/inventory/overview");
 }
 
-function openBatchImport(): void {
+function updateBatchDraftState(value: { hasPendingDraft: boolean; pendingRowCount: number; promptMessage: string }): void {
+  batchDraftState.value = value;
+}
+
+function confirmBatchModalClose(): boolean {
+  if (!batchDraftState.value.hasPendingDraft) {
+    return true;
+  }
+  return window.confirm(batchDraftState.value.promptMessage || "目前有尚未送出的草稿，確定離開嗎？");
+}
+
+function closeBatchModal(force = false): boolean {
+  if (batchModalOpen.value && !force && !confirmBatchModalClose()) {
+    return false;
+  }
+  batchModalOpen.value = false;
+  batchPresetFixtureCode.value = "";
+  batchDraftState.value = {
+    hasPendingDraft: false,
+    pendingRowCount: 0,
+    promptMessage: ""
+  };
+  return true;
+}
+
+function openInventoryOverviewFromBatch(): void {
+  if (!closeBatchModal()) {
+    return;
+  }
+  void router.push("/inventory/overview");
+}
+
+function openBatchImport(fixtureCode?: string): void {
   if (!canOperateInventory.value) {
     pushToast("訪客模式不可進行治具收/退料。", "warning");
     return;
   }
   moreMenuOpen.value = false;
   mobileMenuOpen.value = false;
+  batchPresetFixtureCode.value = (fixtureCode ?? "").trim().toUpperCase();
   batchModalOpen.value = true;
 }
 
@@ -358,6 +385,28 @@ function openInventoryExport(): void {
   moreMenuOpen.value = false;
   mobileMenuOpen.value = false;
   exportModalOpen.value = true;
+}
+
+function confirmCustomerSwitch(nextCustomerId: number | null): boolean {
+  if (nextCustomerId === selectedCustomerId.value) {
+    return false;
+  }
+  const messages = [...new Set(Object.values(customerSwitchGuards.value))];
+  if (messages.length === 0) {
+    return true;
+  }
+  return window.confirm(`切換客戶後，以下未儲存內容會遺失：\n- ${messages.join("\n- ")}\n\n要繼續嗎？`);
+}
+
+function updateSelectedCustomer(nextCustomerId: number | null): void {
+  if (nextCustomerId === selectedCustomerId.value) {
+    return;
+  }
+  if (!confirmCustomerSwitch(nextCustomerId)) {
+    return;
+  }
+  closeBatchModal(true);
+  selectedCustomerId.value = nextCustomerId;
 }
 
 watch(authSession, (value) => {
@@ -397,22 +446,12 @@ watch(
   }
 );
 
+watch(inventoryBatchShortcutRequestId, () => {
+  openBatchImport(inventoryBatchShortcutFixtureCode.value);
+});
+
 onMounted(async () => {
   window.addEventListener("keydown", handleGlobalKeydown);
-  const savedSession = sessionStorage.getItem(SESSION_KEY);
-  if (savedSession) {
-    try {
-      authSession.value = JSON.parse(savedSession);
-    } catch {
-      sessionStorage.removeItem(SESSION_KEY);
-    }
-  }
-
-  const savedCustomerId = sessionStorage.getItem(CUSTOMER_KEY);
-  if (savedCustomerId) {
-    selectedCustomerId.value = Number(savedCustomerId);
-  }
-
   if (authSession.value) {
     await loadCustomers();
     await loadTopbarStats();
@@ -474,7 +513,7 @@ onBeforeUnmount(() => {
           @open-batch="openBatchImport"
           @open-export="openInventoryExport"
           @open-onboarding="openOnboardingPicker"
-          @update:selected-customer-id="selectedCustomerId = $event"
+          @update:selected-customer-id="updateSelectedCustomer"
           @toggle-more-menu="moreMenuOpen = !moreMenuOpen"
           @open-menu-route="openMenuRoute"
           @open-low-stock-page="openLowStockPage"
@@ -493,7 +532,7 @@ onBeforeUnmount(() => {
           :low-stock-count="lowStockCount"
           :menu-entries="menuEntries"
           @close="mobileMenuOpen = false"
-          @update:selected-customer-id="selectedCustomerId = $event"
+          @update:selected-customer-id="updateSelectedCustomer"
           @open-batch="openBatchImport"
           @open-export="openInventoryExport"
           @open-onboarding="openOnboardingPicker"
@@ -509,8 +548,12 @@ onBeforeUnmount(() => {
           :batch-modal-open="batchModalOpen"
           :export-modal-open="exportModalOpen"
           :customer-id="currentCustomerId"
-          @close-batch="batchModalOpen = false"
+          :role="currentRole"
+          :batch-preset-fixture-code="batchPresetFixtureCode"
+          @close-batch="closeBatchModal"
           @close-export="exportModalOpen = false"
+          @open-overview-from-batch="openInventoryOverviewFromBatch"
+          @batch-draft-state-change="updateBatchDraftState"
           @refresh-stats="loadTopbarStats"
         />
       </template>

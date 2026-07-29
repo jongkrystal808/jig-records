@@ -188,6 +188,29 @@
 - `GET /master/stations/template`
 - `POST /master/stations/import`
 
+### Inventory Admin Ledger
+
+- Router：`backend/app/routers/inventory.py`
+- Service：`backend/app/services/inventory_service.py`
+- Repository：`backend/app/repositories/inventory_repository.py`
+- Schema：`backend/app/schemas/inventory.py`
+
+#### API
+
+- `GET /inventory/dashboard-summary`
+- `GET /inventory/admin/transactions`
+- `DELETE /inventory/admin/transactions/{transaction_id}`
+- `POST /inventory/admin/recalculate`
+
+#### 行為重點
+
+- dashboard summary 會直接回傳 `today_receipt_qty / today_return_qty / low_stock_count / recent_receipt_entries / recent_return_entries`
+- topbar 今日統計不再依賴前端抓最近 200 筆交易後自行過濾
+- 帳目管理清單以 transaction 為單位分頁，response 為 `items / page / page_size / total`
+- `fixture_code` / `transaction_no` / `created_by` / `transaction_type` 都由後端過濾，不再只依賴前端對最近 200 筆做搜尋
+- transaction-id 分頁子查詢以 `material_transactions.id desc` 排序，避免 MySQL 在 `DISTINCT id` 查詢上使用 `occurred_at` 排序時拋出 `500`
+- detail payload 直接內含 transaction items，前端選取案件後不需要再額外打一支 detail API
+
 #### 行為重點
 
 - `customers` / `users` 是 `manage` 權限
@@ -205,7 +228,9 @@
 - `fixtures.responsible_user_id` 候選名單來自該客戶已指派使用者
 - fixture image 採檔案式讀取，不走 DB 圖片表
 - admin 可用 `GET /master/fixtures/quality` 檢查名稱、儲位、圖片、水位、機種關聯與 identifier/summary 庫存一致性
-- 品質報表目前只回傳資料與 issue code；問題類型對應的跳轉規則由前端 `FixtureQualityPanel.vue` 決定
+- 品質報表目前只回傳資料與 issue code；問題類型對應的跳轉規則與列內修正互動由前端 `FixtureQualityPanel.vue` 決定
+- 前端對 `missing_storage_location` / `missing_min_stock_qty` 已改成列內直接更新；送回既有 `PUT /master/fixtures/{fixture_id}`，並以 `line_storage_location` / `department_storage_location` 兩個欄位分開提交，規則為「分開填寫，只填一個也可」
+- `missing_storage_location` 只在 `line_storage_location` 與 `department_storage_location` 都缺時才成立；只填其中一欄不再被報成缺儲位
 
 #### 前端入口
 
@@ -247,6 +272,7 @@
 - `GET /inventory/alerts`
 - `GET /inventory/identifier-stock-summary`
 - `GET /inventory/transactions`
+- `GET /inventory/transactions/overview`
 - `GET /inventory/transactions/export`
 - `GET /inventory/transactions/export-report`
 - `GET /inventory/transactions/export-report/preview`
@@ -268,7 +294,11 @@
 - 前端批次貼上欄允許直接插入 literal `Tab`，組成 `fixture-code<TAB>identifier<TAB>quantity` 後再由前端解析並送到 `/receipts` / `/returns`
 - 前端顯示文案可將 `identifier` 呈現為 `datecode/編號`，但 backend API / schema / DB 欄位名仍維持 `identifier`
 - CSV 匯入走 `/inventory/transactions/import`
+- `POST /inventory/receipts` 與 `POST /inventory/returns` 的 `transaction_no` 現在是明確必填；repository 不再自動產生 fallback 單號
+- 交易歷史讀取模型 (`/inventory/transactions`、`/inventory/admin/transactions`、`/inventory/transactions/overview`) 仍容許 legacy `NULL / 空字串 transaction_no`，repository 讀取時會正規化成 `None`
 - overview 查詢支援 `transaction_type` / `date_from` / `date_to` / `fixture_code` / `transaction_no` / `identifier` / `created_by`
+- `/inventory/transactions/overview` 直接回傳 item-level page contract：`items / page / page_size / total`
+- overview 的 `fixture_code` filter 現在可接受逗號分隔的多關鍵字，供前端把頁內 fixture filter 與全域 fixture keyword 一起帶入
 - 報表匯出支援 `summary|detail` 與 `xlsx|txt`
 - 匯出 preview 由 `/inventory/transactions/export-report/preview` 提供
 - `BatchImportPanel` 預覽現在會同時使用：
@@ -287,29 +317,36 @@
   - 庫存總覽
   - 低水位提醒
   - 收退料總檢視
-  - overview 交易 CSV 匯出
+  - overview 分頁 detail-row query
 
 - `frontend/src/components/inventory/BatchImportPanel.vue`
   - 批次貼上匯入
   - 手動 `Tab` 分隔輸入
+  - `ownership_type` 由整批 `來源` 控制，送出時統一套用到所有 items
+  - 預填 fixture shortcut
+  - 預填 fixture shortcut 入口預設進 quick-entry，batch paste editor 改為按需展開
   - 新治具即時建立
   - 預覽表 `目前庫存` / `交易後庫存`
   - 同批重複 `fixture + identifier` 的逐列累計預覽
+  - submit 前相同 `fixture + identifier` 合併
   - 前端寫入前 `identifier` 正規化改走 `frontend/src/utils/identifier.ts`
   - 教學模式試跑
 
-- `frontend/src/components/inventory/InventoryExportPanel.vue`
-  - 報表 preview
-  - `xlsx` / `txt` 匯出
-  - `identifier` 相容查詢輸入
-  - 對使用者顯示為 `datecode/編號`
+- `frontend/src/components/app/ExportCenterPanel.vue`
+  - 全域匯出中心
+  - dataset / format / range 選擇
+  - 前端會先依 session role 隱藏 admin-only `治具資料品質` 匯出，避免一般使用者撞到 `GET /master/fixtures/quality` 的 `manage` 權限邊界
+  - 收退料報表 preview 與 `xlsx` / `txt` 匯出
 
 - `frontend/src/components/app/AppTopbar.vue`
   - 今日收料 / 今日退料 / 低水位統計
+  - 上述統計資料由 `GET /inventory/dashboard-summary` 提供
+  - 低水位快捷收退料入口（僅非 guest 顯示）
 
 - `frontend/src/components/app/AppGlobalModals.vue`
   - 全域收退料 modal
   - 全域收退料匯出 modal
+  - preset fixture code 傳入 `BatchImportPanel`
 
 - `frontend/src/pages/SearchWorkspacePage.vue`
   - 收退料記錄
@@ -317,6 +354,7 @@
   - identifier stock context
   - 最近收 / 退料治具快捷入口的資料來源
   - onboarding 分類入口
+  - fixture detail 轉跳 `/inventory/overview`，handoff 只帶 `fixture_code` 與 `return_to`
 
 ### Production
 
@@ -338,6 +376,7 @@
 - `POST /production/model-stations/import`
 - `GET /production/fixture-requirements`
 - `POST /production/fixture-requirements`
+- `POST /production/fixture-requirements/copy`
 - `PUT /production/fixture-requirements/{requirement_id}`
 - `DELETE /production/fixture-requirements/{requirement_id}`
 - `GET /production/fixture-requirements/export`
@@ -354,18 +393,30 @@
 - `current_open_station_count` 已退場
 - `get_model_query` 的 `max_open_station_count` 以瓶頸站點最小值為準
 - production 頁有兩套前端批次貼上匯入流程：mapping 與 requirement
+- frontend 目前會先依 `model_stations` 收斂可選站點；backend 仍以 `get_model_station(...)` 作最終防線，拒絕未映射的 `model_id + station_id`
+- create / update requirement 時若底層 mapping 尚未存在，service 會先自動補建 `model_station`
+- copy endpoint 以 `source model + source station` 複製整組需求到 `target model + target station`，同時支援同機種站點與跨機種流程
+- copy 預設跳過目標既有治具；`overwrite_existing=true` 只更新數量不同的衝突資料，相同資料仍計入 skipped
+- 目標 mapping 不存在時會在同一交易中建立；response 回傳 source / created / updated / skipped / mapping-created 計數並寫入單筆 copy audit
 
 #### 前端入口
 
 - `frontend/src/pages/ProductionPage.vue`
+  - overview / configure route orchestration
   - model-station mapping
   - fixture requirement
+  - same-model / cross-model requirement copy
   - station capacity
   - model query
   - CSV 與貼上匯入
+  - `return_to` back flow 與 unsaved-change guards
 
 - `frontend/src/components/production/ProductionCapacityPanel.vue`
   - capacity 視覺化顯示
+
+- `frontend/src/utils/productionStations.ts`
+  - 依 `model_stations` 推導目前機種可用站點
+  - 避免前端預設站點打到未映射的 capacity query
 
 - `frontend/src/pages/SearchWorkspacePage.vue`
   - model query / fixture-to-model context
@@ -392,7 +443,7 @@
 - fixture 側 related models 直接來自 `fixture_requirements.model_id`
 - 不再從 station 反推 model
 - fixture / model detail context 改走獨立 lazy endpoint
-- fixture 完整交易歷史不是 `/search/global` 的 payload，而是前端選取後再額外查 inventory transaction API
+- fixture detail 只保留近期交易預覽；完整歷史改由前端轉跳 `/inventory/overview`，handoff 不會再從預覽交易反推 `date_from / date_to`
 - 搜尋頁的「相近編號」提示排序與「最近收 / 退料治具快捷入口」屬於前端行為，不是 search API contract
 
 #### 前端入口

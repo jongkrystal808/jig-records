@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import UiSectionHeader from "@/components/UiSectionHeader.vue";
-import type { ModelQuery, ModelQueryStationRequirement, StationCapacity, StockStatus } from "@/types";
+import type { ModelQuery, ModelQueryStationRequirement, Station, StationCapacity, StockStatus } from "@/types";
 import { stockStatusLabel } from "@/utils/display";
 import UiStatusPill from "@/components/UiStatusPill.vue";
 
@@ -12,10 +12,27 @@ const props = defineProps<{
   selectedStationId: number | null;
   stationCapacity: StationCapacity | null;
   modelQuery: ModelQuery | null;
+  availableStations: Station[];
   selectedStationQueryRows: ModelQueryStationRequirement[];
   highlightFixtureCode?: string;
   highlightTrigger?: number;
 }>();
+
+const overviewStationRows = computed(() => {
+  const capacityByStationId = new Map(
+    (props.modelQuery?.stations ?? []).map((row) => [row.station_id, row])
+  );
+  return props.availableStations.map((station) => {
+    const capacity = capacityByStationId.get(station.id);
+    return {
+      station_id: station.id,
+      station_code: station.code,
+      station_name: station.name,
+      max_open_station_count: capacity?.max_open_station_count ?? null,
+      bottleneck_fixture_code: capacity?.bottleneck_fixture_code ?? null
+    };
+  });
+});
 
 const emit = defineEmits<{
   refreshCapacity: [];
@@ -83,7 +100,7 @@ watch(
     <section class="station-overview">
       <UiSectionHeader class="head-row compact-head" title="站點總覽" description="先掃描整個機種的站點開站能力，再點一個站看瓶頸明細。">
         <template #actions>
-          <span class="overview-count">{{ modelQuery?.stations?.length || 0 }} 站</span>
+          <span class="overview-count">{{ overviewStationRows.length }} 站</span>
         </template>
       </UiSectionHeader>
       <table class="query-table compact-query-table">
@@ -96,11 +113,11 @@ watch(
         </thead>
         <tbody>
           <tr
-            v-for="stationRow in modelQuery?.stations || []"
+            v-for="stationRow in overviewStationRows"
             :key="stationRow.station_id"
             class="overview-row"
             :class="[
-              `capacity-${overviewCapacityClass(stationRow.max_open_station_count)}`,
+              stationRow.max_open_station_count === null ? 'capacity-unconfigured' : `capacity-${overviewCapacityClass(stationRow.max_open_station_count)}`,
               { selected: stationRow.station_id === selectedStationId }
             ]"
             @click="emit('update:selectedStationId', stationRow.station_id)"
@@ -108,24 +125,27 @@ watch(
             <td>{{ stationRow.station_code }}</td>
             <td>{{ stationRow.station_name || "-" }}</td>
             <td>
-              <span class="capacity-badge" :class="overviewCapacityClass(stationRow.max_open_station_count)">
-                {{ stationRow.max_open_station_count }}
+              <span
+                class="capacity-badge"
+                :class="stationRow.max_open_station_count === null ? 'unconfigured' : overviewCapacityClass(stationRow.max_open_station_count)"
+              >
+                {{ stationRow.max_open_station_count ?? "待配置" }}
               </span>
             </td>
           </tr>
-          <tr v-if="!loading && (modelQuery?.stations || []).length === 0">
-            <td colspan="3" class="empty-cell">目前沒有可顯示的站點開站資料</td>
+          <tr v-if="!loading && overviewStationRows.length === 0">
+            <td colspan="3" class="empty-cell">此機種尚未設定站點</td>
           </tr>
         </tbody>
       </table>
     </section>
 
-    <div class="drilldown-bridge">
+    <div v-if="selectedStationId !== null" class="drilldown-bridge">
       <span class="drilldown-pill">總覽 -> 明細</span>
       <p>已選站點 {{ selectedStationCode || stationCapacity?.station_code || "-" }}，往下查看是哪支治具限制開站。</p>
     </div>
 
-    <div class="query-inline drilldown-panel">
+    <div v-if="selectedStationId !== null" class="query-inline drilldown-panel">
       <UiSectionHeader class="head-row compact-head" title="站點瓶頸明細" :description="`機種：${modelQuery?.model_code || selectedModelCode || '-'}　站點：${selectedStationCode || stationCapacity?.station_code || '-'}`">
         <template #actions>
           <button class="ghost-btn" :disabled="loading" @click="$emit('refreshModelQuery')">刷新</button>
@@ -165,6 +185,11 @@ watch(
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <div v-else-if="!loading" class="capacity-empty-state">
+      <strong>請先選擇站點</strong>
+      <span>選擇上方站點後，這裡會顯示治具需求與瓶頸證據。</span>
     </div>
   </article>
 </template>
@@ -318,6 +343,15 @@ watch(
   background: var(--tone-success-soft);
 }
 
+.capacity-badge.unconfigured {
+  color: var(--tone-muted);
+  background: var(--tone-muted-soft);
+}
+
+.overview-row.capacity-unconfigured {
+  background: #fafbfd;
+}
+
 .query-table tbody tr:last-child td {
   border-bottom: none;
 }
@@ -407,6 +441,23 @@ watch(
   position: relative;
   background: linear-gradient(180deg, rgba(216, 71, 63, 0.14) 0%, rgba(216, 71, 63, 0.08) 100%);
   box-shadow: inset 4px 0 0 var(--tone-danger), 0 0 0 1px rgba(216, 71, 63, 0.08);
+}
+
+.capacity-empty-state {
+  min-height: 160px;
+  border: 1px dashed #cbd7e8;
+  border-radius: 12px;
+  background: #fafcff;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.capacity-empty-state strong {
+  color: #2b3a55;
 }
 
 @media (max-width: 560px) {

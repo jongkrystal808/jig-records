@@ -225,7 +225,7 @@ class MasterService:
         }
         for fixture in fixtures:
             fixture_name = (fixture.name or "").strip() or None
-            _, _, storage_location = self._read_storage_fields(fixture)
+            line_storage_location, department_storage_location, storage_location = self._read_storage_fields(fixture)
             min_stock_qty = stock_levels.get(fixture.id).min_stock_qty if stock_levels.get(fixture.id) is not None else 0
             stock_qty = stock_qty_by_fixture.get(fixture.id, 0)
             identifier_stock_qty = identifier_stock_qty_by_fixture.get(fixture.id, 0)
@@ -235,7 +235,7 @@ class MasterService:
             issue_codes: list[str] = []
             if not fixture_name:
                 issue_codes.append("missing_name")
-            if not storage_location:
+            if line_storage_location is None and department_storage_location is None:
                 issue_codes.append("missing_storage_location")
             if not has_image:
                 issue_codes.append("missing_image")

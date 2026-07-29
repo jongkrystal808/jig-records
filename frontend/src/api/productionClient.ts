@@ -1,5 +1,6 @@
 import type {
   FixtureRequirement,
+  FixtureRequirementCopyResult,
   FixtureRequirementListItem,
   ModelQuery,
   ModelStation,
@@ -65,6 +66,19 @@ export const productionApi = {
   },
   createFixtureRequirement(payload: { customer_id: number; model_id: number; station_id: number; fixture_id: number; required_qty: number }) {
     return request<FixtureRequirement>("/production/fixture-requirements", { method: "POST", body: JSON.stringify(payload) });
+  },
+  copyFixtureRequirements(payload: {
+    customer_id: number;
+    source_model_id: number;
+    source_station_id: number;
+    target_model_id: number;
+    target_station_id: number;
+    overwrite_existing: boolean;
+  }) {
+    return request<FixtureRequirementCopyResult>("/production/fixture-requirements/copy", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
   },
   updateFixtureRequirement(
     requirementId: number,

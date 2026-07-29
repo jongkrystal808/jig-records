@@ -7,6 +7,8 @@ from backend.app.schemas.common import CsvImportPayload, ImportResultRead
 from backend.app.schemas.production import (
     CapacityRead,
     FixtureRequirementCreate,
+    FixtureRequirementCopy,
+    FixtureRequirementCopyResult,
     FixtureRequirementListItemRead,
     FixtureRequirementRead,
     ModelQueryRead,
@@ -135,6 +137,24 @@ def upsert_fixture_requirement(
     service = ProductionService(db)
     try:
         return service.create_fixture_requirement(payload, actor=session)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post(
+    "/fixture-requirements/copy",
+    response_model=FixtureRequirementCopyResult,
+    dependencies=[Depends(require_permission("write"))],
+)
+def copy_fixture_requirements(
+    payload: FixtureRequirementCopy,
+    session: SessionContext = Depends(require_permission("write")),
+    db: Session = Depends(get_db),
+):
+    resolve_customer_scope(session, db, payload.customer_id, allow_empty=False)
+    service = ProductionService(db)
+    try:
+        return service.copy_fixture_requirements(payload, actor=session)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

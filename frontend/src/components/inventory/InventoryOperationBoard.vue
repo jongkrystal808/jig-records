@@ -16,7 +16,7 @@ type SummaryCard = {
 
 type RecentRow = {
   id: string;
-  transaction_no: string;
+  transaction_no: string | null;
   fixture_id: number | null;
   fixture_code: string;
   identifier: string | null;
@@ -72,6 +72,10 @@ function stockWaterLevelPercent(row: StockSummary): number {
     return row.stock_qty > 0 ? 100 : 0;
   }
   return Math.max(0, Math.min(100, Math.round((row.stock_qty / minStock) * 100)));
+}
+
+function displayTransactionNo(value: string | null): string {
+  return value?.trim() || "（無單號）";
 }
 </script>
 
@@ -141,7 +145,7 @@ function stockWaterLevelPercent(row: StockSummary): number {
                 <td>{{ row.fixture_code || "-" }}</td>
                 <td>{{ row.identifier || "-" }}</td>
                 <td>{{ row.quantity }}</td>
-                <td>{{ row.transaction_no }}</td>
+                <td>{{ displayTransactionNo(row.transaction_no) }}</td>
               </tr>
               <tr v-if="currentRecentRows.length === 0">
                 <td colspan="5" class="empty-cell">{{ currentRecentEmptyText }}</td>

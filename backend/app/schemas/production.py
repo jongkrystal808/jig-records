@@ -31,6 +31,23 @@ class FixtureRequirementRead(ORMModel):
     required_qty: int
 
 
+class FixtureRequirementCopy(BaseModel):
+    customer_id: int
+    source_model_id: int
+    source_station_id: int
+    target_model_id: int
+    target_station_id: int
+    overwrite_existing: bool = False
+
+
+class FixtureRequirementCopyResult(BaseModel):
+    source_requirement_count: int
+    created_count: int
+    updated_count: int
+    skipped_count: int
+    mapping_created: bool
+
+
 class FixtureRequirementListItemRead(ORMModel):
     id: int
     model_id: int

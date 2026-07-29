@@ -9,11 +9,14 @@ from backend.app.core.database import get_db
 from backend.app.schemas.common import CsvImportPayload, ImportResultRead
 from backend.app.schemas.inventory import (
     IdentifierStockSummaryRead,
+    InventoryDashboardSummaryRead,
     InventoryRecalculateRead,
     StockAlertRead,
     StockSummaryRead,
     StockTransactionCreate,
+    StockTransactionPageRead,
     StockTransactionRead,
+    TransactionOverviewPageRead,
     TransactionReverseRead,
 )
 from backend.app.services.inventory_service import DuplicateTransactionError, InventoryService
@@ -88,6 +91,17 @@ def list_identifier_stock_summary(
     return service.list_identifier_stock_summary(customer_id=customer_id)
 
 
+@router.get("/dashboard-summary", response_model=InventoryDashboardSummaryRead)
+def get_dashboard_summary(
+    customer_id: int | None = Query(default=None),
+    session: SessionContext = Depends(require_permission("read")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    service = InventoryService(db)
+    return service.build_dashboard_summary(customer_id=customer_id)
+
+
 @router.get("/transactions", response_model=list[StockTransactionRead])
 def list_transactions(
     limit: int = Query(20, ge=1, le=2000),
@@ -115,6 +129,64 @@ def list_transactions(
         fixture_code=fixture_code,
         transaction_no=transaction_no,
         identifier=identifier,
+        created_by=created_by,
+    )
+
+
+@router.get("/transactions/overview", response_model=TransactionOverviewPageRead)
+def list_transaction_overview(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    customer_id: int | None = Query(default=None),
+    transaction_type: str | None = Query(default=None, pattern="^(receipt|return)?$"),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    fixture_code: str | None = Query(default=None),
+    transaction_no: str | None = Query(default=None),
+    identifier: str | None = Query(default=None),
+    created_by: str | None = Query(default=None),
+    session: SessionContext = Depends(require_permission("read")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    service = InventoryService(db)
+    dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc) if date_from else None
+    dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc) if date_to else None
+    return service.list_transaction_overview_page(
+        page,
+        page_size,
+        customer_id=customer_id,
+        transaction_type=transaction_type,
+        date_from=dt_from,
+        date_to=dt_to,
+        fixture_code=fixture_code,
+        transaction_no=transaction_no,
+        identifier=identifier,
+        created_by=created_by,
+    )
+
+
+@router.get("/admin/transactions", response_model=StockTransactionPageRead, dependencies=[Depends(require_permission("manage"))])
+def list_admin_transactions(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    customer_id: int | None = Query(default=None),
+    transaction_type: str | None = Query(default=None, pattern="^(receipt|return)?$"),
+    fixture_code: str | None = Query(default=None),
+    transaction_no: str | None = Query(default=None),
+    created_by: str | None = Query(default=None),
+    session: SessionContext = Depends(require_permission("manage")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    service = InventoryService(db)
+    return service.list_transaction_page(
+        page,
+        page_size,
+        customer_id=customer_id,
+        transaction_type=transaction_type,
+        fixture_code=fixture_code,
+        transaction_no=transaction_no,
         created_by=created_by,
     )
 

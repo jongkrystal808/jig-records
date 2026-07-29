@@ -1,27 +1,22 @@
 <script setup lang="ts">
-import { useRouter } from "vue-router";
-
 import BatchImportPanel from "@/components/inventory/BatchImportPanel.vue";
-import InventoryExportPanel from "@/components/inventory/InventoryExportPanel.vue";
+import ExportCenterPanel from "@/components/app/ExportCenterPanel.vue";
 
 const props = defineProps<{
   batchModalOpen: boolean;
   exportModalOpen: boolean;
   customerId: number | undefined;
+  role?: string;
+  batchPresetFixtureCode?: string;
 }>();
 
 const emit = defineEmits<{
   closeBatch: [];
   closeExport: [];
   refreshStats: [];
+  openOverviewFromBatch: [];
+  batchDraftStateChange: [value: { hasPendingDraft: boolean; pendingRowCount: number; promptMessage: string }];
 }>();
-
-const router = useRouter();
-
-async function openInventoryOverview(): Promise<void> {
-  emit("closeBatch");
-  await router.push("/inventory/overview");
-}
 
 // Centralize global modal mounting so App.vue only toggles open state and refresh side effects.
 </script>
@@ -36,22 +31,24 @@ async function openInventoryOverview(): Promise<void> {
             <h2>收 / 退料</h2>
           </div>
           <div class="modal-head-actions">
-            <button class="overview-btn" type="button" @click="openInventoryOverview">收退料總檢視</button>
+            <button class="overview-btn" type="button" @click="emit('openOverviewFromBatch')">收退料總檢視</button>
             <button class="outline-btn" type="button" @click="emit('closeBatch')">關閉</button>
           </div>
         </div>
         <BatchImportPanel
           :customer-id="customerId"
+          :preset-fixture-code="batchPresetFixtureCode"
           title="全域收退料匯入"
           description="Modal 只保留批次匯入，方便在任何頁面直接處理收退料。"
           :hide-frame="true"
           @success="emit('refreshStats')"
+          @draft-state-change="emit('batchDraftStateChange', $event)"
         />
       </div>
     </div>
     <div v-if="exportModalOpen" class="ui-modal-backdrop">
-      <div class="ui-modal-card ui-modal-card--narrow" data-tour="inventory-export-panel">
-        <InventoryExportPanel :customer-id="customerId" @close="emit('closeExport')" />
+      <div class="ui-modal-card" data-tour="inventory-export-panel">
+        <ExportCenterPanel :customer-id="customerId" :role="role" @close="emit('closeExport')" />
       </div>
     </div>
   </teleport>

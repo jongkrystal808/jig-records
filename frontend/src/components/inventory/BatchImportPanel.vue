@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { api } from "@/api";
 import { ApiRequestError } from "@/api/core";
-import { authSession, onboardingActive, onboardingFlowId, onboardingStepIndex } from "@/appState";
+import { authSession, onboardingActive, onboardingFlowId, onboardingStepIndex, setCustomerSwitchGuard } from "@/appState";
 import InlineSpinner from "@/components/common/InlineSpinner.vue";
 import { getOnboardingFlow } from "@/onboarding";
 import { pushToast } from "@/toastState";
@@ -13,6 +13,7 @@ import { normalizeIdentifierForWrite } from "@/utils/identifier";
 
 type ImportMode = "receipt" | "return";
 type BatchRowStatus = "ready" | "needs-confirm" | "needs-add" | "skipped" | "error";
+type BatchOwnershipType = "customer_supplied" | "self_purchased";
 
 type BatchImportRow = {
   lineNo: number;
@@ -29,6 +30,19 @@ type BatchImportRow = {
   errorSource: "parse" | "inventory" | null;
 };
 
+type ReadySubmissionItem = {
+  fixtureId: number;
+  identifier: string;
+  quantity: number;
+  sourceRowCount: number;
+};
+
+type BatchDraftState = {
+  hasPendingDraft: boolean;
+  pendingRowCount: number;
+  promptMessage: string;
+};
+
 const props = withDefaults(defineProps<{
   customerId: number | undefined;
   title?: string;
@@ -36,6 +50,7 @@ const props = withDefaults(defineProps<{
   showModeSwitch?: boolean;
   initialMode?: ImportMode;
   mode?: ImportMode | undefined;
+  presetFixtureCode?: string;
   hideFrame?: boolean;
   tutorialMode?: boolean;
 }>(), {
@@ -50,6 +65,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   success: [];
   "update:mode": [value: ImportMode];
+  "draft-state-change": [value: BatchDraftState];
 }>();
 
 const internalMode = ref<ImportMode>(props.initialMode);
@@ -61,12 +77,53 @@ const identifierStockRows = ref<IdentifierStockSummary[]>([]);
 const batchPasteText = ref("");
 const batchTransactionNo = ref("");
 const batchNote = ref("");
+const batchOwnershipType = ref<BatchOwnershipType>("customer_supplied");
 const rows = ref<BatchImportRow[]>([]);
+const showReadyDetails = ref(false);
+const showAllExceptions = ref(false);
+const quickFixtureCode = ref("");
+const quickIdentifier = ref("");
+const quickQuantity = ref(1);
 
 const readyRows = computed(() => rows.value.filter((row) => row.status === "ready"));
 const pendingRows = computed(() => rows.value.filter((row) => row.status === "needs-confirm" || row.status === "needs-add"));
 const errorRows = computed(() => rows.value.filter((row) => row.status === "error"));
-const canSubmit = computed(() => readyRows.value.length > 0 && pendingRows.value.length === 0 && errorRows.value.length === 0 && batchTransactionNo.value.trim().length > 0);
+const skippedRows = computed(() => rows.value.filter((row) => row.status === "skipped"));
+const exceptionRows = computed(() => rows.value.filter((row) => row.status === "needs-confirm" || row.status === "needs-add" || row.status === "error"));
+const visibleExceptionRows = computed(() => (showAllExceptions.value ? exceptionRows.value : exceptionRows.value.slice(0, 3)));
+const hiddenExceptionCount = computed(() => Math.max(0, exceptionRows.value.length - visibleExceptionRows.value.length));
+const mergedReadyItems = computed<ReadySubmissionItem[]>(() => {
+  const merged = new Map<string, ReadySubmissionItem>();
+  for (const row of readyRows.value) {
+    if (!row.resolvedFixtureId || !row.inputToken) {
+      continue;
+    }
+    const key = `${row.resolvedFixtureId}::${row.inputToken}`;
+    const existing = merged.get(key);
+    if (existing) {
+      existing.quantity += row.quantity;
+      existing.sourceRowCount += 1;
+      continue;
+    }
+    merged.set(key, {
+      fixtureId: row.resolvedFixtureId,
+      identifier: row.inputToken,
+      quantity: row.quantity,
+      sourceRowCount: 1
+    });
+  }
+  return [...merged.values()];
+});
+const mergedReadyItemCount = computed(() => mergedReadyItems.value.length);
+const mergedDuplicateReductionCount = computed(() => readyRows.value.length - mergedReadyItemCount.value);
+const mergedDuplicateGroupCount = computed(() => mergedReadyItems.value.filter((item) => item.sourceRowCount > 1).length);
+const batchOwnershipLabel = computed(() => (batchOwnershipType.value === "self_purchased" ? "自購" : "客供"));
+const batchModeLabel = computed(() => (mode.value === "receipt" ? "收料" : "退料"));
+const previewHeadline = computed(() => `預覽 ${rows.value.length} 筆｜${batchModeLabel.value}｜來源：${batchOwnershipLabel.value}`);
+const isSelfPurchasedBatch = computed(() => batchOwnershipType.value === "self_purchased");
+const canSubmit = computed(
+  () => mergedReadyItems.value.length > 0 && pendingRows.value.length === 0 && errorRows.value.length === 0 && batchTransactionNo.value.trim().length > 0
+);
 const currentOnboardingStepId = computed(() => getOnboardingFlow(onboardingFlowId.value)?.steps[onboardingStepIndex.value]?.id ?? "");
 const mode = computed<ImportMode>({
   get: () => props.mode ?? internalMode.value,
@@ -80,6 +137,24 @@ const mode = computed<ImportMode>({
 const tutorialBannerText = computed(() =>
   mode.value === "receipt" ? "教學模式：本次會模擬收料，不會寫入正式資料。" : "教學模式：本次會模擬退料，不會寫入正式資料。"
 );
+const hasPresetFixtureShortcut = computed(() => quickFixtureCode.value.length > 0);
+const batchPasteExpanded = ref(false);
+const showBatchPasteEditor = computed(() => props.tutorialMode || !hasPresetFixtureShortcut.value || batchPasteExpanded.value);
+const batchPasteToggleLabel = computed(() => (showBatchPasteEditor.value ? "收合批次貼上" : "改用批次貼上"));
+const hasPendingBatchDraft = computed(
+  () =>
+    batchPasteText.value.trim().length > 0 ||
+    batchTransactionNo.value.trim().length > 0 ||
+    batchNote.value.trim().length > 0 ||
+    rows.value.length > 0
+);
+const pendingDraftRowCount = computed(() => rows.value.length);
+const draftStorageKey = computed(() => {
+  if (!props.hideFrame || !props.customerId || props.tutorialMode) {
+    return "";
+  }
+  return `jig-record-inventory-batch-draft:${props.customerId}`;
+});
 const previewStats = computed(() =>
   buildInventoryPreviewStats(
     rows.value.map((row) => ({
@@ -383,13 +458,27 @@ async function loadFixtures(): Promise<void> {
 
 function refreshPreview(): void {
   rows.value = validateRowsForCurrentMode(parseRows(batchPasteText.value));
+  showAllExceptions.value = false;
+}
+
+function clearPersistedDraft(): void {
+  if (typeof window === "undefined" || !draftStorageKey.value) {
+    return;
+  }
+  window.sessionStorage.removeItem(draftStorageKey.value);
 }
 
 function clearPanel(): void {
   batchPasteText.value = "";
   batchTransactionNo.value = "";
   batchNote.value = "";
+  batchOwnershipType.value = "customer_supplied";
   rows.value = [];
+  showReadyDetails.value = false;
+  showAllExceptions.value = false;
+  quickIdentifier.value = "";
+  quickQuantity.value = 1;
+  clearPersistedDraft();
 }
 
 function handleBatchPasteKeydown(event: KeyboardEvent): void {
@@ -408,6 +497,122 @@ function handleBatchPasteKeydown(event: KeyboardEvent): void {
   requestAnimationFrame(() => {
     target.focus();
     target.setSelectionRange(nextCursor, nextCursor);
+  });
+}
+
+function syncQuickFixtureCode(): void {
+  quickFixtureCode.value = normalizeCode(props.presetFixtureCode ?? "");
+  batchPasteExpanded.value = props.tutorialMode || quickFixtureCode.value.length === 0;
+  if (!draftStorageKey.value) {
+    quickIdentifier.value = "";
+    quickQuantity.value = 1;
+  }
+}
+
+function toggleBatchPasteEditor(): void {
+  if (!hasPresetFixtureShortcut.value) {
+    batchPasteExpanded.value = true;
+    return;
+  }
+  batchPasteExpanded.value = !batchPasteExpanded.value;
+}
+
+function appendPresetFixtureRow(): void {
+  const fixtureCode = quickFixtureCode.value;
+  const identifier = normalizeIdentifierForWrite(quickIdentifier.value);
+  const quantity = Math.max(0, Number(quickQuantity.value) || 0);
+  if (!fixtureCode) {
+    return;
+  }
+  if (!identifier) {
+    pushToast("請先輸入 datecode/編號。", "warning");
+    return;
+  }
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    pushToast("數量必須是大於 0 的整數。", "warning");
+    return;
+  }
+  const nextRow = `${fixtureCode}\t${identifier}\t${quantity}`;
+  batchPasteText.value = batchPasteText.value.trim().length > 0 ? `${batchPasteText.value.trimEnd()}\n${nextRow}` : nextRow;
+  quickIdentifier.value = "";
+  quickQuantity.value = 1;
+  refreshPreview();
+}
+
+function restoreDraftFromSessionStorage(): boolean {
+  if (typeof window === "undefined" || !draftStorageKey.value) {
+    return false;
+  }
+  const raw = window.sessionStorage.getItem(draftStorageKey.value);
+  if (!raw) {
+    return false;
+  }
+  try {
+    const draft = JSON.parse(raw) as {
+      mode?: ImportMode;
+      batchPasteText?: string;
+      batchTransactionNo?: string;
+      batchNote?: string;
+      quickIdentifier?: string;
+      quickQuantity?: number;
+    };
+    if (props.mode === undefined && (draft.mode === "receipt" || draft.mode === "return")) {
+      internalMode.value = draft.mode;
+    }
+    batchOwnershipType.value = "customer_supplied";
+    batchPasteText.value = typeof draft.batchPasteText === "string" ? draft.batchPasteText : "";
+    batchTransactionNo.value = typeof draft.batchTransactionNo === "string" ? draft.batchTransactionNo : "";
+    batchNote.value = typeof draft.batchNote === "string" ? draft.batchNote : "";
+    quickIdentifier.value = typeof draft.quickIdentifier === "string" ? draft.quickIdentifier : "";
+    quickQuantity.value = Number.isInteger(draft.quickQuantity) && (draft.quickQuantity ?? 0) > 0 ? (draft.quickQuantity as number) : 1;
+    if (hasPresetFixtureShortcut.value && batchPasteText.value.trim().length > 0) {
+      batchPasteExpanded.value = true;
+    }
+    return hasPendingBatchDraft.value;
+  } catch {
+    window.sessionStorage.removeItem(draftStorageKey.value);
+    return false;
+  }
+}
+
+function persistDraftToSessionStorage(): void {
+  if (typeof window === "undefined" || !draftStorageKey.value) {
+    return;
+  }
+  if (!hasPendingBatchDraft.value) {
+    clearPersistedDraft();
+    return;
+  }
+  window.sessionStorage.setItem(
+    draftStorageKey.value,
+    JSON.stringify({
+      mode: mode.value,
+      batchPasteText: batchPasteText.value,
+      batchTransactionNo: batchTransactionNo.value,
+      batchNote: batchNote.value,
+      quickIdentifier: quickIdentifier.value,
+      quickQuantity: quickQuantity.value
+    })
+  );
+}
+
+function emitDraftState(): void {
+  if (props.tutorialMode) {
+    emit("draft-state-change", {
+      hasPendingDraft: false,
+      pendingRowCount: 0,
+      promptMessage: ""
+    });
+    return;
+  }
+  const rowCount = pendingDraftRowCount.value;
+  emit("draft-state-change", {
+    hasPendingDraft: hasPendingBatchDraft.value,
+    pendingRowCount: rowCount,
+    promptMessage:
+      rowCount > 0
+        ? `目前有尚未送出的 ${rowCount} 筆資料，確定離開嗎？`
+        : "目前有尚未送出的草稿，確定離開嗎？"
   });
 }
 
@@ -471,7 +676,14 @@ function fillTutorialSample(): void {
 }
 
 async function submit(): Promise<void> {
-  if (!props.customerId || !canSubmit.value) {
+  if (!props.customerId) {
+    return;
+  }
+  if (!batchTransactionNo.value.trim()) {
+    pushToast("單號為必填，請先輸入工單號或批號。", "warning");
+    return;
+  }
+  if (!canSubmit.value) {
     return;
   }
   saving.value = true;
@@ -487,11 +699,11 @@ async function submit(): Promise<void> {
       created_by: authSession.value?.display_name || "System",
       transaction_no: batchTransactionNo.value.trim(),
       note: batchNote.value.trim() || undefined,
-      items: readyRows.value.map((row) => ({
-        fixture_id: row.resolvedFixtureId as number,
-        ownership_type: "customer_supplied" as const,
-        identifier: row.inputToken,
-        quantity: row.quantity
+      items: mergedReadyItems.value.map((item) => ({
+        fixture_id: item.fixtureId,
+        ownership_type: batchOwnershipType.value,
+        identifier: item.identifier,
+        quantity: item.quantity
       }))
     };
 
@@ -549,6 +761,26 @@ watch(
 );
 
 watch(
+  () => props.presetFixtureCode,
+  () => {
+    syncQuickFixtureCode();
+  },
+  { immediate: true }
+);
+
+watch(
+  hasPendingBatchDraft,
+  (value) => {
+    setCustomerSwitchGuard(
+      props.hideFrame ? "inventory-batch-modal" : "inventory-batch-panel",
+      value,
+      "收退料批次資料尚未送出"
+    );
+  },
+  { immediate: true }
+);
+
+watch(
   () => [props.tutorialMode, onboardingActive.value, currentOnboardingStepId.value, fixtures.value.length] as const,
   () => {
     if (!props.tutorialMode || !onboardingActive.value) {
@@ -565,8 +797,41 @@ watch(
   { immediate: true }
 );
 
+watch(
+  [
+    mode,
+    batchPasteText,
+    batchTransactionNo,
+    batchNote,
+    rows,
+    quickIdentifier,
+    quickQuantity,
+    () => props.tutorialMode,
+    draftStorageKey
+  ],
+  () => {
+    persistDraftToSessionStorage();
+    emitDraftState();
+  },
+  { deep: true, immediate: true }
+);
+
 onMounted(async () => {
+  const restored = restoreDraftFromSessionStorage();
+  if (restored) {
+    pushToast("已恢復上次未送出的收退料草稿。", "info");
+  }
   await loadFixtures();
+});
+
+onBeforeUnmount(() => {
+  setCustomerSwitchGuard("inventory-batch-modal", false, "收退料批次資料尚未送出");
+  setCustomerSwitchGuard("inventory-batch-panel", false, "收退料批次資料尚未送出");
+  emit("draft-state-change", {
+    hasPendingDraft: false,
+    pendingRowCount: 0,
+    promptMessage: ""
+  });
 });
 </script>
 
@@ -598,13 +863,65 @@ onMounted(async () => {
           <span>單號 *</span>
           <input v-model="batchTransactionNo" placeholder="例如工單號、批號、補料單號" autocomplete="off" spellcheck="false" />
         </label>
+        <div class="batch-source-field">
+          <span>來源</span>
+          <div class="segmented-control batch-source-control">
+            <button
+              class="segmented-btn"
+              :class="{ active: batchOwnershipType === 'customer_supplied' }"
+              type="button"
+              @click="batchOwnershipType = 'customer_supplied'"
+            >
+              客供（預設）
+            </button>
+            <button
+              class="segmented-btn"
+              :class="{ active: batchOwnershipType === 'self_purchased' }"
+              type="button"
+              @click="batchOwnershipType = 'self_purchased'"
+            >
+              自購
+            </button>
+          </div>
+        </div>
         <label>
           <span>備註</span>
           <input v-model="batchNote" placeholder="選填" />
         </label>
       </div>
 
-      <label class="paste-field" data-tour="inventory-paste-field">
+      <div v-if="isSelfPurchasedBatch" class="batch-source-warning">
+        本批所有記錄將以「自購」來源送出。
+      </div>
+
+      <section v-if="hasPresetFixtureShortcut" class="preset-shortcut-card">
+        <div class="preset-shortcut-head">
+          <div>
+            <strong>快速帶入治具</strong>
+            <p>目前治具已預填，輸入 datecode/編號與數量後即可加入本次批次；需要一次貼多筆時再展開批次貼上。</p>
+          </div>
+          <button class="outline-btn btn-sm" type="button" @click="toggleBatchPasteEditor">{{ batchPasteToggleLabel }}</button>
+        </div>
+        <div class="preset-shortcut-grid">
+          <label>
+            <span>治具編號</span>
+            <input :value="quickFixtureCode" readonly />
+          </label>
+          <label>
+            <span>datecode/編號</span>
+            <input v-model="quickIdentifier" placeholder="例如 240701A" autocomplete="off" spellcheck="false" />
+          </label>
+          <label>
+            <span>數量</span>
+            <input v-model.number="quickQuantity" type="number" min="1" />
+          </label>
+          <div class="preset-shortcut-actions">
+            <button class="ghost-btn panel-accent-ghost" type="button" @click="appendPresetFixtureRow">加入批次</button>
+          </div>
+        </div>
+      </section>
+
+      <label v-if="showBatchPasteEditor" class="paste-field" data-tour="inventory-paste-field">
         <span>批次內容</span>
         <textarea
           v-model="batchPasteText"
@@ -615,9 +932,11 @@ onMounted(async () => {
 
       <div class="action-row">
         <div class="summary-text">
-          <span>可送出 {{ readyRows.length }} 筆</span>
+          <span>可直接送出 {{ readyRows.length }} 筆</span>
+          <span v-if="mergedDuplicateReductionCount > 0">送出時自動合併 {{ mergedDuplicateReductionCount }} 筆重複資料</span>
           <span>待處理 {{ pendingRows.length }} 筆</span>
           <span>錯誤 {{ errorRows.length }} 筆</span>
+          <span v-if="skippedRows.length > 0">已略過 {{ skippedRows.length }} 筆</span>
         </div>
         <div class="action-group">
           <button
@@ -637,47 +956,121 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="table-wrap" data-tour="inventory-preview-table">
+      <div v-if="rows.length > 0" class="preview-summary-stack">
+        <section class="preview-summary-card ready-card">
+          <div class="preview-summary-head">
+            <div>
+              <strong>{{ previewHeadline }}</strong>
+              <p>精確匹配的治具不需逐列確認，解完例外後可一次提交全部資料。</p>
+            </div>
+            <button class="outline-btn btn-sm" type="button" :disabled="readyRows.length === 0" @click="showReadyDetails = !showReadyDetails">
+              {{ showReadyDetails ? "收合正常列" : "查看正常列" }}
+            </button>
+          </div>
+          <div class="preview-summary-meta">
+            <span>可直接送出 {{ readyRows.length }} 筆</span>
+            <span>實際送出 {{ mergedReadyItemCount }} 筆項目</span>
+            <span v-if="mergedDuplicateReductionCount > 0">已自動合併 {{ mergedDuplicateGroupCount }} 組重複資料</span>
+          </div>
+        </section>
+
+        <div v-if="showReadyDetails" class="table-wrap" data-tour="inventory-preview-table">
+          <table class="preview-table">
+            <thead>
+              <tr><th>#</th><th>治具</th><th>datecode/編號</th><th>數量</th><th>目前庫存</th><th>交易後庫存</th><th>狀態</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in readyRows" :key="`${row.lineNo}-${row.raw}`">
+                <td>{{ row.lineNo }}</td>
+                <td>{{ row.resolvedFixtureCode || row.inputFixtureCode || "-" }}</td>
+                <td>{{ row.inputToken || "-" }}</td>
+                <td>{{ mode === "receipt" ? row.quantity : `-${row.quantity}` }}</td>
+                <td>{{ previewStats[row.lineNo - 1]?.currentIdentifierStockQty ?? "-" }}</td>
+                <td>{{ previewStats[row.lineNo - 1]?.nextIdentifierStockQty ?? "-" }}</td>
+                <td><span class="status-pill batch-state ready">ready</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <section class="preview-summary-card exception-card">
+          <div class="preview-summary-head">
+            <div>
+              <strong>{{ exceptionRows.length }} 筆需要處理</strong>
+              <p v-if="exceptionRows.length > 0">預設只展開前 3 筆例外，處理完後可直接一次送出。</p>
+              <p v-else>目前沒有待處理例外。</p>
+            </div>
+            <button v-if="hiddenExceptionCount > 0 || showAllExceptions" class="outline-btn btn-sm" type="button" @click="showAllExceptions = !showAllExceptions">
+              {{ showAllExceptions ? "只看前 3 筆" : `顯示其餘 ${hiddenExceptionCount} 筆` }}
+            </button>
+          </div>
+        </section>
+
+        <div v-if="exceptionRows.length > 0" class="table-wrap">
+          <table class="preview-table exception-table">
+            <thead>
+              <tr><th>#</th><th>治具</th><th>datecode/編號</th><th>數量</th><th>目前庫存</th><th>交易後庫存</th><th>狀態</th><th>處理</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in visibleExceptionRows" :key="`${row.lineNo}-${row.raw}`">
+                <td>{{ row.lineNo }}</td>
+                <td>{{ row.resolvedFixtureCode || row.suggestedFixtureCode || row.inputFixtureCode || "-" }}</td>
+                <td>{{ row.inputToken || "-" }}</td>
+                <td>{{ mode === "receipt" ? row.quantity : `-${row.quantity}` }}</td>
+                <td>{{ previewStats[row.lineNo - 1]?.currentIdentifierStockQty ?? "-" }}</td>
+                <td>{{ previewStats[row.lineNo - 1]?.nextIdentifierStockQty ?? "-" }}</td>
+                <td>
+                  <span class="status-pill batch-state" :class="row.status">{{ row.status }}</span>
+                  <div v-if="row.message" class="row-note">{{ row.message }}</div>
+                </td>
+                <td>
+                  <div class="row-actions">
+                    <template v-if="row.status === 'needs-confirm'">
+                      <button class="ghost-btn panel-accent-ghost btn-sm" type="button" @click="acceptSimilar(row)">同一治具</button>
+                      <button class="outline-btn btn-sm" type="button" @click="rejectSimilar(row)">改為新增</button>
+                      <button class="outline-btn btn-sm" type="button" @click="skipRow(row)">略過</button>
+                    </template>
+                    <template v-else-if="row.status === 'needs-add'">
+                      <button class="ghost-btn panel-accent-ghost btn-sm" type="button" @click="createMissingFixture(row)">新增治具</button>
+                      <button class="outline-btn btn-sm" type="button" @click="skipRow(row)">略過</button>
+                    </template>
+                    <template v-else-if="row.status === 'error'">
+                      <span class="muted">請修正原始資料</span>
+                    </template>
+                    <template v-else>
+                      <span class="muted">待處理</span>
+                    </template>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <section v-if="skippedRows.length > 0" class="preview-summary-card skipped-card">
+          <div class="preview-summary-head">
+            <div>
+              <strong>{{ skippedRows.length }} 筆已略過</strong>
+              <p>這些資料不會送出；如需補回，請回原始貼上內容修正後重新解析。</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section v-else-if="hasPresetFixtureShortcut && !showBatchPasteEditor" class="preview-summary-card quick-entry-hint" data-tour="inventory-preview-table">
+        <div class="preview-summary-head">
+          <div>
+            <strong>快速模式</strong>
+            <p>先輸入 datecode/編號與數量，再點「加入批次」；如果這次要處理多筆資料，再改用批次貼上。</p>
+          </div>
+          <span class="quick-entry-chip">{{ batchModeLabel }}｜{{ batchOwnershipLabel }}</span>
+        </div>
+      </section>
+
+      <div v-else class="table-wrap" data-tour="inventory-preview-table">
         <table class="preview-table">
-          <thead>
-            <tr><th>#</th><th>治具</th><th>datecode/編號</th><th>數量</th><th>目前庫存</th><th>交易後庫存</th><th>狀態</th><th>處理</th></tr>
-          </thead>
           <tbody>
-            <tr v-for="row in rows" :key="`${row.lineNo}-${row.raw}`">
-              <td>{{ row.lineNo }}</td>
-              <td>{{ row.resolvedFixtureCode || row.suggestedFixtureCode || row.inputFixtureCode || "-" }}</td>
-              <td>{{ row.inputToken || "-" }}</td>
-              <td>{{ mode === "receipt" ? row.quantity : `-${row.quantity}` }}</td>
-              <td>{{ previewStats[row.lineNo - 1]?.currentIdentifierStockQty ?? "-" }}</td>
-              <td>{{ previewStats[row.lineNo - 1]?.nextIdentifierStockQty ?? "-" }}</td>
-              <td>
-                <span class="status-pill batch-state" :class="row.status">{{ row.status }}</span>
-                <div v-if="row.message" class="row-note">{{ row.message }}</div>
-              </td>
-              <td>
-                <div class="row-actions">
-                  <template v-if="row.status === 'needs-confirm'">
-                    <button class="ghost-btn panel-accent-ghost btn-sm" type="button" @click="acceptSimilar(row)">同一治具</button>
-                    <button class="outline-btn btn-sm" type="button" @click="rejectSimilar(row)">改為新增</button>
-                    <button class="outline-btn btn-sm" type="button" @click="skipRow(row)">略過</button>
-                  </template>
-                  <template v-else-if="row.status === 'needs-add'">
-                    <button class="ghost-btn panel-accent-ghost btn-sm" type="button" @click="createMissingFixture(row)">新增治具</button>
-                    <button class="outline-btn btn-sm" type="button" @click="skipRow(row)">略過</button>
-                  </template>
-                  <template v-else-if="row.status === 'error'">
-                    <span class="muted">請修正原始資料</span>
-                  </template>
-                  <template v-else-if="row.status === 'skipped'">
-                    <span class="muted">已排除</span>
-                  </template>
-                  <template v-else>
-                    <span class="muted">可送出</span>
-                  </template>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="rows.length === 0">
+            <tr>
               <td colspan="8" class="empty-cell">貼上資料後會自動解析預覽</td>
             </tr>
           </tbody>
@@ -778,6 +1171,45 @@ label span {
   font-size: 12px;
 }
 
+.preset-shortcut-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--panel-input-border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel-accent-soft) 55%, white) 0%, #fff 100%);
+}
+
+.preset-shortcut-head strong {
+  color: #22314a;
+  font-size: 14px;
+}
+
+.preset-shortcut-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.preset-shortcut-head p {
+  margin: 4px 0 0;
+  color: #5d6d89;
+  font-size: 12px;
+}
+
+.preset-shortcut-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 120px auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.preset-shortcut-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .segmented-control {
   display: inline-flex;
   gap: 4px;
@@ -805,13 +1237,39 @@ label span {
 
 .meta-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
 label {
   display: grid;
   gap: 6px;
+}
+
+.batch-source-field {
+  display: grid;
+  gap: 6px;
+}
+
+.batch-source-field > span {
+  color: #5d6d89;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.batch-source-control {
+  justify-content: flex-start;
+  width: fit-content;
+}
+
+.batch-source-warning {
+  padding: 10px 12px;
+  border: 1px solid rgba(217, 126, 31, 0.28);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff5e7 0%, #fff0db 100%);
+  color: #9a4d00;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 label span {
@@ -851,6 +1309,77 @@ textarea {
 
 .summary-text {
   align-items: center;
+}
+
+.preview-summary-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.preview-summary-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.ready-card {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel-accent-soft) 38%, white) 0%, #fff 100%);
+}
+
+.exception-card {
+  border-color: rgba(212, 89, 89, 0.2);
+  background: linear-gradient(180deg, rgba(255, 245, 245, 0.9) 0%, #fff 100%);
+}
+
+.skipped-card {
+  background: linear-gradient(180deg, #fbfcfe 0%, #fff 100%);
+}
+
+.preview-summary-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.preview-summary-head strong {
+  color: #22314a;
+  font-size: 15px;
+}
+
+.preview-summary-head p {
+  margin: 4px 0 0;
+  color: #5d6d89;
+  font-size: 12px;
+}
+
+.preview-summary-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #5d6d89;
+  font-size: 12px;
+}
+
+.quick-entry-hint {
+  border-style: dashed;
+}
+
+.quick-entry-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-accent-soft) 68%, white);
+  color: var(--panel-accent-strong);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .table-wrap {
@@ -907,12 +1436,25 @@ textarea {
 
 @media (max-width: 720px) {
   .batch-head,
-  .action-row {
+  .action-row,
+  .preview-summary-head {
     flex-direction: column;
   }
 
   .meta-grid {
     grid-template-columns: 1fr;
+  }
+
+  .preset-shortcut-head {
+    flex-direction: column;
+  }
+
+  .preset-shortcut-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .preset-shortcut-actions {
+    justify-content: stretch;
   }
 }
 </style>

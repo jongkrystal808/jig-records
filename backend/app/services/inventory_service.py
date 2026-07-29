@@ -123,10 +123,8 @@ class InventoryService:
             )
         except IntegrityError as exc:
             self.db.rollback()
-            normalized_transaction_no = (payload.transaction_no or "").strip()
-            if normalized_transaction_no:
-                raise ValueError(f"單號 {normalized_transaction_no} 已存在，若要重複送出請先修改單號") from exc
-            raise
+            normalized_transaction_no = payload.transaction_no.strip()
+            raise ValueError(f"單號 {normalized_transaction_no} 已存在，若要重複送出請先修改單號") from exc
         changed_station_model_pairs: set[tuple[int, int]] = set()
 
         for item_index, item in enumerate(payload.items, start=1):
@@ -204,6 +202,28 @@ class InventoryService:
     def list_identifier_stock_summary(self, customer_id: int | None = None):
         return self.repo.list_identifier_stock_summary_rows(customer_id=customer_id)
 
+    def build_dashboard_summary(self, customer_id: int | None = None) -> dict:
+        target_date = datetime.now().astimezone().date()
+        today_totals = self.repo.summarize_transaction_quantities_on_date(target_date, customer_id=customer_id)
+        low_stock_rows = self.repo.list_stock_alert_rows(customer_id=customer_id)
+        return {
+            "today_receipt_qty": int(today_totals.get("receipt", 0)),
+            "today_return_qty": int(today_totals.get("return", 0)),
+            "low_stock_count": len(low_stock_rows),
+            "low_stock_preview_entries": low_stock_rows[:20],
+            "has_more_low_stock_entries": len(low_stock_rows) > 20,
+            "recent_receipt_entries": self.repo.list_recent_transaction_item_entries(
+                10,
+                customer_id=customer_id,
+                transaction_type="receipt",
+            ),
+            "recent_return_entries": self.repo.list_recent_transaction_item_entries(
+                10,
+                customer_id=customer_id,
+                transaction_type="return",
+            ),
+        }
+
     def list_transactions(
         self,
         limit: int,
@@ -230,6 +250,56 @@ class InventoryService:
             transaction_no=transaction_no,
             identifier_exact_matches=identifier_exact_matches,
             identifier_contains=identifier_contains,
+            created_by=created_by,
+        )
+
+    def list_transaction_overview_page(
+        self,
+        page: int,
+        page_size: int,
+        customer_id: int | None = None,
+        *,
+        transaction_type: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        fixture_code: str | None = None,
+        transaction_no: str | None = None,
+        identifier: str | None = None,
+        created_by: str | None = None,
+    ):
+        identifier_exact_matches, identifier_contains = resolve_identifier_query(identifier)
+        return self.repo.list_transaction_overview_page(
+            page,
+            page_size,
+            customer_id=customer_id,
+            transaction_type=transaction_type,
+            date_from=date_from,
+            date_to=date_to,
+            fixture_code=fixture_code,
+            transaction_no=transaction_no,
+            identifier_exact_matches=identifier_exact_matches,
+            identifier_contains=identifier_contains,
+            created_by=created_by,
+        )
+
+    def list_transaction_page(
+        self,
+        page: int,
+        page_size: int,
+        customer_id: int | None = None,
+        *,
+        transaction_type: str | None = None,
+        fixture_code: str | None = None,
+        transaction_no: str | None = None,
+        created_by: str | None = None,
+    ):
+        return self.repo.list_transaction_page(
+            page,
+            page_size,
+            customer_id=customer_id,
+            transaction_type=transaction_type,
+            fixture_code=fixture_code,
+            transaction_no=transaction_no,
             created_by=created_by,
         )
 
@@ -450,9 +520,11 @@ class InventoryService:
             raise ValueError(f"transaction {transaction_id} not found")
         item_count = len(transaction.items)
         total_quantity = sum(int(item.quantity) for item in transaction.items)
+        transaction_no = transaction.transaction_no.strip() if transaction.transaction_no else ""
+        transaction_no_display = transaction_no or "（無單號）"
         summary = {
             "transaction_id": transaction.id,
-            "transaction_no": transaction.transaction_no,
+            "transaction_no": transaction_no or None,
             "transaction_type": transaction.transaction_type,
             "item_count": item_count,
             "total_quantity": total_quantity,
@@ -463,9 +535,9 @@ class InventoryService:
         self.audit.record(
             customer_id=transaction.customer_id,
             entity_type="material_transaction",
-            entity_key=summary["transaction_no"],
+            entity_key=transaction_no or f"transaction:{transaction.id}",
             action="reverse",
-            summary=f"撤回{action_label}案件 {summary['transaction_no']}，共 {item_count} 筆明細 / {total_quantity} pcs",
+            summary=f"撤回{action_label}案件 {transaction_no_display}，共 {item_count} 筆明細 / {total_quantity} pcs",
             actor=actor,
         )
         self.db.commit()

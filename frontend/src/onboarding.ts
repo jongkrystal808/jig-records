@@ -209,12 +209,12 @@ export const onboardingFlows: OnboardingFlow[] = [
         id: "inventory-export-entry",
         route: "/search",
         target: "[data-tour='inventory-export-entry-trigger']",
-        title: "收退料明細匯出也走頂部全域入口",
-        description: "當你不是要立即收退料，而是要把歷史資料交給現場或主管時，改走這個匯出入口。",
+        title: "所有常用匯出都走同一個匯出中心",
+        description: "當你不是要立即收退料，而是要整理資料交給現場、主管或其他部門時，直接走這個全域入口。",
         bullets: [
-          "可直接匯出摘要或明細",
-          "不用先切進總檢視頁",
-          "匯出條件與客戶範圍會跟目前選擇一起帶入"
+          "同一入口可匯出收退料、主資料、站點設定、治具需求與治具資料品質",
+          "不用記住每個頁面的匯出按鈕位置",
+          "目前客戶範圍會一起帶入"
         ],
         placement: "bottom"
       },
@@ -222,8 +222,8 @@ export const onboardingFlows: OnboardingFlow[] = [
         id: "inventory-export-panel",
         route: "/search",
         target: "[data-tour='inventory-export-panel']",
-        title: "匯出面板集中處理格式與範圍",
-        description: "打開後先決定要匯出摘要還是明細，再決定全部資料或自定義範圍。",
+        title: "匯出中心集中處理資料類型、格式與範圍",
+        description: "打開後先選資料集，再選格式；如果是收退料資料，還能直接縮日期與條件。",
         placement: "left",
         openExportModal: true
       },
@@ -231,11 +231,11 @@ export const onboardingFlows: OnboardingFlow[] = [
         id: "inventory-export-report-type",
         route: "/search",
         target: "[data-tour='inventory-export-report-type']",
-        title: "先選摘要還是明細",
-        description: "兩種匯出用途不同：",
+        title: "先選匯出格式",
+        description: "不同資料集會提供對應格式：",
         bullets: [
-          "匯出摘要：適合快速看各治具的收退料加總",
-          "匯出明細：適合追單筆 identifier、治具與交易差異"
+          "收退料資料可選 XLSX 或 TXT",
+          "主資料、站點設定、治具需求、治具資料品質目前匯出 CSV"
         ],
         placement: "left",
         openExportModal: true
@@ -244,8 +244,8 @@ export const onboardingFlows: OnboardingFlow[] = [
         id: "inventory-export-scope",
         route: "/search",
         target: "[data-tour='inventory-export-scope-mode']",
-        title: "再決定全部匯出或自定義範圍",
-        description: "資料量大時，建議改用自定義範圍，只匯出需要追查的日期、單號或治具。",
+        title: "再決定全部資料或自定義範圍",
+        description: "目前只有收退料資料支援自定義範圍；其他資料會直接匯出目前客戶的完整內容。",
         placement: "left",
         openExportModal: true
       },
@@ -253,7 +253,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         id: "inventory-export-filters",
         route: "/search",
         target: "[data-tour='inventory-export-filters']",
-        title: "自定義模式可縮小日期、單號、識別碼與治具範圍",
+        title: "收退料可直接縮日期、單號、識別碼與治具範圍",
         description: "如果只需要查特定批次或異常時段，先縮條件再匯出，檔案會更乾淨也更好核對。",
         placement: "top",
         openExportModal: true
@@ -398,15 +398,15 @@ export const onboardingFlows: OnboardingFlow[] = [
   {
     id: "production-workflow",
     sectionLabel: "產能管理",
-    label: "機種站點對應 & 站點治具需求",
-    summary: "同一套教學先建立機種站點對應，再接著完成站點治具需求設定。",
+    label: "產能設定與治具需求",
+    summary: "選定機種後，在同一畫面完成站點設定，並直接替站點配置治具需求。",
     steps: [
       {
         id: "production-menu",
         route: "/search",
         target: "[data-tour='home-more-menu-trigger']",
         title: "產能管理入口也在更多功能",
-        description: "從首頁更多功能進入產能管理，設定站點對應與治具需求。",
+        description: "從首頁更多功能進入產能管理，選好機種後直接配置站點與治具需求。",
         placement: "bottom",
         openMoreMenu: true
       },
@@ -415,7 +415,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         route: "/search",
         target: "[data-tour='home-production-entry']",
         title: "從這裡進入產能管理",
-        description: "進去後可看總覽、機種站點對應與治具需求。建議先做 Mapping，再做 Requirement。",
+        description: "進去後可看總覽與產能設定；產能設定頁會把站點設定與治具需求整合在同一畫面。",
         placement: "left",
         openMoreMenu: true
       },
@@ -423,11 +423,11 @@ export const onboardingFlows: OnboardingFlow[] = [
         id: "production-tabs",
         route: "/production/mapping",
         target: "[data-tour='production-tabs']",
-        title: "產能頁先分清楚兩種設定",
-        description: "這兩個分頁有先後關係，順序不要顛倒：",
+        title: "產能設定已整合成同一個工作畫面",
+        description: "現在不需要理解 Mapping 與 Requirement 的分頁關係，直接進入產能設定即可：",
         bullets: [
-          "① 機種站點對應：先定義某個機種會經過哪些站點",
-          "② 治具需求：在①已經建立的站點上，再綁治具與需求數量"
+          "① 先替目前機種建立會經過的站點",
+          "② 再直接替站點配置治具與需求數量"
         ],
         placement: "bottom"
       },
@@ -435,7 +435,7 @@ export const onboardingFlows: OnboardingFlow[] = [
         id: "production-filter-row",
         route: "/production/mapping",
         target: "[data-tour='production-filter-row']",
-        title: "進來先選機種，再進行下面的綁定",
+        title: "進來先選機種，再進行下面的配置",
         description: "上方選機種，決定你在編輯哪一個；切換機種後清單與表單會一起更新。",
         placement: "bottom"
       },
@@ -443,89 +443,60 @@ export const onboardingFlows: OnboardingFlow[] = [
         id: "production-mapping-panel",
         route: "/production/mapping",
         target: "[data-tour='production-mapping-panel']",
-        title: "這個區塊專門綁機種與站點",
-        description: "同一機種可對應多個站點，先在這裡建立對應，治具需求才能依附。",
+        title: "左側先選擇這個機種的站點",
+        description: "同一機種可對應多個站點；點選整列站點，右側就會切換到該站點的治具需求。",
         placement: "top"
       },
       {
         id: "production-mapping-form",
         route: "/production/mapping",
         target: "[data-tour='production-mapping-form']",
-        title: "輸入機種代碼與站點代碼後直接新增",
-        description: "輸入後可下拉選擇，選好機種站點按「新增 / 更新」即完成綁定。",
-        example: [
-          { label: "機種代碼", value: "ABC-1200" },
-          { label: "站點代碼", value: "ST-05" }
-        ],
+        title: "機種會自動沿用，只需選擇站點",
+        description: "上方已選好的機種會自動帶入。搜尋站點編號或名稱後，按「加入站點」即可。",
+        example: [{ label: "站點代碼", value: "ST-05" }],
         placement: "top"
       },
       {
         id: "production-mapping-list",
         route: "/production/mapping",
         target: "[data-tour='production-mapping-list']",
-        title: "新增完要看下面清單是否真的出現",
-        description: "列出目前機種已綁定的站點，可直接編輯或刪除；大量匯入請用上方批次貼上。",
+        title: "整列點選站點，右側直接接續配置",
+        description: "清單同時顯示站點名稱與最大開站數；尚未配置治具的站點會標示「待配置」。",
         placement: "top"
       },
       {
-        id: "production-requirements-menu",
-        route: "/search",
-        target: "[data-tour='home-more-menu-trigger']",
-        title: "需求設定前，先回到產能管理入口",
-        description: "治具需求同樣從首頁更多功能進入產能管理。",
-        placement: "bottom",
-        openMoreMenu: true
-      },
-      {
-        id: "production-requirements-entry",
-        route: "/search",
-        target: "[data-tour='home-production-entry']",
-        title: "需求設定也從這裡進入產能管理",
-        description: "進入產能管理後，切到「治具需求」分頁。",
-        placement: "left",
-        openMoreMenu: true
-      },
-      {
-        id: "production-requirements-tabs",
-        route: "/production/requirements",
-        target: "[data-tour='production-tabs']",
-        title: "治具需求之前，先確保 Mapping 已建好",
-        description: "需先建立機種站點對應，治具需求才有站點可選。",
-        placement: "bottom"
-      },
-      {
         id: "production-requirements-filter-row",
-        route: "/production/requirements",
+        route: "/production/mapping",
         target: "[data-tour='production-filter-row']",
-        title: "先選機種，再針對該機種下的站點設定需求",
-        description: "切換機種後，表單只列出已綁定的站點；下拉為空請回 Mapping 補綁定。",
+        title: "機種不需要重選，直接在同頁往下配置治具",
+        description: "同一個機種會一路帶到治具需求區，所以只要專注目前機種與目前站點即可。",
         placement: "bottom"
       },
       {
         id: "production-requirement-panel",
-        route: "/production/requirements",
+        route: "/production/mapping",
         target: "[data-tour='production-requirement-panel']",
-        title: "這個區塊負責綁站點、治具與需求數量",
-        description: "每筆需求代表某機種在某站點需要幾套治具，設定後產能分析才能抓出瓶頸。",
+        title: "右側直接替目前站點配置治具需求",
+        description: "每筆需求代表某機種在某站點需要幾套治具；右側會同步顯示庫存、可開站數與限制治具。",
         placement: "top"
       },
       {
         id: "production-requirement-form",
-        route: "/production/requirements",
+        route: "/production/mapping",
         target: "[data-tour='production-requirement-form']",
-        title: "操作順序是先站點，再治具，最後數量",
-        description: "站點欄位只接受目前機種已綁定的站點，避免在錯誤站點上建立需求：",
+        title: "站點已固定，只需選治具與數量",
+        description: "從左側選定站點後，這裡只剩兩個必要輸入：",
         bullets: [
-          "① 選站點（僅列出此機種已在 Mapping 綁定的站點）",
-          "② 選治具代碼",
-          "③ 填需要的數量"
+          "① 搜尋治具編號或名稱",
+          "② 填入每開一站需要的數量",
+          "③ 儲存前先查看最大開站數預估"
         ],
         example: [{ label: "需求數量", value: "3" }],
         placement: "top"
       },
       {
         id: "production-requirement-list",
-        route: "/production/requirements",
+        route: "/production/mapping",
         target: "[data-tour='production-requirement-list']",
         title: "新增後在列表核對站點、治具與數量",
         description: "下方是該站點的正式需求清單，可直接編輯；大量新增用批次貼上。",
@@ -600,8 +571,8 @@ export const onboardingFlows: OnboardingFlow[] = [
         title: "點問題標籤可直接開啟修正流程",
         description: "多數問題都能在這頁直接修，不必自己再跳分頁；像缺圖片、缺名稱、缺儲位都能就地處理。",
         bullets: [
-          "主檔欄位缺漏：直接在品質修正彈窗更新",
-          "缺機種關聯：在彈窗補第一筆 mapping / requirement",
+          "主檔欄位缺漏：直接在品質表格內補值並更新",
+          "缺機種關聯：直接跳到產能管理的治具需求區補資料",
           "庫存不一致：回到帳目管理做撤回或重算"
         ],
         placement: "top"

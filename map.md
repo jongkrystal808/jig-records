@@ -26,7 +26,9 @@
 - 改 topbar / customer picker / 今日摘要
   - `frontend/src/components/app/AppTopbar.vue`
   - 桌面版 `新手教學` 入口也在這裡
-  - `1200px` 以下 compact header、click/tap popover、摘要可用性也在這裡
+  - `1366px` 以下 compact header、click/tap popover、摘要可用性也在這裡
+  - topbar 今日統計改接 `/inventory/dashboard-summary`，不再由前端用最近 200 筆交易推算
+  - 低水位 popover 內直接開 `收 / 退料` 與訪客隱藏規則也在這裡
 
 - 改手機版抽屜選單
   - `frontend/src/components/app/AppMobileDrawer.vue`
@@ -35,6 +37,8 @@
 
 - 改全域收退料 / 匯出 modal
   - `frontend/src/components/app/AppGlobalModals.vue`
+  - 批次 modal 的 preset fixture code 傳遞也在這裡
+  - modal 關閉 / 轉總檢視前的草稿確認協調也在這裡
 
 - 改版本公告 modal / 文案
   - `frontend/src/components/app/AppReleaseNoticeModal.vue`
@@ -50,11 +54,14 @@
   - `frontend/src/pages/SearchWorkspacePage.vue`
   - `frontend/src/components/search/SearchHeroSection.vue`
   - `frontend/src/components/search/SearchResultPanel.vue`
+  - route query handoff、結果定位、與治具 / 機種編輯 draft 的 route leave / customer switch guard 都在這組檔案
   - `frontend/src/components/search/FixtureInfoPanel.vue`
   - `frontend/src/components/search/ModelInfoPanel.vue`
+  - 治具 detail 的 `以此治具收 / 退料` 訪客隱藏規則也在這組檔案
   - 查詢 contract / lazy context：`frontend/src/api/searchClient.ts`
   - 查詢型別：`frontend/src/types.ts`
-  - route query handoff（`mode` / `q`）：`frontend/src/pages/SearchWorkspacePage.vue`
+  - route query handoff（`mode` / `q` / `page` / `selected_id` / `detail`）：`frontend/src/pages/SearchWorkspacePage.vue`
+  - fixture detail -> overview handoff 只帶 `fixture_code` 與 `return_to`
 
 - 改查詢頁最近收 / 退料治具快捷入口
   - 資料整理：`frontend/src/pages/SearchWorkspacePage.vue`
@@ -66,7 +73,7 @@
   - `frontend/src/pages/InventoryPage.vue`
   - `frontend/src/components/inventory/InventoryOperationBoard.vue`
   - `frontend/src/components/inventory/InventoryOverviewPanel.vue`
-  - overview 主篩選 / 進階篩選與 responsive 欄位配置也在 `InventoryOverviewPanel.vue`
+  - overview 主篩選 / 進階篩選 / 分頁 / `return_to` back flow 也在這組檔案
 
 - 改批次貼上匯入
   - inventory：`frontend/src/components/inventory/BatchImportPanel.vue`
@@ -75,16 +82,24 @@
   - production batch composable：`frontend/src/composables/useProductionBatchImport.ts`
   - production editor/autocomplete composable：`frontend/src/composables/useProductionEditorState.ts`
   - production batch pure helper / 規則：`frontend/src/utils/productionBatchImport.ts`
+  - production station-availability helper：`frontend/src/utils/productionStations.ts`
   - production / 其他表單可共用的 autocomplete UI：`frontend/src/components/UiAutocompleteInput.vue`
   - inventory 的手動 `Tab` 鍵輸入行為也在 `BatchImportPanel.vue`
   - 退料解析時的 `identifier` 庫存預檢、逐列錯誤標記、送出失敗 toast 也在 `BatchImportPanel.vue`
   - 送出失敗後重新載入 identifier 庫存摘要、避免預覽沿用舊庫存快照的流程也在 `BatchImportPanel.vue`
   - `目前庫存` / `交易後庫存` 預覽與同批逐列累計也在 `BatchImportPanel.vue`
+  - 預填單一治具快捷列與 submit 前重複 `fixture + identifier` 合併也在 `BatchImportPanel.vue`
+  - 有預填治具時預設走快速模式，批次貼上 textarea 改成按需展開
+  - `ownership_type` 由整批 `來源` 控制；不提供逐列切換，且清空 / 重開後會回 `客供`
+  - `transaction_no` 前後端都必填；backend 不再自動補單號
+  - 舊交易歷史若缺 `transaction_no`，讀取 response 仍容許 `null`，前端顯示為 `（無單號）`
+  - 全域 modal 草稿的 `sessionStorage` 暫存 / 恢復也在 `BatchImportPanel.vue`
   - inventory preview 純計算 helper：`frontend/src/utils/inventoryBatchPreview.ts`
   - 退料真正的庫存檢核與逐筆錯誤訊息 fallback 在 `backend/app/services/inventory_service.py`
 
-- 改收退料報表匯出
-  - `frontend/src/components/inventory/InventoryExportPanel.vue`
+- 改全域匯出中心
+  - `frontend/src/components/app/ExportCenterPanel.vue`
+  - dataset list 會依目前角色隱藏 admin-only 的 `治具資料品質`
 
 - 改資料維護頁
   - `frontend/src/pages/MasterPage.vue`
@@ -92,8 +107,10 @@
   - `frontend/src/components/master/MasterDetailPanel.vue`
   - admin 收退料帳目管理：`frontend/src/components/master/TransactionAccountListPanel.vue`
   - admin 收退料帳目案件詳細 / 撤回 / 重算：`frontend/src/components/master/TransactionAccountDetailPanel.vue`
-  - admin 治具資料品質：`frontend/src/components/master/FixtureQualityPanel.vue`
-  - route 對應：`/master/fixtures`、`/master/models`、`/master/stations`、`/master/customers`、`/master/users`、`/master/ledger`、`/master/quality`
+- admin 治具資料品質：`frontend/src/components/master/FixtureQualityPanel.vue`
+  - `沒有儲位 / 沒有最低水位` 已支援表格內直接編輯與更新
+  - `沒有任何機種關聯` 會導向 `產能管理 -> 治具需求`
+- route 對應：`/master/fixtures`、`/master/models`、`/master/stations`、`/master/customers`、`/master/users`、`/master/ledger`、`/master/quality`
   - admin 主資料永久刪除（治具 / 機種 / 站點）：`MasterPage.vue`、`MasterDetailPanel.vue`、`frontend/src/api/masterClient.ts`
   - 保留歷史時前端交易型別允許 `fixture_id: null`：`frontend/src/types.ts`
   - master 響應式雙欄 breakpoint、手機 `list -> detail` 流程在 `MasterPage.vue`
@@ -101,9 +118,16 @@
 
 - 改產能頁
   - `frontend/src/pages/ProductionPage.vue`
+  - `ProductionPage.vue` 目前負責 overview/configure route sync、`model_id` / `return_to` query 保留、以及未儲存離頁 guard
   - `frontend/src/components/production/ProductionHeaderSection.vue`
   - `frontend/src/components/production/ProductionDetailSection.vue`
+  - `frontend/src/components/production/ProductionRequirementCopyModal.vue`
   - `frontend/src/components/production/ProductionCapacityPanel.vue`
+  - `frontend/src/utils/productionStations.ts`
+  - `frontend/src/utils/productionCapacityPreview.ts`
+  - `frontend/src/utils/productionCopy.ts`
+  - configure UI 是 `機種 -> 站點 -> 治具需求` 的 master-detail 工作區；權限顯示、站點整列選取、儲存前產能預估及同／跨機種複製集中在上述 page / detail / copy modal / helper
+  - 複製 API：`POST /api/v2/production/fixture-requirements/copy`；預設跳過衝突，明確覆蓋才更新，未綁定目標站點會自動補 mapping
 
 - 改前端 API 方法
   - 對外入口：`frontend/src/api.ts`
@@ -114,6 +138,7 @@
 
 - 改全域狀態
   - `frontend/src/appState.ts`
+  - session / customer 還原、customer switch guard、全域 batch modal shortcut request 也在這裡
 
 - 改新手導覽步驟 / 流程
   - `frontend/src/onboarding.ts`
@@ -156,6 +181,7 @@
   - `backend/app/routers/inventory.py`
   - `backend/app/services/inventory_service.py`
   - `backend/app/repositories/inventory_repository.py`
+  - `/transactions/overview` 分頁 detail-row contract 也在這組檔案
   - 撤回案件 / 全量重算 inventory state 也在這組檔案
 
 - 改 production API
@@ -230,6 +256,9 @@
   - `backend/app/routers/inventory.py`
   - `backend/app/services/inventory_service.py`
   - `backend/app/repositories/inventory_repository.py`
+  - ledger 已改成 transaction-level server-side paging/filter；品質頁 stock mismatch 跳入會預填治具篩選
+  - admin ledger transaction 分頁在 backend 以 `transaction id desc` 排序，避免 MySQL 對 `DISTINCT id + ORDER BY occurred_at` 報錯
+  - `backend/app/repositories/inventory_repository.py`
   - `backend/app/schemas/inventory.py`
 
 
@@ -245,21 +274,22 @@
   - 權限語意：僅 `manage`（admin），且仍受 `user_customers` customer scope 限制
   - 保留模式以 code/name snapshot 顯示與匯出；刪除模式不會移除混合交易中的其他治具 item
 
-- 改治具資料品質問題跳轉規則
+- 改治具資料品質問題跳轉規則 / 列內更新
   - `frontend/src/components/master/FixtureQualityPanel.vue`
   - `frontend/src/pages/MasterPage.vue`
   - `frontend/src/pages/SearchWorkspacePage.vue`
 
-- 改收退料報表匯出 / preview
-  - `frontend/src/components/inventory/InventoryExportPanel.vue`
+- 改全域匯出中心 / 收退料匯出條件
+  - `frontend/src/components/app/ExportCenterPanel.vue`
   - `frontend/src/api/inventoryClient.ts`
+  - `frontend/src/components/app/AppGlobalModals.vue`
   - `backend/app/routers/inventory.py`
   - `backend/app/services/inventory_service.py`
 
 - 改 `identifier`
   - 前端共用規則：`frontend/src/utils/identifier.ts`
   - 前端規則測試：`frontend/src/utils/identifier.test.ts`
-  - 前端顯示與查詢輸入：`frontend/src/pages/InventoryPage.vue`、`frontend/src/components/inventory/InventoryExportPanel.vue`
+  - 前端顯示與查詢輸入：`frontend/src/pages/InventoryPage.vue`、`frontend/src/components/app/ExportCenterPanel.vue`
   - 前端顯示文字：`frontend/src/utils/display.ts`
   - 後端共用規則：`backend/app/utils/identifier_rules.py`
   - schema 套用點：`backend/app/schemas/inventory.py`

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { onBeforeRouteLeave, useRoute, useRouter, type LocationQueryRaw } from "vue-router";
 
 import { api, fetchFixtureImageObjectUrl } from "@/api";
-import { authSession, selectedCustomerId } from "@/appState";
+import { authSession, requestInventoryBatchOpen, selectedCustomerId, setCustomerSwitchGuard } from "@/appState";
 import InlineSpinner from "@/components/common/InlineSpinner.vue";
 import FixtureInfoPanel from "@/components/search/FixtureInfoPanel.vue";
 import ModelInfoPanel from "@/components/search/ModelInfoPanel.vue";
@@ -34,7 +34,6 @@ type RecentFixtureShortcut = {
 const SEARCH_PAGE_SIZE = 12;
 const RECENT_SHORTCUT_TRANSACTION_LIMIT = 80;
 const FIXTURE_CONTEXT_TRANSACTION_LIMIT = 8;
-const FULL_FIXTURE_TRANSACTION_HISTORY_LIMIT = 2000;
 const MAX_RECENT_FIXTURE_SHORTCUTS = 20;
 
 const FixtureEditForm = defineAsyncComponent({
@@ -80,9 +79,8 @@ const selectedModelContext = ref<SearchModelContext | null>(null);
 const selectedFixtureImage = ref("");
 const imageLoadFailed = ref(false);
 const resultPanel = ref<HTMLElement | null>(null);
-const fixtureTransactionHistoryRows = ref<MaterialTransaction[]>([]);
-const fixtureTransactionHistoryLoadedForCode = ref<string | null>(null);
-const fixtureTransactionHistoryLoading = ref(false);
+const hasUnsavedFixtureDraft = ref(false);
+const hasUnsavedModelDraft = ref(false);
 
 const fixtureSectionSelection = ref<string[]>(loadSelection(FIXTURE_SECTION_KEY, defaultFixtureSections));
 const modelSectionSelection = ref<string[]>(loadSelection(MODEL_SECTION_KEY, defaultModelSections));
@@ -101,6 +99,21 @@ function loadSelection(key: string, fallback: string[]): string[] {
   }
 }
 
+function readRouteString(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value) && typeof value[0] === "string") {
+    return value[0];
+  }
+  return "";
+}
+
+function readPositiveInteger(value: unknown, fallback: number): number {
+  const parsed = Number.parseInt(readRouteString(value), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function formatCount(value: number): string {
   return nf.format(value);
 }
@@ -114,6 +127,7 @@ function stockTone(status: StockStatus | undefined): "normal" | "warn" | "danger
 
 const customerId = computed(() => selectedCustomerId.value ?? undefined);
 const canEdit = computed(() => authSession.value?.role !== "guest");
+const canOperateInventory = computed(() => authSession.value?.role !== "guest");
 const hasActiveQuery = computed(() => committedQuery.value.trim().length > 0);
 const panelLoading = computed(() => loading.value || detailLoading.value);
 const selectedFixture = computed(() => selectedFixtureContext.value?.fixture ?? null);
@@ -172,6 +186,7 @@ const currentSectionChips = computed(() => (mode.value === "fixture" ? fixtureSe
 const shouldShowEmptyResultState = computed(
   () => searchResults.value.length === 0 && !shouldShowFixtureCreateForm.value && !shouldShowModelCreateForm.value
 );
+const hasUnsavedDraft = computed(() => detailTab.value === "edit" && (hasUnsavedFixtureDraft.value || hasUnsavedModelDraft.value));
 const selectedFixtureIdentifierTags = computed(() => {
   const rows = selectedFixtureContext.value?.identifier_rows ?? [];
   return formatIdentifierStockTags(rows.map((row) => [row.identifier, row.stock_qty] as [string, number]), formatCount);
@@ -179,12 +194,7 @@ const selectedFixtureIdentifierTags = computed(() => {
 const selectedFixtureIdentifierTotalQty = computed(() =>
   (selectedFixtureContext.value?.identifier_rows ?? []).reduce((sum, row) => sum + row.stock_qty, 0)
 );
-const selectedFixtureTransactions = computed(() => {
-  if (fixtureTransactionHistoryLoadedForCode.value === selectedFixture.value?.code) {
-    return fixtureTransactionHistoryRows.value;
-  }
-  return selectedFixtureContext.value?.transactions ?? [];
-});
+const selectedFixtureTransactions = computed(() => selectedFixtureContext.value?.transactions ?? []);
 const selectedFixtureModels = computed(() => selectedFixtureContext.value?.related_models ?? []);
 const selectedFixtureStationRows = computed(() => selectedFixtureContext.value?.station_rows ?? []);
 const selectedModelFixtures = computed(() =>
@@ -273,9 +283,6 @@ async function loadSelectedContext(): Promise<void> {
       if (requestId !== detailRequestId) return;
       selectedFixtureContext.value = context;
       selectedModelContext.value = null;
-      fixtureTransactionHistoryRows.value = [];
-      fixtureTransactionHistoryLoadedForCode.value = null;
-      fixtureTransactionHistoryLoading.value = false;
       await refreshSelectedFixtureImage();
       return;
     }
@@ -297,7 +304,48 @@ async function loadSelectedContext(): Promise<void> {
   }
 }
 
-async function runSearch(options: { append?: boolean; preferredId?: number | null } = {}): Promise<void> {
+function buildSearchRouteQuery(): LocationQueryRaw {
+  const query: LocationQueryRaw = {
+    mode: mode.value,
+    q: committedQuery.value.trim()
+  };
+  if (searchPage.value > 1) {
+    query.page = String(searchPage.value);
+  }
+  if (selectedResultId.value !== null) {
+    query.selected_id = String(selectedResultId.value);
+  }
+  if (detailTab.value === "edit") {
+    query.detail = "edit";
+  }
+  return query;
+}
+
+function buildSearchReturnTo(): string {
+  return router.resolve({ name: "search", query: buildSearchRouteQuery() }).fullPath;
+}
+
+function confirmDiscardSearchDraft(message = "目前有未儲存的修改，離開後會遺失。要繼續嗎？"): boolean {
+  if (!hasUnsavedDraft.value) {
+    return true;
+  }
+  return window.confirm(message);
+}
+
+function resetDraftFlags(): void {
+  hasUnsavedFixtureDraft.value = false;
+  hasUnsavedModelDraft.value = false;
+}
+
+function handleBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!hasUnsavedDraft.value) {
+    return;
+  }
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+async function runSearch(options: { append?: boolean; preferredId?: number | null; scrollToPanel?: boolean } = {}): Promise<void> {
   const q = committedQuery.value.trim();
   if (!q || !customerId.value) {
     searchResults.value = [];
@@ -311,6 +359,7 @@ async function runSearch(options: { append?: boolean; preferredId?: number | nul
   }
 
   const append = options.append === true;
+  const shouldScrollToPanel = options.scrollToPanel !== false;
   const targetPage = append ? searchPage.value + 1 : 1;
   const requestId = ++searchRequestId;
   if (append) {
@@ -339,7 +388,7 @@ async function runSearch(options: { append?: boolean; preferredId?: number | nul
     } else if (!append && nextSelectedId !== null) {
       await loadSelectedContext();
     }
-    if (!append && page.items.length > 0) {
+    if (!append && shouldScrollToPanel && page.items.length > 0) {
       await scrollToResultPanel();
     }
   } catch (err) {
@@ -353,13 +402,44 @@ async function runSearch(options: { append?: boolean; preferredId?: number | nul
   }
 }
 
+async function restoreSearchFromRoute(): Promise<void> {
+  const routeMode = readRouteString(route.query.mode);
+  const routeQuery = readRouteString(route.query.q).trim();
+  if ((routeMode !== "fixture" && routeMode !== "model") || !routeQuery) {
+    return;
+  }
+
+  mode.value = routeMode;
+  queryDraft.value = routeQuery;
+  committedQuery.value = routeQuery;
+  detailTab.value = readRouteString(route.query.detail) === "edit" ? "edit" : "info";
+
+  const targetPage = readPositiveInteger(route.query.page, 1);
+  const preferredId = readPositiveInteger(route.query.selected_id, 0) || null;
+
+  await runSearch({ preferredId, scrollToPanel: false });
+  while (searchPage.value < targetPage && searchHasMore.value) {
+    await runSearch({ append: true, preferredId, scrollToPanel: false });
+  }
+  if (searchResults.value.length > 0) {
+    await scrollToResultPanel();
+  }
+}
+
 function submitSearch(): void {
+  if (!confirmDiscardSearchDraft()) {
+    return;
+  }
+  resetDraftFlags();
   committedQuery.value = queryDraft.value.trim();
   detailTab.value = "info";
   void runSearch();
 }
 
 function clearSearch(): void {
+  if (!confirmDiscardSearchDraft()) {
+    return;
+  }
   queryDraft.value = "";
   committedQuery.value = "";
   detailTab.value = "info";
@@ -370,10 +450,8 @@ function clearSearch(): void {
   selectedResultId.value = null;
   selectedFixtureContext.value = null;
   selectedModelContext.value = null;
-  fixtureTransactionHistoryRows.value = [];
-  fixtureTransactionHistoryLoadedForCode.value = null;
-  fixtureTransactionHistoryLoading.value = false;
   clearSelectedFixtureImage();
+  resetDraftFlags();
 }
 
 async function loadMoreResults(): Promise<void> {
@@ -409,6 +487,10 @@ function persistSelections(): void {
 }
 
 function applyRecentFixtureShortcut(fixtureCode: string): void {
+  if (!confirmDiscardSearchDraft()) {
+    return;
+  }
+  resetDraftFlags();
   mode.value = "fixture";
   queryDraft.value = fixtureCode;
   committedQuery.value = fixtureCode;
@@ -416,39 +498,24 @@ function applyRecentFixtureShortcut(fixtureCode: string): void {
   void runSearch();
 }
 
-function applyRouteSearchQuery(): void {
-  const routeMode = route.query.mode;
-  const routeQuery = route.query.q;
-  if ((routeMode !== "fixture" && routeMode !== "model") || typeof routeQuery !== "string" || !routeQuery.trim()) {
+function goToFixtureInventoryOverview(): void {
+  if (!selectedFixture.value) {
     return;
   }
-  mode.value = routeMode;
-  queryDraft.value = routeQuery.trim();
-  committedQuery.value = routeQuery.trim();
-  detailTab.value = "info";
-  void runSearch();
+  void router.push({
+    path: "/inventory/overview",
+    query: {
+      fixture_code: selectedFixture.value.code,
+      return_to: buildSearchReturnTo()
+    }
+  });
 }
 
-async function loadSelectedFixtureTransactionHistory(): Promise<void> {
-  const fixture = selectedFixture.value;
-  if (!fixture || !customerId.value || fixtureTransactionHistoryLoading.value) {
+function goToFixtureBatchImport(): void {
+  if (!selectedFixture.value) {
     return;
   }
-  if (fixtureTransactionHistoryLoadedForCode.value === fixture.code) {
-    return;
-  }
-
-  fixtureTransactionHistoryLoading.value = true;
-  try {
-    fixtureTransactionHistoryRows.value = await api.listTransactions(FULL_FIXTURE_TRANSACTION_HISTORY_LIMIT, customerId.value, {
-      fixture_code: fixture.code
-    });
-    fixtureTransactionHistoryLoadedForCode.value = fixture.code;
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "載入治具歷史收退料記錄失敗。", "error");
-  } finally {
-    fixtureTransactionHistoryLoading.value = false;
-  }
+  requestInventoryBatchOpen(selectedFixture.value.code);
 }
 
 function goCreateFromNoResult(): void {
@@ -462,13 +529,59 @@ function goCreateFromNoResult(): void {
   detailTab.value = "edit";
 }
 
+function handleModeChange(nextMode: SearchMode): void {
+  if (nextMode === mode.value) {
+    return;
+  }
+  if (!confirmDiscardSearchDraft()) {
+    return;
+  }
+  resetDraftFlags();
+  mode.value = nextMode;
+}
+
+function handleResultSelection(nextResultId: number): void {
+  if (nextResultId === selectedResultId.value) {
+    return;
+  }
+  if (!confirmDiscardSearchDraft()) {
+    return;
+  }
+  resetDraftFlags();
+  selectedResultId.value = nextResultId;
+}
+
+function handleDetailTabChange(nextTab: DetailTab): void {
+  if (nextTab === detailTab.value) {
+    return;
+  }
+  if (detailTab.value === "edit" && !confirmDiscardSearchDraft()) {
+    return;
+  }
+  if (nextTab !== "edit") {
+    resetDraftFlags();
+  }
+  detailTab.value = nextTab;
+}
+
+function cancelEdit(): void {
+  if (detailTab.value === "edit" && !confirmDiscardSearchDraft()) {
+    return;
+  }
+  resetDraftFlags();
+  detailTab.value = "info";
+}
+
 function goToProduction(): void {
   if (!selectedModel.value) {
     return;
   }
   void router.push({
     name: "production",
-    query: { model_id: String(selectedModel.value.id) }
+    query: {
+      model_id: String(selectedModel.value.id),
+      return_to: buildSearchReturnTo()
+    }
   });
 }
 
@@ -526,9 +639,6 @@ watch(customerId, async () => {
   clearSearch();
 });
 watch(selectedResultId, async () => {
-  fixtureTransactionHistoryRows.value = [];
-  fixtureTransactionHistoryLoadedForCode.value = null;
-  fixtureTransactionHistoryLoading.value = false;
   await loadSelectedContext();
 });
 onMounted(async () => {
@@ -542,11 +652,35 @@ onMounted(async () => {
   }
 
   await loadCustomerScopedShellData();
-  applyRouteSearchQuery();
+  await restoreSearchFromRoute();
+  window.addEventListener("beforeunload", handleBeforeUnload);
 });
 
 onBeforeUnmount(() => {
   clearSelectedFixtureImage();
+  window.removeEventListener("beforeunload", handleBeforeUnload);
+  setCustomerSwitchGuard("search-page", false, "搜尋頁有尚未儲存的治具／機種修改");
+});
+
+watch(detailTab, (value) => {
+  if (value !== "edit") {
+    resetDraftFlags();
+  }
+});
+
+watch(
+  hasUnsavedDraft,
+  (value) => {
+    setCustomerSwitchGuard("search-page", value, "搜尋頁有尚未儲存的治具／機種修改");
+  },
+  { immediate: true }
+);
+
+onBeforeRouteLeave(() => {
+  if (!confirmDiscardSearchDraft()) {
+    return false;
+  }
+  return true;
 });
 </script>
 
@@ -559,7 +693,7 @@ onBeforeUnmount(() => {
       :recent-fixture-shortcuts="recentFixtureShortcuts"
       :section-chips="currentSectionChips"
       :active-section-keys="activeSectionKeys"
-      @update:mode="mode = $event"
+      @update:mode="handleModeChange"
       @update:query-draft="queryDraft = $event"
       @submit="submitSearch"
       @clear="clearSearch"
@@ -575,7 +709,7 @@ onBeforeUnmount(() => {
         :loading="panelLoading"
         :empty="shouldShowEmptyResultState"
         :mode="mode"
-        @update:detail-tab="detailTab = $event"
+        @update:detail-tab="handleDetailTabChange"
         @create="goCreateFromNoResult"
       >
         <div class="search-results-layout">
@@ -591,7 +725,7 @@ onBeforeUnmount(() => {
                 class="result-row"
                 :class="{ active: row.reference_id === selectedResultId }"
                 type="button"
-                @click="selectedResultId = row.reference_id"
+                @click="handleResultSelection(row.reference_id)"
               >
                 <div class="result-row-head">
                   <strong>{{ row.title }}</strong>
@@ -619,6 +753,7 @@ onBeforeUnmount(() => {
               <FixtureInfoPanel
                 v-if="(detailTab === 'info' || !visibleFixtureSections.maintenance) && !shouldShowFixtureCreateForm"
                 :fixture="selectedFixture"
+                :can-operate-inventory="canOperateInventory"
                 :stock="selectedFixtureStock"
                 :image-url="selectedFixtureImage"
                 :image-load-failed="imageLoadFailed"
@@ -627,13 +762,12 @@ onBeforeUnmount(() => {
                 :related-models="selectedFixtureModels"
                 :station-rows="selectedFixtureStationRows"
                 :transactions="selectedFixtureTransactions"
-                :transaction-history-loaded="fixtureTransactionHistoryLoadedForCode === selectedFixture?.code"
-                :transaction-history-loading="fixtureTransactionHistoryLoading"
                 :visible-sections="visibleFixtureSections"
                 :format-count="formatCount"
                 :format-date="formatLocalDate"
                 :stock-tone="stockTone"
-                @load-transaction-history="loadSelectedFixtureTransactionHistory"
+                @open-batch-import="goToFixtureBatchImport"
+                @open-transaction-overview="goToFixtureInventoryOverview"
               />
               <FixtureEditForm
                 v-else
@@ -642,7 +776,8 @@ onBeforeUnmount(() => {
                 :assigned-users="customerUsers"
                 :initial-code="queryDraft.trim().toUpperCase()"
                 @saved="handleFixtureSaved"
-                @cancel="detailTab = 'info'"
+                @cancel="cancelEdit"
+                @dirty-change="hasUnsavedFixtureDraft = $event"
               />
             </template>
 
@@ -662,7 +797,8 @@ onBeforeUnmount(() => {
                 :model="selectedModel"
                 :initial-code="queryDraft.trim().toUpperCase()"
                 @saved="handleModelSaved"
-                @cancel="detailTab = 'info'"
+                @cancel="cancelEdit"
+                @dirty-change="hasUnsavedModelDraft = $event"
               />
             </template>
           </div>

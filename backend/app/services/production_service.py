@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.auth import SessionContext
 from backend.app.repositories.production_repository import ProductionRepository
 from backend.app.schemas.common import CsvImportPayload
-from backend.app.schemas.production import FixtureRequirementCreate, ModelStationCreate
+from backend.app.schemas.production import FixtureRequirementCopy, FixtureRequirementCreate, ModelStationCreate
 from backend.app.services.audit_service import AuditService
 from backend.app.utils.csv_tools import parse_csv_bytes, render_csv_text
 
@@ -97,6 +97,10 @@ class ProductionService:
         )
         self.db.commit()
 
+    def _ensure_model_station(self, *, customer_id: int, model_id: int, station_id: int) -> None:
+        if self.repo.get_model_station(model_id, station_id, customer_id=customer_id) is None:
+            self.repo.create_model_station(model_id=model_id, station_id=station_id)
+
     def create_fixture_requirement(self, payload: FixtureRequirementCreate, actor: SessionContext | None = None):
         model = self.repo.get_model(payload.model_id, customer_id=payload.customer_id)
         if model is None:
@@ -110,8 +114,11 @@ class ProductionService:
         if station is None:
             raise ValueError(f"station {payload.station_id} not found")
 
-        if self.repo.get_model_station(payload.model_id, payload.station_id, customer_id=payload.customer_id) is None:
-            raise ValueError("station is not mapped to the selected model")
+        self._ensure_model_station(
+            customer_id=payload.customer_id,
+            model_id=payload.model_id,
+            station_id=payload.station_id,
+        )
 
         requirement = self.repo.create_or_update_requirement(
             model_id=payload.model_id,
@@ -131,6 +138,117 @@ class ProductionService:
         self.db.refresh(requirement)
         return requirement
 
+    def copy_fixture_requirements(
+        self,
+        payload: FixtureRequirementCopy,
+        actor: SessionContext | None = None,
+    ) -> dict:
+        source_model = self.repo.get_model(payload.source_model_id, customer_id=payload.customer_id)
+        if source_model is None:
+            raise ValueError(f"source model {payload.source_model_id} not found")
+        source_station = self.repo.get_station(payload.source_station_id, customer_id=payload.customer_id)
+        if source_station is None:
+            raise ValueError(f"source station {payload.source_station_id} not found")
+        if (
+            self.repo.get_model_station(
+                payload.source_model_id,
+                payload.source_station_id,
+                customer_id=payload.customer_id,
+            )
+            is None
+        ):
+            raise ValueError("source station is not mapped to the selected model")
+
+        target_model = self.repo.get_model(payload.target_model_id, customer_id=payload.customer_id)
+        if target_model is None:
+            raise ValueError(f"target model {payload.target_model_id} not found")
+        target_station = self.repo.get_station(payload.target_station_id, customer_id=payload.customer_id)
+        if target_station is None:
+            raise ValueError(f"target station {payload.target_station_id} not found")
+        if (
+            payload.source_model_id == payload.target_model_id
+            and payload.source_station_id == payload.target_station_id
+        ):
+            raise ValueError("source and target station must be different")
+
+        source_requirements = self.repo.list_station_requirements(
+            payload.source_station_id,
+            model_id=payload.source_model_id,
+            customer_id=payload.customer_id,
+        )
+        if not source_requirements:
+            raise ValueError("source station has no fixture requirements")
+
+        mapping_created = (
+            self.repo.get_model_station(
+                payload.target_model_id,
+                payload.target_station_id,
+                customer_id=payload.customer_id,
+            )
+            is None
+        )
+        if mapping_created:
+            self.repo.create_model_station(
+                model_id=payload.target_model_id,
+                station_id=payload.target_station_id,
+            )
+
+        created_count = 0
+        updated_count = 0
+        skipped_count = 0
+        for source_requirement in source_requirements:
+            target_requirement = self.repo.get_requirement(
+                model_id=payload.target_model_id,
+                station_id=payload.target_station_id,
+                fixture_id=source_requirement.fixture_id,
+            )
+            if target_requirement is None:
+                self.repo.create_or_update_requirement(
+                    model_id=payload.target_model_id,
+                    station_id=payload.target_station_id,
+                    fixture_id=source_requirement.fixture_id,
+                    required_qty=source_requirement.required_qty,
+                )
+                created_count += 1
+                continue
+
+            if not payload.overwrite_existing or target_requirement.required_qty == source_requirement.required_qty:
+                skipped_count += 1
+                continue
+
+            self.repo.update_requirement(
+                target_requirement,
+                model_id=payload.target_model_id,
+                station_id=payload.target_station_id,
+                fixture_id=source_requirement.fixture_id,
+                required_qty=source_requirement.required_qty,
+            )
+            updated_count += 1
+
+        self.audit.record(
+            customer_id=payload.customer_id,
+            entity_type="fixture_requirement",
+            entity_key=(
+                f"{source_model.code}->{source_station.code}"
+                f"=>{target_model.code}->{target_station.code}"
+            ),
+            action="copy",
+            summary=(
+                f"複製治具需求 {source_model.code} / {source_station.code} → "
+                f"{target_model.code} / {target_station.code}；"
+                f"新增 {created_count}、更新 {updated_count}、跳過 {skipped_count}"
+            ),
+            actor=actor,
+        )
+        self.db.commit()
+        return {
+            "source_requirement_count": len(source_requirements),
+            "created_count": created_count,
+            "updated_count": updated_count,
+            "skipped_count": skipped_count,
+            "mapping_created": mapping_created,
+        }
+
     def update_fixture_requirement(self, requirement_id: int, payload: FixtureRequirementCreate, actor: SessionContext | None = None):
         requirement = self.repo.get_requirement_by_id(requirement_id, customer_id=payload.customer_id)
         if requirement is None:
@@ -148,8 +266,11 @@ class ProductionService:
         if station is None:
             raise ValueError(f"station {payload.station_id} not found")
 
-        if self.repo.get_model_station(payload.model_id, payload.station_id, customer_id=payload.customer_id) is None:
-            raise ValueError("station is not mapped to the selected model")
+        self._ensure_model_station(
+            customer_id=payload.customer_id,
+            model_id=payload.model_id,
+            station_id=payload.station_id,
+        )
 
         existing = self.repo.get_requirement(
             model_id=payload.model_id,

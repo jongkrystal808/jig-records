@@ -62,7 +62,7 @@ function handleOpenOnboarding(): void {
         <button class="outline-btn btn-sm" type="button" @click="emit('close')">關閉</button>
       </div>
       <button v-if="canOperateInventory" class="primary-btn receipt-btn mobile-receipt-btn" type="button" @click="handleOpenBatch">治具收/退料</button>
-      <button class="primary-btn receipt-btn mobile-receipt-btn" type="button" @click="handleOpenExport">收退料明細匯出</button>
+      <button class="primary-btn receipt-btn mobile-receipt-btn" type="button" @click="handleOpenExport">匯出中心</button>
       <button class="outline-btn drawer-link" type="button" @click="handleOpenOnboarding">新手教學</button>
       <button
         v-for="entry in menuEntries"

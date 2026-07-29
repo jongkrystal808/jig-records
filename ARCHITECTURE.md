@@ -117,7 +117,7 @@ components/
 │  └─ AppReleaseNoticeModal.vue
 ├─ inventory/
 │  ├─ BatchImportPanel.vue
-│  ├─ InventoryExportPanel.vue
+│  ├─ ExportCenterPanel.vue
 │  ├─ InventoryOperationBoard.vue
 │  └─ InventoryOverviewPanel.vue
 ├─ master/
@@ -149,8 +149,9 @@ Composable / helper notes:
 - `frontend/src/composables/useProductionBatchImport.ts` now owns Production batch modal state, batch row lifecycle, and submit orchestration
 - `frontend/src/composables/useProductionEditorState.ts` now owns Production editor state, autocomplete handlers, selection sync, and unsaved-change guards
 - `frontend/src/utils/productionBatchImport.ts` holds pure parsing, similarity matching, row-state reduction, and CSV assembly rules for Production batch import
+- `frontend/src/utils/productionStations.ts` holds the model-scoped station derivation used by Production overview/configure flows, so selectable stations stay limited to the current model's mapped station set
 - `frontend/src/components/UiAutocompleteInput.vue` is the shared autocomplete input shell used by Production editing flows
-- `frontend/src/pages/ProductionPage.vue` is kept as route-level orchestration plus data loading, rather than carrying batch domain logic inline
+- `frontend/src/pages/ProductionPage.vue` is kept as route-level orchestration plus data loading, route query sync (`model_id`, `return_to`), and leave/customer-switch guards, rather than carrying batch domain logic inline
 - `frontend/src/pages/MasterPage.vue` now acts as route-level orchestration for both classic master-data CRUD tabs and the admin-only transaction-ledger management tab
 
 Application shell notes:
@@ -163,19 +164,25 @@ Application shell notes:
 - guest users do not see `資料維護`, and router guard blocks direct `/master` access
 - the current shell is a top bar rather than a left sidebar
 - the top bar surfaces login state, customer switch, today receipt/return totals, and low-stock count
-- the top bar provides primary `收/退料`, `收退料資訊匯出`, and `新手教學` actions
+- top-bar summary data now comes from a dedicated backend dashboard-summary endpoint, rather than front-end derivation from a recent transaction slice
+- the top bar provides primary `收/退料`, `匯出中心`, and `新手教學` actions
 - the top bar provides a `更多功能` menu with `收退料總檢視` / `資料維護` / `產能管理`
 - clicking the logo returns to `/search`
-- `MasterPage` and `ProductionPage` each provide a local `返回搜尋` action
-- the desktop top bar now drops into a compact-header mode below `1200px`, rather than holding a crowded two-row desktop layout until phone width
+- `MasterPage` provides a local `返回搜尋` action, while `ProductionPage` can render `返回搜尋` or `返回來源` depending on the incoming `return_to` route query and falls back to `/search`
+- auth session and selected customer are restored from `sessionStorage` on reload, rather than waiting for a fresh login
+- customer switching is mediated by shared page-level dirty guards, so shell-level customer changes can be blocked when local drafts are still unsaved
+- `SearchWorkspacePage.vue` participates in the shared dirty-guard flow for inline fixture/model editing, covering route leave, browser reload, and shell-level customer switching
+- the desktop top bar now drops into a compact-header mode below `1366px`, rather than holding a crowded two-row desktop layout until phone width
 - top-bar daily metrics now use click/tap popovers with keyboard close behavior, rather than hover-only disclosure
+- low-stock popover rows now expose a direct `收 / 退料` quick action that opens the shared batch modal with the fixture code prefilled
+- guest sessions keep inventory quick actions hidden in fixture detail and low-stock popovers, instead of surfacing buttons that would only fail after click
 - mobile layout keeps a persistent hamburger trigger plus current customer name, with non-essential controls collapsed into the menu
 - the mobile drawer is now a scrollable panel with a sticky header, and primary actions are placed ahead of summary stats
 - mobile drawer also exposes `新手教學`, so onboarding replay is not tied to the search page alone
 - the root shell now owns the onboarding picker and reuses `data-tour` anchors rendered across multiple pages
 - onboarding state is stored in lightweight reactive app state and uses route-aware step syncing
 - onboarding is now grouped into selectable flows so users can choose a page- or tab-specific tutorial instead of replaying one long linear tour
-- the onboarding picker is currently consolidated into five flows: `查詢工作台`, `批次收 / 退料 & 收退料總檢視`, `治具 / 機種 / 站點主資料`, `機種站點對應 & 站點治具需求`, and `收退料帳目管理 / 治具資料品質`
+- the onboarding picker is currently consolidated into five flows: `查詢工作台`, `批次收 / 退料 & 收退料總檢視`, `治具 / 機種 / 站點主資料`, `產能設定與治具需求`, and `收退料帳目管理 / 治具資料品質`
 - the root shell also owns a versioned release-notice modal, with copy defined in `frontend/src/releaseNotice.ts`
 - release-note dismissal is now one-time per version per browser via `localStorage`, rather than once per account
 
@@ -222,8 +229,10 @@ Includes:
 - Fixture responsible-user assignment
 - Reversible active/inactive state management for fixtures, models, stations, and users
 - Admin-only transaction ledger workspace for inventory case review, reversal, and customer-scoped stock-state recovery
+- The transaction ledger now uses server-side transaction paging (`page / page_size / total`) and backend-side filtering by transaction number, operator, fixture, and type, rather than trimming to a recent in-memory slice
+- The admin ledger transaction-id paging subquery is intentionally ordered by `material_transactions.id desc`; this keeps the MySQL `DISTINCT` query valid and avoids `500` errors when loading `/api/v2/inventory/admin/transactions`
 - Admin-only fixture data-quality workspace for integrity review of master data, image coverage, model linkage, and stock consistency
-- Issue-specific navigation rules from the quality workspace into fixture maintenance or search results
+- The quality workspace now supports inline correction of storage location and minimum stock directly in the report table, while other issue types still route to targeted follow-up flows
 - Admin-only permanent fixture deletion with an explicit preserve/delete transaction-history choice
 - Admin-only permanent model deletion with an explicit warning that related model-station mappings, fixture requirements, and affected capacity summaries will be removed together
 - Admin-only permanent station deletion with an explicit warning that related model-station mappings, fixture requirements, and affected capacity summaries will be removed together
@@ -255,6 +264,9 @@ Includes:
 - Similar-fixture confirmation before import
 - Unified single identifier flow for all fixture transactions
 - Free-form transaction number for each batch import
+- Transaction number is an explicit business-required field for receipt/return creation; the backend no longer auto-generates fallback numbers, so duplicate-transaction protection always evaluates the operator-supplied number
+- Historical transaction reads still tolerate legacy rows where `transaction_no` is `NULL` or blank; read models expose that field as nullable and the UI renders those cases as `（無單號）`
+- Batch import now uses a single batch-level `ownership_type` selector; operators choose `customer_supplied` or `self_purchased` once per batch instead of per row
 - UI-visible inline row errors and toast feedback for failed inventory submissions
 - Preview-time `current stock` and `post-transaction stock` columns for each identifier row
 - In-batch sequential stock preview for repeated `fixture + identifier` rows
@@ -281,12 +293,20 @@ Current layout direction for inventory entry points:
 
 - `/inventory` keeps the full operation workspace route
 - the global top-bar `收/退料` button opens a modal that exposes only the shared batch-import flow
-- the global top-bar `收退料資訊匯出` button opens a modal that exposes report preview and export options
+- the global top-bar `匯出中心` button opens a modal that centralizes dataset, format, and range selection
+- the export-center dataset list is role-aware, so admin-only exports such as `治具資料品質` are hidden from guest/user sessions instead of failing late with `403`
 - the global modal intentionally excludes stock overview, low-stock panel, and recent-transaction panels
+- the shared batch modal can be opened with a preset fixture code from other pages, so the operator only needs to fill `identifier` and quantity for the next row
+- preset-fixture entry now defaults to a quick-entry presentation and keeps the large batch-paste textarea collapsed until the operator explicitly chooses `改用批次貼上`
+- closing the shared batch modal now uses a single confirmation path for `關閉` / `Esc` / `收退料總檢視`, so unsent drafts are not silently discarded
+- the shared batch modal also persists its draft in `sessionStorage` per customer, so reopening the modal can restore an unfinished batch
+- the batch source selector intentionally resets to `customer_supplied` after clear, submit, or reopen; unfinished draft restore does not carry over a previous `self_purchased` choice
 - after a successful modal submission, the input is cleared but the modal stays open for consecutive batches
 - tutorial mode can run the batch-import UI without writing official inventory transactions, for onboarding use only
 - the batch-import textarea captures `Tab` and inserts a literal tab character so users can type spreadsheet-style rows manually when clipboard paste is unavailable
 - onboarding selectors that target inventory controls inside the global modal must be scoped under the modal container, because some `data-tour` names are reused in the full `/inventory` page layout
+- ready rows that resolve to the same `fixture + identifier` are merged before submit, so the final payload matches the previewed accumulated quantity
+- `/inventory/overview` now uses a paginated detail-row contract with route-synced filters, page state, and optional `return_to` back-navigation context
 
 Batch paste import accepts rows in either of these practical formats:
 
@@ -337,6 +357,7 @@ Batch import still uses the existing inventory transaction APIs:
 
 - `POST /api/v2/inventory/receipts`
 - `POST /api/v2/inventory/returns`
+- `GET /api/v2/inventory/dashboard-summary`
 
 Duplicate-submission behavior:
 
@@ -355,6 +376,7 @@ Preview behavior:
 Admin repair / rollback flows use:
 
 - `DELETE /api/v2/inventory/admin/transactions/{transaction_id}`
+- `GET /api/v2/inventory/admin/transactions`
 - `POST /api/v2/inventory/admin/recalculate`
 
 Fixture creation from the batch flow uses the master API:
@@ -382,13 +404,16 @@ Date handling rule:
 
 Includes:
 
-- Model-station mapping
+- Station settings for model-to-station applicability
 - Fixture requirements
 - Capacity calculation
 - Station-scoped model query
 - Batch paste import with similarity confirmation
 - Shared-station multi-model support
+- Creating or updating a fixture requirement now auto-creates the underlying model-station relationship when it does not exist yet
 - Page-level orchestration with extracted editor-state and batch-import composables
+- Dual-mode Production workspace: `/production` for overview, `/production/mapping` and `/production/requirements` for the shared configure workspace
+- Client-side station selection is derived from current `model_stations` only, so overview and requirement flows do not default to customer stations that are not mapped to the selected model
 
 API prefix:
 
@@ -416,6 +441,24 @@ Authoritative requirement scope:
 ```text
 model_id + station_id + fixture_id
 ```
+
+#### Production UI behavior
+
+- `/production` is the overview surface for station scan + bottleneck drill-down
+- `/production/mapping` and `/production/requirements` currently converge into the same configure workspace, rather than separate editing pages
+- the selected model is mirrored into route query `model_id` so cross-page handoff and refresh keep the same planning context
+- `return_to` is preserved in route query and drives the local back button label / target
+- unsaved mapping or requirement edits participate in browser unload, route leave, and customer-switch confirmation guards
+- default and selectable requirement stations are always derived from the selected model's mapped station set; capacity and model-query refreshes must not target unmapped customer stations
+- the configure workspace uses `站點設定` as the primary operator-facing label for model-station mappings, while backend contracts remain on `model_stations`
+- the configure workspace is a responsive master-detail flow: select a model, select a mapped station, then configure that station's fixture requirements
+- model and station context are inherited by child editors instead of being entered repeatedly; new editors start blank instead of preselecting the first station or fixture
+- mapped stations remain visible even before fixture requirements exist, and are marked as waiting for configuration rather than disappearing from the overview
+- requirement edits show a client-side projected maximum-station count before submission; the backend calculation remains authoritative after save
+- a station's complete fixture-requirement set can be copied to another station in the same model or to a station in another model
+- copy is transactional and safe by default: existing target fixtures are skipped unless the operator explicitly enables overwrite; an unmapped target station is added to the target model in the same transaction
+- copy results report created, updated, skipped, and mapping-created counts, and the UI navigates directly to the target context after success
+- guest sessions receive a read-only production workspace without create, edit, delete, import, or save actions
 
 ---
 
@@ -798,7 +841,7 @@ Search behavior updates:
 - Model and station results follow the same exact-match-first pattern
 - Search workspace now uses `load more` instead of preloading the full fixture / model universe
 - Fixture / model detail context is loaded on demand after result selection
-- Fixture full transaction history remains an extra user-triggered fetch, instead of part of the first search response
+- Fixture detail keeps a recent transaction preview in the lazy context, while full history is delegated to `/inventory/overview` through a route handoff keyed by `fixture_code` and `return_to`
 - Fixture-side related-model display is derived from `fixture_requirements.model_id`
 - The search workspace no longer back-infers models from stations
 - Fixture detail drill-down now shows `model + station + required_qty`
@@ -806,6 +849,8 @@ Search behavior updates:
 - Search and inventory labels now expose the identifier concept to end users as `datecode/編號` without changing the internal field contract
 - Search result navigation now scrolls to the result panel after search completion, and the scroll target is computed after layout settles so the `最近收 / 退料治具` block does not offset the landing position
 - The search workspace can also be opened with route query state such as `?mode=fixture&q=FX-001`, which is used by cross-page handoff flows
+- route-restored search state now also carries `page`, `selected_id`, and `detail`, so refresh and cross-page return preserve the current result and edit context
+- in-context fixture/model editing now participates in route leave and browser unload confirmation when unsaved drafts exist
 
 ---
 
@@ -879,6 +924,7 @@ flowchart LR
 /api/v2/inventory/returns
 /api/v2/inventory/stock
 /api/v2/inventory/transactions
+/api/v2/inventory/transactions/overview
 /api/v2/inventory/alerts
 
 /api/v2/production/model-stations

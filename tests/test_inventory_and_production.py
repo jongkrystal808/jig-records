@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from sqlalchemy.dialects import mysql
+
+from backend.app.models.inventory import MaterialTransaction
+from backend.app.repositories.inventory_repository import InventoryRepository
+from backend.app.utils.identifier_rules import normalize_identifier_for_write
+
 
 def _login(client):
     response = client.post(
@@ -89,6 +95,7 @@ def test_inventory_capacity_and_search_flow(app_client):
         json={
             "customer_id": customer_id,
             "created_by": "System Admin",
+            "transaction_no": "INV-FLOW-001",
             "items": [
                 {
                     "fixture_id": fixture_id,
@@ -146,6 +153,7 @@ def test_fixture_reenable_recomputes_low_stock_alert(app_client):
         json={
             "customer_id": customer_id,
             "created_by": "System Admin",
+            "transaction_no": "ALERT-TX-001",
             "items": [
                 {
                     "fixture_id": fixture_id,
@@ -395,6 +403,7 @@ def test_search_fixture_context_loads_detail_on_demand(app_client):
         json={
             "customer_id": customer_id,
             "created_by": "System Admin",
+            "transaction_no": "CTX-TX-001",
             "items": [
                 {
                     "fixture_id": fixture_id,
@@ -546,6 +555,7 @@ def test_inventory_accepts_legacy_numeric_identifier_longer_than_four_digits(app
         json={
             "customer_id": customer_id,
             "created_by": "System Admin",
+            "transaction_no": "LEGACY-ID-001",
             "items": [
                 {
                     "fixture_id": fixture_id,
@@ -640,6 +650,325 @@ def test_inventory_transactions_still_return_legacy_identifier_history(app_clien
     legacy_payload = legacy_identifier_query.json()
     assert len(legacy_payload) == 1
     assert legacy_payload[0]["items"][0]["fixture_code"] == "C-78-3"
+
+
+def test_admin_transaction_page_filters_and_paginates_by_transaction(app_client):
+    token = _login(app_client)
+    headers = {"Authorization": f"Bearer {token}"}
+    customer_id = _create_assigned_customer(app_client, headers)
+
+    fixture_a = app_client.post(
+        "/api/v2/master/fixtures",
+        json={
+            "customer_id": customer_id,
+            "code": "LEDGER-A",
+            "name": "Ledger Fixture A",
+            "storage_location": "L-A",
+            "min_stock_qty": 1,
+        },
+        headers=headers,
+    )
+    fixture_b = app_client.post(
+        "/api/v2/master/fixtures",
+        json={
+            "customer_id": customer_id,
+            "code": "LEDGER-B",
+            "name": "Ledger Fixture B",
+            "storage_location": "L-B",
+            "min_stock_qty": 1,
+        },
+        headers=headers,
+    )
+    assert fixture_a.status_code == 201
+    assert fixture_b.status_code == 201
+
+    fixture_a_id = fixture_a.json()["id"]
+    fixture_b_id = fixture_b.json()["id"]
+
+    first_tx = app_client.post(
+        "/api/v2/inventory/receipts",
+        json={
+            "customer_id": customer_id,
+            "created_by": "Alpha User",
+            "transaction_no": "LEDGER-TX-001",
+            "items": [
+                {
+                    "fixture_id": fixture_a_id,
+                    "ownership_type": "self_purchased",
+                    "identifier": "2607",
+                    "quantity": 3,
+                }
+            ],
+        },
+        headers=headers,
+    )
+    second_tx = app_client.post(
+        "/api/v2/inventory/receipts",
+        json={
+            "customer_id": customer_id,
+            "created_by": "Beta User",
+            "transaction_no": "LEDGER-TX-002",
+            "items": [
+                {
+                    "fixture_id": fixture_b_id,
+                    "ownership_type": "self_purchased",
+                    "identifier": "2608",
+                    "quantity": 1,
+                }
+            ],
+        },
+        headers=headers,
+    )
+    assert first_tx.status_code == 204
+    assert second_tx.status_code == 204
+
+    filtered = app_client.get(
+        "/api/v2/inventory/admin/transactions",
+        params={
+            "customer_id": customer_id,
+            "page": 1,
+            "page_size": 10,
+            "fixture_code": "LEDGER-A",
+            "created_by": "Alpha",
+            "transaction_type": "receipt",
+        },
+        headers=headers,
+    )
+    assert filtered.status_code == 200
+    payload = filtered.json()
+    assert payload["total"] == 1
+    assert payload["page"] == 1
+    assert payload["page_size"] == 10
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["transaction_no"] == "LEDGER-TX-001"
+    assert payload["items"][0]["items"][0]["fixture_code"] == "LEDGER-A"
+
+    paged = app_client.get(
+        "/api/v2/inventory/admin/transactions",
+        params={"customer_id": customer_id, "page": 1, "page_size": 1},
+        headers=headers,
+    )
+    assert paged.status_code == 200
+    paged_payload = paged.json()
+    assert paged_payload["total"] == 2
+    assert len(paged_payload["items"]) == 1
+    assert paged_payload["items"][0]["transaction_no"] == "LEDGER-TX-002"
+
+
+def test_admin_transaction_page_mysql_sql_orders_by_transaction_id_only():
+    repo = InventoryRepository(None)  # type: ignore[arg-type]
+    stmt = (
+        repo._build_transaction_id_stmt(customer_id=20)
+        .order_by(MaterialTransaction.id.desc())
+        .offset(0)
+        .limit(12)
+    )
+
+    sql = str(stmt.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True}))
+
+    assert "ORDER BY material_transactions.id DESC" in sql
+    assert "occurred_at" not in sql
+
+
+def test_inventory_receipt_requires_transaction_no(app_client):
+    token = _login(app_client)
+    headers = {"Authorization": f"Bearer {token}"}
+    customer_id = _create_assigned_customer(app_client, headers)
+
+    fixture = app_client.post(
+        "/api/v2/master/fixtures",
+        json={
+            "customer_id": customer_id,
+            "code": "REQ-TX-001",
+            "name": "Required Tx Fixture",
+            "storage_location": "REQ-TX",
+            "min_stock_qty": 1,
+        },
+        headers=headers,
+    )
+    assert fixture.status_code == 201
+    fixture_id = fixture.json()["id"]
+
+    receipt = app_client.post(
+        "/api/v2/inventory/receipts",
+        json={
+            "customer_id": customer_id,
+            "created_by": "System Admin",
+            "items": [
+                {
+                    "fixture_id": fixture_id,
+                    "ownership_type": "self_purchased",
+                    "identifier": "2609",
+                    "quantity": 1,
+                }
+            ],
+        },
+        headers=headers,
+    )
+
+    assert receipt.status_code == 422
+    assert "transaction_no" in receipt.text
+
+
+def test_inventory_read_endpoints_tolerate_legacy_blank_transaction_no(app_client):
+    from backend.app.core.database import SessionLocal
+    from backend.app.models.inventory import MaterialTransaction, MaterialTransactionItem
+
+    token = _login(app_client)
+    headers = {"Authorization": f"Bearer {token}"}
+    customer_id = _create_assigned_customer(app_client, headers)
+
+    fixture = app_client.post(
+        "/api/v2/master/fixtures",
+        json={
+            "customer_id": customer_id,
+            "code": "LEGACY-BLANK-TX",
+            "name": "Legacy Blank Transaction No",
+            "storage_location": "L-LEGACY",
+            "min_stock_qty": 1,
+        },
+        headers=headers,
+    )
+    assert fixture.status_code == 201
+    fixture_id = fixture.json()["id"]
+
+    db = SessionLocal()
+    try:
+        transaction = MaterialTransaction(
+            customer_id=customer_id,
+            transaction_type="receipt",
+            occurred_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+            created_by="legacy-user",
+            transaction_no="",
+            note="legacy blank tx no",
+        )
+        db.add(transaction)
+        db.flush()
+        db.add(
+            MaterialTransactionItem(
+                transaction_id=transaction.id,
+                fixture_id=fixture_id,
+                ownership_type="self_purchased",
+                identifier="2607",
+                quantity=2,
+                note=None,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    transactions = app_client.get(
+        "/api/v2/inventory/transactions",
+        params={"customer_id": customer_id, "created_by": "legacy-user"},
+        headers=headers,
+    )
+    assert transactions.status_code == 200
+    transactions_payload = transactions.json()
+    assert len(transactions_payload) == 1
+    assert transactions_payload[0]["transaction_no"] is None
+
+    ledger_page = app_client.get(
+        "/api/v2/inventory/admin/transactions",
+        params={"customer_id": customer_id, "page": 1, "page_size": 10, "created_by": "legacy-user"},
+        headers=headers,
+    )
+    assert ledger_page.status_code == 200
+    ledger_payload = ledger_page.json()
+    assert ledger_payload["total"] == 1
+    assert ledger_payload["items"][0]["transaction_no"] is None
+
+    overview_page = app_client.get(
+        "/api/v2/inventory/transactions/overview",
+        params={"customer_id": customer_id, "page": 1, "page_size": 10, "created_by": "legacy-user"},
+        headers=headers,
+    )
+    assert overview_page.status_code == 200
+    overview_payload = overview_page.json()
+    assert overview_payload["total"] == 1
+    assert overview_payload["items"][0]["transaction_no"] is None
+
+
+def test_inventory_dashboard_summary_counts_beyond_recent_200_transactions(app_client):
+    token = _login(app_client)
+    headers = {"Authorization": f"Bearer {token}"}
+    customer_id = _create_assigned_customer(app_client, headers)
+
+    fixture = app_client.post(
+        "/api/v2/master/fixtures",
+        json={
+            "customer_id": customer_id,
+            "code": "DB-SUM-001",
+            "name": "Dashboard Summary Fixture",
+            "storage_location": "DB-SUM",
+            "min_stock_qty": 500,
+        },
+        headers=headers,
+    )
+    assert fixture.status_code == 201
+    fixture_id = fixture.json()["id"]
+
+    for index in range(205):
+        receipt = app_client.post(
+            "/api/v2/inventory/receipts",
+            json={
+                "customer_id": customer_id,
+                "created_by": "Summary User",
+                "transaction_no": f"DB-SUM-R-{index + 1:03d}",
+                "items": [
+                    {
+                        "fixture_id": fixture_id,
+                        "ownership_type": "self_purchased",
+                        "identifier": f"{3000 + index}",
+                        "quantity": 1,
+                    }
+                ],
+            },
+            headers=headers,
+        )
+        assert receipt.status_code == 204
+
+    for index in range(12):
+        returned_identifier = normalize_identifier_for_write(str(3000 + index))
+        returned_identifier = returned_identifier or str(3000 + index)
+        returned = app_client.post(
+            "/api/v2/inventory/returns",
+            json={
+                "customer_id": customer_id,
+                "created_by": "Summary User",
+                "transaction_no": f"DB-SUM-T-{index + 1:03d}",
+                "items": [
+                    {
+                        "fixture_id": fixture_id,
+                        "ownership_type": "self_purchased",
+                        "identifier": returned_identifier,
+                        "quantity": 1,
+                    }
+                ],
+            },
+            headers=headers,
+        )
+        assert returned.status_code == 204
+
+    summary = app_client.get(
+        "/api/v2/inventory/dashboard-summary",
+        params={"customer_id": customer_id},
+        headers=headers,
+    )
+    assert summary.status_code == 200
+    payload = summary.json()
+    assert payload["today_receipt_qty"] == 205
+    assert payload["today_return_qty"] == 12
+    assert payload["low_stock_count"] == 1
+    assert payload["has_more_low_stock_entries"] is False
+    assert len(payload["low_stock_preview_entries"]) == 1
+    assert payload["low_stock_preview_entries"][0]["fixture_code"] == "DB-SUM-001"
+    assert len(payload["recent_receipt_entries"]) == 10
+    assert payload["recent_receipt_entries"][0]["transaction_no"] == "DB-SUM-R-205"
+    assert payload["recent_receipt_entries"][-1]["transaction_no"] == "DB-SUM-R-196"
+    assert len(payload["recent_return_entries"]) == 10
+    assert payload["recent_return_entries"][0]["transaction_no"] == "DB-SUM-T-012"
+    assert payload["recent_return_entries"][-1]["transaction_no"] == "DB-SUM-T-003"
 
 
 def test_csv_import_flow(app_client):
@@ -762,6 +1091,7 @@ def test_admin_recalculate_inventory_state_repairs_summary_after_manual_change(a
         json={
             "customer_id": customer_id,
             "created_by": "System Admin",
+            "transaction_no": "RECALC-TX-001",
             "items": [
                 {
                     "fixture_id": fixture_id,

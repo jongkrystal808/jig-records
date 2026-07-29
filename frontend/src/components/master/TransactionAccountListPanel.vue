@@ -7,12 +7,19 @@ const props = defineProps<{
   rows: MaterialTransaction[];
   selectedTransactionId: number | null;
   loading: boolean;
-  keyword: string;
+  transactionNo: string;
+  createdBy: string;
+  fixtureCode: string;
   transactionType: "all" | "receipt" | "return";
   page: number;
+  pageSize: number;
   totalPages: number;
-  onKeywordChange: (value: string) => void;
+  total: number;
+  onTransactionNoChange: (value: string) => void;
+  onCreatedByChange: (value: string) => void;
+  onFixtureCodeChange: (value: string) => void;
   onTransactionTypeChange: (value: "all" | "receipt" | "return") => void;
+  onPageSizeChange: (value: number) => void;
   onSelectRow: (id: number) => void;
   onPreviousPage: () => void;
   onNextPage: () => void;
@@ -21,15 +28,31 @@ const props = defineProps<{
 function summarizeQuantity(row: MaterialTransaction): number {
   return row.items.reduce((sum, item) => sum + item.quantity, 0);
 }
+
+function displayTransactionNo(value: string | null): string {
+  return value?.trim() || "（無單號）";
+}
 </script>
 
 <template>
   <article class="panel list-panel" data-tour="master-ledger-list">
-    <UiSectionHeader class="panel-head" title="收退料帳目管理" :description="`${rows.length} 筆案件`" />
+    <UiSectionHeader class="panel-head" title="收退料帳目管理" :description="`共 ${total} 筆案件`" />
 
-    <div v-if="rows.length > 0" class="list-footer">
-      <span>第 {{ page }} / {{ totalPages }} 頁，共 {{ rows.length }} 筆案件</span>
+    <div v-if="total > 0" class="list-footer">
+      <span>第 {{ page }} / {{ totalPages }} 頁，共 {{ total }} 筆案件</span>
       <div class="pager-actions">
+        <label class="page-size-field">
+          <span>每頁</span>
+          <select
+            :value="String(pageSize)"
+            :disabled="loading"
+            @change="onPageSizeChange(Number(($event.target as HTMLSelectElement).value))"
+          >
+            <option value="12">12</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+          </select>
+        </label>
         <button class="outline-btn small" type="button" :disabled="loading || page <= 1" @click="onPreviousPage">上一頁</button>
         <button class="outline-btn small" type="button" :disabled="loading || page >= totalPages" @click="onNextPage">下一頁</button>
       </div>
@@ -37,10 +60,22 @@ function summarizeQuantity(row: MaterialTransaction): number {
 
     <div class="list-toolbar" data-tour="master-ledger-filters">
       <input
-        :value="keyword"
-        placeholder="搜尋單號 / 操作人 / 治具編號"
+        :value="transactionNo"
+        placeholder="搜尋單號"
         :disabled="loading"
-        @input="onKeywordChange(($event.target as HTMLInputElement).value)"
+        @input="onTransactionNoChange(($event.target as HTMLInputElement).value)"
+      />
+      <input
+        :value="createdBy"
+        placeholder="搜尋操作人"
+        :disabled="loading"
+        @input="onCreatedByChange(($event.target as HTMLInputElement).value)"
+      />
+      <input
+        :value="fixtureCode"
+        placeholder="搜尋治具編號"
+        :disabled="loading"
+        @input="onFixtureCodeChange(($event.target as HTMLInputElement).value)"
       />
       <select
         :value="transactionType"
@@ -74,7 +109,7 @@ function summarizeQuantity(row: MaterialTransaction): number {
             :class="{ selected: selectedTransactionId === row.id }"
             @click="onSelectRow(row.id)"
           >
-            <td>{{ row.transaction_no }}</td>
+            <td>{{ displayTransactionNo(row.transaction_no) }}</td>
             <td>
               <span class="type-pill" :class="row.transaction_type">
                 {{ row.transaction_type === "receipt" ? "收料" : "退料" }}
@@ -113,7 +148,7 @@ function summarizeQuantity(row: MaterialTransaction): number {
 
 .list-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 140px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -212,6 +247,19 @@ select {
 .pager-actions {
   display: flex;
   gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.page-size-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #5d6d89;
+}
+
+.page-size-field span {
+  font-size: 12px;
 }
 
 .outline-btn {
@@ -237,6 +285,12 @@ select {
 }
 
 @media (max-width: 900px) {
+  .list-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
   .list-toolbar {
     grid-template-columns: 1fr;
   }

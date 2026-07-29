@@ -155,6 +155,33 @@ export interface IdentifierStockSummary {
   stock_qty: number;
 }
 
+export interface DashboardRecentTransactionEntry {
+  transaction_id: number;
+  transaction_item_id: number;
+  transaction_no: string | null;
+  occurred_at: string;
+  fixture_code: string;
+  identifier: string | null;
+  quantity: number;
+}
+
+export interface InventoryDashboardSummary {
+  today_receipt_qty: number;
+  today_return_qty: number;
+  low_stock_count: number;
+  low_stock_preview_entries: Array<{
+    fixture_id: number;
+    fixture_code: string;
+    fixture_name: string;
+    stock_qty: number;
+    min_stock_qty: number;
+    stock_status: "low_stock" | "out_of_stock";
+  }>;
+  has_more_low_stock_entries: boolean;
+  recent_receipt_entries: DashboardRecentTransactionEntry[];
+  recent_return_entries: DashboardRecentTransactionEntry[];
+}
+
 export interface SearchResult {
   entity_type: "fixture" | "model" | "station";
   title: string;
@@ -202,7 +229,7 @@ export interface MaterialTransaction {
   id: number;
   customer_id: number;
   transaction_type: "receipt" | "return";
-  transaction_no: string;
+  transaction_no: string | null;
   occurred_at: string;
   created_by: string;
   note: string | null;
@@ -218,9 +245,38 @@ export interface MaterialTransaction {
   }>;
 }
 
+export interface MaterialTransactionPage {
+  items: MaterialTransaction[];
+  page: number;
+  page_size: number;
+  total: number;
+}
+
+export interface TransactionOverviewRow {
+  id: number;
+  transaction_type: "receipt" | "return";
+  transaction_no: string | null;
+  occurred_at: string;
+  created_by: string;
+  fixture_id: number | null;
+  fixture_code: string;
+  fixture_name: string;
+  ownership_type: "customer_supplied" | "self_purchased";
+  identifier: string | null;
+  quantity: number;
+  note: string | null;
+}
+
+export interface TransactionOverviewPage {
+  items: TransactionOverviewRow[];
+  page: number;
+  page_size: number;
+  total: number;
+}
+
 export interface TransactionReverseResult {
   transaction_id: number;
-  transaction_no: string;
+  transaction_no: string | null;
   transaction_type: "receipt" | "return";
   item_count: number;
   total_quantity: number;
@@ -247,7 +303,7 @@ export interface StockTransactionCreate {
   customer_id: number;
   created_by: string;
   occurred_at?: string;
-  transaction_no?: string;
+  transaction_no: string;
   note?: string;
   items: Array<{
     fixture_id: number;
@@ -282,6 +338,14 @@ export interface FixtureRequirementListItem {
   fixture_code: string;
   fixture_name: string;
   required_qty: number;
+}
+
+export interface FixtureRequirementCopyResult {
+  source_requirement_count: number;
+  created_count: number;
+  updated_count: number;
+  skipped_count: number;
+  mapping_created: boolean;
 }
 
 export interface StationCapacity {

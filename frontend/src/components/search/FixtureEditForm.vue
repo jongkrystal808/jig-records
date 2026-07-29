@@ -14,10 +14,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   saved: [fixtureId: number];
   cancel: [];
+  dirtyChange: [dirty: boolean];
 }>();
 
 const saving = ref(false);
 const form = ref(makeForm());
+const initialSnapshot = ref("");
 
 function makeForm() {
   return {
@@ -32,12 +34,26 @@ function makeForm() {
   };
 }
 
+function serializeForm(value: ReturnType<typeof makeForm>): string {
+  return JSON.stringify(value);
+}
+
 const isCreateMode = computed(() => props.fixture === null);
 
 watch(
   () => [props.fixture, props.initialCode],
   () => {
     form.value = makeForm();
+    initialSnapshot.value = serializeForm(form.value);
+    emit("dirtyChange", false);
+  },
+  { deep: true, immediate: true }
+);
+
+watch(
+  form,
+  (value) => {
+    emit("dirtyChange", serializeForm(value) !== initialSnapshot.value);
   },
   { deep: true }
 );

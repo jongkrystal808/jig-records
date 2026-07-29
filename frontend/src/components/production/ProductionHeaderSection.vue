@@ -13,14 +13,14 @@ const props = defineProps<{
   stationConstraintTitle: string;
   stationConstraintHint: string;
   isMainOverview: boolean;
-  detailMode: "overview" | "mapping" | "requirements";
+  detailMode: "overview" | "configure";
+  backLabel?: string;
 }>();
 
 const emit = defineEmits<{
   back: [];
   openOverview: [];
-  openMapping: [];
-  openRequirements: [];
+  openConfigure: [];
   focusBottleneck: [];
   "update:modelId": [value: number | null];
 }>();
@@ -34,21 +34,18 @@ function onModelChange(event: Event): void {
 <template>
   <div class="production-header-section">
     <div class="page-head-actions">
-      <button class="outline-btn" type="button" @click="emit('back')">返回搜尋</button>
+      <button class="outline-btn" type="button" @click="emit('back')">{{ backLabel || "返回搜尋" }}</button>
     </div>
     <nav class="page-tabs" data-tour="production-tabs" aria-label="生產管理檢視切換">
       <button class="page-tab" type="button" :class="{ active: isMainOverview }" @click="emit('openOverview')">
         總覽
       </button>
-      <button class="page-tab" type="button" :class="{ active: detailMode === 'mapping' }" @click="emit('openMapping')">
-        機種站點對應
-      </button>
-      <button class="page-tab" type="button" :class="{ active: detailMode === 'requirements' }" @click="emit('openRequirements')">
-        治具需求
+      <button class="page-tab" type="button" :class="{ active: detailMode === 'configure' }" @click="emit('openConfigure')">
+        產能設定
       </button>
     </nav>
 
-    <section class="filter-row" data-tour="production-filter-row">
+    <section class="filter-row" :class="{ configure: !isMainOverview }" data-tour="production-filter-row">
       <div class="filter-group">
         <span class="filter-row-label">目前篩選條件</span>
         <div class="filter-fields">
@@ -62,7 +59,7 @@ function onModelChange(event: Event): void {
         <p class="filter-row-meta">站點請直接從下方總覽表點選。建立時間 {{ loadedAt || "-" }}　更新時間 {{ updatedAt || "-" }}</p>
       </div>
 
-      <div class="result-group">
+      <div v-if="isMainOverview" class="result-group">
         <span class="filter-row-label">目前站點結果</span>
         <div class="result-fields">
           <div class="result-stat" :class="{ alert: (stationCapacity?.max_open_station_count ?? 0) <= 0 }">
@@ -125,6 +122,10 @@ function onModelChange(event: Event): void {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.filter-row.configure {
+  grid-template-columns: 1fr;
 }
 
 .filter-group,

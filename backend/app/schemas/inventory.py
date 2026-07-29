@@ -24,7 +24,7 @@ class StockTransactionCreate(BaseModel):
     customer_id: int
     created_by: str = Field(min_length=1, max_length=120)
     occurred_at: datetime | None = None
-    transaction_no: str | None = Field(default=None, min_length=1, max_length=64)
+    transaction_no: str = Field(min_length=1, max_length=64)
     note: str | None = None
     items: list[StockTransactionItemInput] = Field(min_length=1)
 
@@ -48,6 +48,26 @@ class StockAlertRead(ORMModel):
     stock_status: Literal["low_stock", "out_of_stock"]
 
 
+class DashboardRecentTransactionEntryRead(ORMModel):
+    transaction_id: int
+    transaction_item_id: int
+    transaction_no: str | None
+    occurred_at: datetime
+    fixture_code: str
+    identifier: str | None
+    quantity: int
+
+
+class InventoryDashboardSummaryRead(ORMModel):
+    today_receipt_qty: int
+    today_return_qty: int
+    low_stock_count: int
+    low_stock_preview_entries: list[StockAlertRead]
+    has_more_low_stock_entries: bool
+    recent_receipt_entries: list[DashboardRecentTransactionEntryRead]
+    recent_return_entries: list[DashboardRecentTransactionEntryRead]
+
+
 class IdentifierStockSummaryRead(ORMModel):
     fixture_id: int
     identifier: str
@@ -68,12 +88,41 @@ class StockTransactionRead(ORMModel):
     id: int
     customer_id: int
     transaction_type: Literal["receipt", "return"]
-    transaction_no: str
+    transaction_no: str | None
     occurred_at: datetime
     created_by: str
     note: str | None
     created_at: datetime
     items: list[StockTransactionItemRead]
+
+
+class StockTransactionPageRead(ORMModel):
+    items: list[StockTransactionRead]
+    page: int
+    page_size: int
+    total: int
+
+
+class TransactionOverviewRowRead(ORMModel):
+    id: int
+    transaction_type: Literal["receipt", "return"]
+    transaction_no: str | None
+    occurred_at: datetime
+    created_by: str
+    fixture_id: int | None
+    fixture_code: str
+    fixture_name: str
+    ownership_type: Literal["customer_supplied", "self_purchased"]
+    identifier: str | None
+    quantity: int
+    note: str | None
+
+
+class TransactionOverviewPageRead(ORMModel):
+    items: list[TransactionOverviewRowRead]
+    page: int
+    page_size: int
+    total: int
 
 
 class InventoryRecalculateRead(ORMModel):
@@ -85,7 +134,7 @@ class InventoryRecalculateRead(ORMModel):
 
 class TransactionReverseRead(ORMModel):
     transaction_id: int
-    transaction_no: str
+    transaction_no: str | None
     transaction_type: Literal["receipt", "return"]
     item_count: int
     total_quantity: int
