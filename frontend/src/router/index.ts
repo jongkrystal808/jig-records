@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { authSession } from "@/appState";
+import FilterInventoryMockupPage from "@/pages/FilterInventoryMockupPage.vue";
 import InventoryPage from "@/pages/InventoryPage.vue";
 import MasterPage from "@/pages/MasterPage.vue";
 import ProductionPage from "@/pages/ProductionPage.vue";
@@ -12,6 +13,7 @@ const router = createRouter({
     { path: "/search", name: "search", component: SearchWorkspacePage },
     { path: "/inventory", name: "inventory", component: InventoryPage },
     { path: "/inventory/overview", name: "inventory-overview", component: InventoryPage },
+    { path: "/inventory/filter-view", name: "inventory-filter-view", component: FilterInventoryMockupPage },
     { path: "/master", redirect: "/master/fixtures" },
     { path: "/master/fixtures", name: "master-fixtures", component: MasterPage },
     { path: "/master/models", name: "master-models", component: MasterPage },

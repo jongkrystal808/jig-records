@@ -2,6 +2,8 @@
 import { computed, ref, watch } from "vue";
 
 import { api } from "@/api";
+import { onboardingActive, onboardingFlowId, onboardingStepIndex } from "@/appState";
+import { getOnboardingFlow } from "@/onboarding";
 import { pushToast } from "@/toastState";
 
 type ExportDataset =
@@ -60,6 +62,7 @@ const transactionNo = ref("");
 const fixtureCode = ref("");
 const identifier = ref("");
 const transactionType = ref<"" | "receipt" | "return">("");
+const ownershipType = ref<"" | "customer_supplied" | "self_purchased">("");
 
 const visibleDatasetOptions = computed(() =>
   DATASET_OPTIONS.filter((option) => option.id !== "fixture-quality" || props.role === "admin")
@@ -68,6 +71,7 @@ const selectedDataset = computed(() => visibleDatasetOptions.value.find((option)
 const formatOptions = computed(() => selectedDataset.value.formats);
 const usingCustomScope = computed(() => scopeMode.value === "custom");
 const supportsCustomScope = computed(() => dataset.value === "inventory-summary" || dataset.value === "inventory-detail");
+const currentOnboardingStepId = computed(() => getOnboardingFlow(onboardingFlowId.value)?.steps[onboardingStepIndex.value]?.id ?? "");
 const previewColumns = computed(() => {
   if (dataset.value === "inventory-summary") return ["治具編號", "收料數", "退料數", "總數"];
   if (dataset.value === "inventory-detail") return ["治具編號", "識別碼", "收料數", "退料數", "總數"];
@@ -157,6 +161,8 @@ async function exportReport(): Promise<void> {
         date_to: supportsCustomScope.value && usingCustomScope.value ? normalizeOptional(dateTo.value) : undefined,
         transaction_no: supportsCustomScope.value && usingCustomScope.value ? normalizeOptional(transactionNo.value) : undefined,
         fixture_code: supportsCustomScope.value && usingCustomScope.value ? normalizeOptional(fixtureCode.value) : undefined,
+        ownership_type:
+          dataset.value === "inventory-detail" && usingCustomScope.value ? (ownershipType.value || undefined) : undefined,
         identifier: supportsCustomScope.value && usingCustomScope.value ? normalizeOptional(identifier.value) : undefined
       });
       const fallbackName = `transaction-${dataset.value === "inventory-summary" ? "summary" : "detail"}.${fileFormat.value}`;
@@ -192,6 +198,9 @@ watch(
     if (!supportsCustomScope.value) {
       scopeMode.value = "all";
     }
+    if (value !== "inventory-detail") {
+      ownershipType.value = "";
+    }
   },
   { immediate: true }
 );
@@ -201,6 +210,20 @@ watch(
   (options) => {
     if (!options.some((option) => option.id === dataset.value)) {
       dataset.value = options[0]?.id ?? "inventory-summary";
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => [onboardingActive.value, currentOnboardingStepId.value] as const,
+  ([active, stepId]) => {
+    if (
+      active &&
+      ["inventory-export-filters", "detailed-export-filters", "detailed-export-source"].includes(stepId)
+    ) {
+      dataset.value = "inventory-detail";
+      scopeMode.value = "custom";
     }
   },
   { immediate: true }
@@ -217,7 +240,7 @@ watch(
       <button class="outline-btn" type="button" @click="emit('close')">關閉</button>
     </header>
 
-    <fieldset class="selection-block selection-fieldset">
+    <fieldset class="selection-block selection-fieldset" data-tour="detailed-export-dataset">
       <legend>匯出資料</legend>
       <div class="dataset-grid">
         <label v-for="option in visibleDatasetOptions" :key="option.id" class="dataset-card" :class="{ selected: dataset === option.id }">
@@ -260,6 +283,10 @@ watch(
     </div>
 
     <section v-if="supportsCustomScope && usingCustomScope" class="filter-card" data-tour="inventory-export-filters">
+      <div class="filter-card-head">
+        <strong>進階篩選條件</strong>
+        <span>留空代表不限制；多個條件會同時套用。</span>
+      </div>
       <div class="field-grid date-grid">
         <label class="field">
           <span>日期 (起)</span>
@@ -280,6 +307,14 @@ watch(
             <option value="return">退料</option>
           </select>
         </label>
+        <label v-if="dataset === 'inventory-detail'" class="field" data-tour="detailed-export-source">
+          <span>來源</span>
+          <select v-model="ownershipType">
+            <option value="">全部</option>
+            <option value="customer_supplied">客供</option>
+            <option value="self_purchased">自購</option>
+          </select>
+        </label>
         <label class="field">
           <span>單號</span>
           <input v-model="transactionNo" placeholder="25123456" spellcheck="false" />
@@ -295,7 +330,7 @@ watch(
       </div>
     </section>
 
-    <div class="column-note">
+    <div class="column-note" data-tour="detailed-export-columns">
       <span>預計匯出欄位</span>
       <div class="preview-columns">
         <span v-for="column in previewColumns" :key="column" class="preview-chip">{{ column }}</span>
@@ -509,6 +544,23 @@ watch(
   background: linear-gradient(180deg, color-mix(in srgb, var(--blue-soft) 56%, white) 0%, #ffffff 100%);
 }
 
+.filter-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.filter-card-head strong {
+  color: #22314a;
+  font-size: 14px;
+}
+
+.filter-card-head span {
+  color: #697791;
+  font-size: 12px;
+}
+
 .field-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -594,6 +646,12 @@ watch(
 }
 
 @media (max-width: 720px) {
+  .filter-card-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
   .actions {
     justify-content: stretch;
     flex-direction: column;

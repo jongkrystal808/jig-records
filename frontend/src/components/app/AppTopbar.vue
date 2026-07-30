@@ -107,7 +107,7 @@ onBeforeUnmount(() => {
   <header class="topbar">
     <div class="topbar-main">
       <button class="outline-btn mobile-trigger" type="button" @click="emit('toggleMobileMenu')">選單</button>
-      <RouterLink class="brand-link" to="/search">
+      <RouterLink class="brand-link" data-tour="detailed-home-button" to="/search">
         <span class="brand-mark">JR</span>
         <span class="brand-copy">
           <strong>Jig Record</strong>
@@ -117,7 +117,7 @@ onBeforeUnmount(() => {
       <div class="mobile-customer">{{ selectedCustomerCode || "未選客戶" }}</div>
     </div>
 
-    <div class="topbar-primary-action">
+    <div class="topbar-primary-action" data-tour="detailed-primary-actions">
       <button
         v-if="canOperateInventory"
         class="primary-btn action-btn compact-primary-btn"
@@ -136,7 +136,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="topbar-actions">
-      <div class="topbar-info">
+      <div class="topbar-info" data-tour="detailed-status-actions">
         <span class="pill">{{ authDisplayName }}</span>
         <div class="pill-hover" data-topbar-popover>
           <button class="pill pill-trigger" type="button" :aria-expanded="activePopover === 'receipt'" @click="togglePopover('receipt')">
@@ -231,7 +231,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <button class="outline-btn action-btn" type="button" @click="emit('logout')">登出</button>
+      <button class="outline-btn action-btn" data-tour="detailed-logout-button" type="button" @click="emit('logout')">登出</button>
     </div>
   </header>
 </template>

@@ -28,6 +28,8 @@ type AlertRow = {
   fixture_code: string;
   fixture_name: string;
   stock_qty: number;
+  customer_supplied_qty: number;
+  self_purchased_qty: number;
   min_stock_qty: number;
   stock_status: "low_stock" | "out_of_stock";
 };
@@ -81,7 +83,7 @@ function displayTransactionNo(value: string | null): string {
 
 <template>
   <section class="inventory-board" :class="operationBoardClass">
-    <UiSummaryCards class="inventory-summary-row" :cards="summaryCards" variant="compact" :desktop-columns="6" :tablet-columns="3" :mobile-columns="2" />
+    <UiSummaryCards class="inventory-summary-row" :cards="summaryCards" variant="compact" :desktop-columns="8" :tablet-columns="4" :mobile-columns="2" />
 
     <article class="panel op-panel" :class="mode">
       <div class="panel-head">
@@ -158,7 +160,10 @@ function displayTransactionNo(value: string | null): string {
 
     <article v-if="showStockPanel" class="panel stock-panel">
       <div class="sub-head">
-        <h2>現有治具庫存</h2>
+        <div>
+          <h2>現有治具庫存</h2>
+          <p class="stock-formula">總庫存 = 客供庫存 + 自購庫存</p>
+        </div>
         <div class="sub-head-inline">
           <span>{{ stockRows.length }} 筆</span>
           <button class="toggle-btn small-toggle" type="button" :class="{ active: showStockPanel }" @click="showStockPanel = !showStockPanel">
@@ -171,7 +176,9 @@ function displayTransactionNo(value: string | null): string {
           <thead>
             <tr>
               <th>治具編號</th>
-              <th>數量 (pcs)</th>
+              <th>總庫存</th>
+              <th>客供</th>
+              <th>自購</th>
               <th>水位</th>
               <th>狀態</th>
             </tr>
@@ -180,6 +187,8 @@ function displayTransactionNo(value: string | null): string {
             <tr v-for="row in stockRows" :key="row.fixture_id">
               <td>{{ row.fixture_code }}</td>
               <td>{{ row.stock_qty }}</td>
+              <td>{{ row.customer_supplied_qty }}</td>
+              <td>{{ row.self_purchased_qty }}</td>
               <td>
                 <div class="stock-meter" :class="row.stock_status">
                   <div class="stock-meter-track">
@@ -193,7 +202,7 @@ function displayTransactionNo(value: string | null): string {
               </td>
             </tr>
             <tr v-if="stockRows.length === 0">
-              <td colspan="4" class="empty-cell">目前沒有庫存資料</td>
+              <td colspan="6" class="empty-cell">目前沒有庫存資料</td>
             </tr>
           </tbody>
         </table>
@@ -216,7 +225,9 @@ function displayTransactionNo(value: string | null): string {
             <thead>
               <tr>
                 <th>治具編號</th>
-                <th>目前數量</th>
+                <th>總庫存</th>
+                <th>客供</th>
+                <th>自購</th>
                 <th>設定水位</th>
                 <th>狀態</th>
               </tr>
@@ -225,11 +236,13 @@ function displayTransactionNo(value: string | null): string {
               <tr v-for="row in alertRows" :key="`a-${row.fixture_id}`">
                 <td>{{ row.fixture_code }}</td>
                 <td>{{ row.stock_qty }}</td>
+                <td>{{ row.customer_supplied_qty }}</td>
+                <td>{{ row.self_purchased_qty }}</td>
                 <td>{{ row.min_stock_qty }}</td>
                 <td><UiStatusPill :label="stockStatusLabel(row.stock_status)" tone="danger" /></td>
               </tr>
               <tr v-if="alertRows.length === 0">
-                <td colspan="4" class="empty-cell">目前沒有低水位提醒</td>
+                <td colspan="6" class="empty-cell">目前沒有低水位提醒</td>
               </tr>
             </tbody>
           </table>
@@ -300,6 +313,13 @@ function displayTransactionNo(value: string | null): string {
 .sub-head {
   align-items: center;
   margin-bottom: 8px;
+}
+
+.stock-formula {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .sub-head-inline {

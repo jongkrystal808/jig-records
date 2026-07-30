@@ -45,10 +45,10 @@ function handleRowKeydown(event: KeyboardEvent, id: number): void {
 </script>
 
 <template>
-  <article class="panel list-panel">
+  <article class="panel list-panel" data-tour="detailed-master-list">
     <UiSectionHeader class="panel-head" :title="`${tabTitle}清單`" />
 
-    <div v-if="currentRowsLength > 0" class="list-footer">
+    <div v-if="currentRowsLength > 0" class="list-footer" data-tour="detailed-master-pager">
       <span>第 {{ listPage }} / {{ listTotalPages }} 頁，共 {{ currentRowsLength }} 筆</span>
       <div class="pager-actions">
         <button class="outline-btn small" type="button" :disabled="loading || listPage <= 1" @click="onPreviousPage">上一頁</button>

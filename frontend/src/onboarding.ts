@@ -5,6 +5,7 @@ export type OnboardingFlowId =
   | "inventory-workflow"
   | "master-basics"
   | "production-workflow"
+  | "system-detailed-guide"
   | "admin-inventory-governance";
 
 export interface OnboardingStepNote {
@@ -139,6 +140,19 @@ export const onboardingFlows: OnboardingFlow[] = [
         openBatchModal: true
       },
       {
+        id: "inventory-source",
+        route: "/search",
+        target: "[data-tour='inventory-batch-panel'] [data-tour='detailed-inventory-source']",
+        title: "再確認這一批是客供或自購",
+        description: "來源會套用到本批全部明細，預設為客供；只有公司自行採購的治具才切成自購。",
+        note: {
+          tone: "warning",
+          text: "來源選錯會讓客供／自購庫存拆分不正確，送出前請和單據確認。"
+        },
+        placement: "bottom",
+        openBatchModal: true
+      },
+      {
         id: "inventory-batch-panel",
         route: "/search",
         target: "[data-tour='inventory-batch-panel']",
@@ -253,8 +267,13 @@ export const onboardingFlows: OnboardingFlow[] = [
         id: "inventory-export-filters",
         route: "/search",
         target: "[data-tour='inventory-export-filters']",
-        title: "收退料可直接縮日期、單號、識別碼與治具範圍",
-        description: "如果只需要查特定批次或異常時段，先縮條件再匯出，檔案會更乾淨也更好核對。",
+        title: "收退料明細可依日期、來源與追蹤欄位縮小範圍",
+        description: "選擇收退料明細與自定義條件後，可再篩選收／退料、客供／自購、單號、治具與 datecode/編號。",
+        bullets: [
+          "來源選「客供」只匯出客供明細；選「自購」只匯出自購明細",
+          "來源留在「全部」時，不限制客供／自購",
+          "多個條件會同時套用，先縮條件可讓檔案更容易核對"
+        ],
         placement: "top",
         openExportModal: true
       },
@@ -297,8 +316,13 @@ export const onboardingFlows: OnboardingFlow[] = [
         id: "overview-filters",
         route: "/inventory/overview",
         target: "[data-tour='overview-filter-form']",
-        title: "常用條件都在上方篩選表單",
-        description: "可用日期、單號、治具代碼與識別碼縮小結果，查異常收退料時建議先縮日期區間。",
+        title: "常用條件與來源篩選都在上方",
+        description: "主畫面可依類型、日期與治具查詢；點「進階篩選」後，還能依客供／自購、單號、datecode/編號及操作人員縮小結果。",
+        bullets: [
+          "來源選「客供」：只看客供明細",
+          "來源選「自購」：只看自購明細",
+          "重設：清除全部條件；查詢：套用條件並回到第 1 頁"
+        ],
         placement: "bottom"
       }
     ]
@@ -500,6 +524,362 @@ export const onboardingFlows: OnboardingFlow[] = [
         target: "[data-tour='production-requirement-list']",
         title: "新增後在列表核對站點、治具與數量",
         description: "下方是該站點的正式需求清單，可直接編輯；大量新增用批次貼上。",
+        placement: "top"
+      }
+    ]
+  },
+  {
+    id: "system-detailed-guide",
+    sectionLabel: "完整詳細版",
+    label: "全系統按鈕與操作說明",
+    summary: "逐頁說明首頁、匯出中心、收退料、總檢視、主資料與產能管理的主要按鈕，適合第一次完整認識系統。",
+    requiresInventoryAccess: true,
+    requiresMasterAccess: true,
+    steps: [
+      {
+        id: "detailed-home",
+        route: "/search",
+        target: "[data-tour='detailed-home-button']",
+        title: "Jig Record 標誌：回首頁",
+        description: "不論目前在哪一頁，按左上角 Jig Record 標誌都會回到治具／機種查詢首頁。",
+        placement: "bottom"
+      },
+      {
+        id: "detailed-primary-actions",
+        route: "/search",
+        target: "[data-tour='detailed-primary-actions']",
+        title: "三個主要功能按鈕",
+        description: "這三個按鈕是日常最常用的入口：",
+        bullets: [
+          "治具收／退料：開啟批次作業視窗，增加或扣除庫存",
+          "匯出中心：下載收退料、主資料、站點設定、治具需求或品質資料",
+          "新手教學：回到教學選單，可改看其他精簡版或這套詳細版"
+        ],
+        placement: "bottom"
+      },
+      {
+        id: "detailed-export-panel",
+        route: "/search",
+        target: "[data-tour='inventory-export-panel']",
+        title: "匯出中心視窗與關閉按鈕",
+        description: "匯出中心會保留目前客戶範圍；右上「關閉」與下方「取消」都只關閉視窗，不會下載或修改資料。",
+        placement: "left",
+        openExportModal: true
+      },
+      {
+        id: "detailed-export-dataset",
+        route: "/search",
+        target: "[data-tour='detailed-export-dataset']",
+        title: "匯出資料：選擇要下載的資料集",
+        description: "點選任一資料卡即可切換內容：",
+        bullets: [
+          "收退料摘要：依治具彙總收料、退料與結餘",
+          "收退料明細：依治具與 datecode/編號彙總，可使用進階篩選",
+          "治具／機種／站點／站點設定／治具需求：匯出目前客戶的對應主資料",
+          "治具資料品質：Admin 可下載缺漏與異常清單"
+        ],
+        placement: "left",
+        openExportModal: true
+      },
+      {
+        id: "detailed-export-format",
+        route: "/search",
+        target: "[data-tour='inventory-export-report-type']",
+        title: "匯出格式：XLSX、TXT 或 CSV",
+        description: "XLSX 適合用試算表開啟；TXT 適合純文字或系統交換。主資料類資料集會自動使用 CSV，不需要另外選格式。",
+        placement: "left",
+        openExportModal: true
+      },
+      {
+        id: "detailed-export-scope",
+        route: "/search",
+        target: "[data-tour='inventory-export-scope-mode']",
+        title: "資料範圍：全部或自定義條件",
+        description: "「全部」下載目前客戶的完整收退料資料；「自定義條件」展開進階篩選。其他主資料會直接匯出目前客戶全部資料。",
+        placement: "left",
+        openExportModal: true
+      },
+      {
+        id: "detailed-export-filters",
+        route: "/search",
+        target: "[data-tour='inventory-export-filters']",
+        title: "進階篩選：每個欄位的用途",
+        description: "教學已自動切到收退料明細與自定義條件。留空代表不限制；同時填入時會一起套用：",
+        bullets: [
+          "日期（起／迄）：限制交易發生日期",
+          "交易類型：只看收料或只看退料",
+          "來源：只看客供或自購",
+          "單號：依交易單號縮小範圍",
+          "治具編號：可用完整或部分編號查找",
+          "datecode/編號：依該批識別碼查找"
+        ],
+        placement: "left",
+        openExportModal: true
+      },
+      {
+        id: "detailed-export-source",
+        route: "/search",
+        target: "[data-tour='detailed-export-source']",
+        title: "來源選單：全部、客供、自購",
+        description: "選「客供」只匯出客戶提供的收退料明細；選「自購」只匯出公司採購的明細；選「全部」則兩種來源都保留。",
+        placement: "left",
+        openExportModal: true
+      },
+      {
+        id: "detailed-export-columns",
+        route: "/search",
+        target: "[data-tour='detailed-export-columns']",
+        title: "預計匯出欄位：下載前確認內容結構",
+        description: "這些欄位標籤只是預覽，不是按鈕；切換資料集後會同步更新，方便下載前確認檔案是否符合用途。",
+        placement: "top",
+        openExportModal: true
+      },
+      {
+        id: "detailed-export-actions",
+        route: "/search",
+        target: "[data-tour='inventory-export-submit']",
+        title: "取消與開始匯出按鈕",
+        description: "「取消」關閉視窗且不下載；「開始匯出」依目前資料集、格式、範圍與篩選條件建立檔案，完成後會自動下載。",
+        placement: "top",
+        openExportModal: true
+      },
+      {
+        id: "detailed-status-actions",
+        route: "/search",
+        target: "[data-tour='detailed-status-actions']",
+        title: "登入資訊與三個即時狀態按鈕",
+        description: "姓名僅顯示目前登入者；其餘三個膠囊按鈕都可以點開：",
+        bullets: [
+          "今日收料：查看最近 10 筆收料",
+          "今日退料：查看最近 10 筆退料",
+          "低水位：查看庫存不足治具，並可直接開啟該治具的收／退料"
+        ],
+        placement: "bottom"
+      },
+      {
+        id: "detailed-customer",
+        route: "/search",
+        target: "[data-tour='global-customer-picker']",
+        title: "客戶選擇：切換整個系統的資料範圍",
+        description: "切換後，查詢、庫存、主資料與產能都會改成該客戶的資料；有未送出草稿時系統會先提醒。",
+        note: {
+          tone: "warning",
+          text: "開始作業前先確認客戶，避免把資料登記到錯誤客戶。"
+        },
+        placement: "bottom"
+      },
+      {
+        id: "detailed-more-menu",
+        route: "/search",
+        target: "[data-tour='home-more-menu-trigger']",
+        title: "更多功能：開啟三個專用工作頁",
+        description: "按下後會看到：",
+        bullets: [
+          "收退料總檢視：查完整歷史明細",
+          "資料維護：管理治具、機種、站點與權限內的主資料",
+          "產能管理：查看產能總覽、站點與治具需求設定"
+        ],
+        placement: "bottom",
+        openMoreMenu: true
+      },
+      {
+        id: "detailed-logout",
+        route: "/search",
+        target: "[data-tour='detailed-logout-button']",
+        title: "登出：結束目前登入狀態",
+        description: "共用電腦作業完成後請按登出，避免下一位使用者沿用你的權限。",
+        placement: "bottom"
+      },
+      {
+        id: "detailed-search-controls",
+        route: "/search",
+        target: "[data-tour='detailed-search-controls']",
+        title: "查詢列的每個按鈕",
+        description: "先選資料類型，再輸入代碼或名稱：",
+        bullets: [
+          "治具：搜尋治具、庫存與收退料紀錄",
+          "機種：搜尋機種、站點與需求資料",
+          "搜尋：送出目前關鍵字；鍵盤 Enter 也可以",
+          "×：清空搜尋欄與目前結果；鍵盤 Esc 也可以"
+        ],
+        placement: "bottom"
+      },
+      {
+        id: "detailed-search-sections",
+        route: "/search",
+        target: "[data-tour='search-section-chips']",
+        title: "結果區塊按鈕：決定畫面要顯示什麼",
+        description: "每個按鈕都是顯示／隱藏切換，不會修改資料：",
+        bullets: [
+          "總覽、圖片：顯示基本資料與圖片",
+          "datecode/編號庫存、收退料：顯示庫存拆分與歷史",
+          "相關機種、站點詳細、需求明細：顯示關聯設定",
+          "資料維護：顯示可編輯的主資料表單"
+        ],
+        placement: "bottom"
+      },
+      {
+        id: "detailed-inventory-mode",
+        route: "/search",
+        target: "[data-tour='inventory-batch-panel'] [data-tour='inventory-mode-switch']",
+        title: "收料／退料按鈕：決定庫存增減方向",
+        description: "收料會增加庫存，退料會扣除該治具與 datecode/編號的庫存。",
+        note: {
+          tone: "warning",
+          text: "這是整批設定，切換後會套用到所有待送出明細。"
+        },
+        placement: "bottom",
+        openBatchModal: true
+      },
+      {
+        id: "detailed-inventory-source",
+        route: "/search",
+        target: "[data-tour='inventory-batch-panel'] [data-tour='detailed-inventory-source']",
+        title: "客供／自購按鈕：決定本批庫存來源",
+        description: "客供是客戶提供；自購是公司自行採購。來源會套用到整批明細，並影響客供／自購庫存統計。",
+        placement: "bottom",
+        openBatchModal: true
+      },
+      {
+        id: "detailed-inventory-meta",
+        route: "/search",
+        target: "[data-tour='inventory-batch-panel'] [data-tour='detailed-inventory-meta']",
+        title: "單號與備註欄位",
+        description: "單號是必填的追蹤依據；備註可補充工單、異常原因或現場說明。來源按鈕也在這一區。",
+        placement: "bottom",
+        openBatchModal: true
+      },
+      {
+        id: "detailed-inventory-paste",
+        route: "/search",
+        target: "[data-tour='inventory-batch-panel'] [data-tour='inventory-paste-field']",
+        title: "批次內容：貼上待處理資料",
+        description: "貼上後系統會立即解析。可使用兩行格式或 Tab 表格格式，不需要另外按解析按鈕。",
+        example: [
+          { label: "兩行格式", value: "JIG-0012-0088\n5" },
+          { label: "TAB 格式", value: "JIG-0012\t0088\t5" }
+        ],
+        placement: "left",
+        openBatchModal: true
+      },
+      {
+        id: "detailed-inventory-actions",
+        route: "/search",
+        target: "[data-tour='inventory-batch-panel'] [data-tour='detailed-inventory-actions']",
+        title: "批次面板的動作按鈕",
+        description: "送出前請先看待處理與錯誤數量：",
+        bullets: [
+          "套用教學試跑：只在教學模式出現，帶入範例且不寫正式資料",
+          "清空：移除單號、備註與目前批次內容",
+          "送出收料／送出退料：寫入正式交易與庫存；有錯誤列時會停用",
+          "查看正常列／收合正常列：展開或隱藏解析成功的明細"
+        ],
+        placement: "top",
+        openBatchModal: true
+      },
+      {
+        id: "detailed-overview-filters",
+        route: "/inventory/overview",
+        target: "[data-tour='overview-filter-form']",
+        title: "總檢視主篩選：先縮小常用範圍",
+        description: "類型、起始日期、結束日期、治具編號是最常用條件；輸入完成後按下方「查詢」。",
+        placement: "bottom"
+      },
+      {
+        id: "detailed-overview-advanced",
+        route: "/inventory/overview",
+        target: "[data-tour='overview-advanced-toggle']",
+        title: "進階篩選按鈕：展開更多查詢條件",
+        description: "展開後可選客供／自購來源，並依單號、datecode/編號、操作人員查詢；再次按下可收合。",
+        placement: "bottom"
+      },
+      {
+        id: "detailed-overview-actions",
+        route: "/inventory/overview",
+        target: "[data-tour='overview-filter-actions']",
+        title: "重設與查詢按鈕",
+        description: "重設會清空所有條件並回到預設頁；查詢會套用目前條件、更新網址並回到第 1 頁。",
+        placement: "top"
+      },
+      {
+        id: "detailed-overview-pager",
+        route: "/inventory/overview",
+        target: "[data-tour='overview-pager']",
+        title: "分頁區的每個按鈕",
+        description: "大量歷史資料不會一次全部載入：",
+        bullets: [
+          "每頁：切換一次顯示 50 或 100 筆",
+          "上一頁／下一頁：依目前篩選條件前後翻頁",
+          "跳至＋跳轉：直接輸入頁碼前往指定頁"
+        ],
+        placement: "top"
+      },
+      {
+        id: "detailed-master-tabs",
+        route: "/master/fixtures",
+        target: "[data-tour='master-tabs']",
+        title: "資料維護分頁按鈕",
+        description: "治具、機種、站點切換核心主資料；Admin 另外可看到客戶、使用者、帳目管理與資料品質。",
+        placement: "bottom"
+      },
+      {
+        id: "detailed-master-list",
+        route: "/master/fixtures",
+        target: "[data-tour='master-list-toolbar']",
+        title: "主資料清單的搜尋、狀態與新增",
+        description: "搜尋欄即時縮小清單；狀態選單切換全部／啟用／停用；「＋新增」會清空右側表單進入新增模式。",
+        placement: "right"
+      },
+      {
+        id: "detailed-master-detail",
+        route: "/master/fixtures",
+        target: "[data-tour='detailed-master-detail']",
+        title: "詳細資料上方的新增與重載",
+        description: "新增會開始建立新資料；重載會放棄畫面尚未儲存的內容，重新讀取目前選取資料。",
+        placement: "left"
+      },
+      {
+        id: "detailed-master-form-actions",
+        route: "/master/fixtures",
+        target: "[data-tour='master-form-actions']",
+        title: "主資料表單下方按鈕",
+        description: "儲存寫入目前欄位；取消回到新增模式；停用／啟用改變資料狀態。Admin 看到的永久刪除會另外要求確認。",
+        note: {
+          tone: "warning",
+          text: "永久刪除與停用不同；永久刪除前請確認歷史資料保留方式。"
+        },
+        placement: "top"
+      },
+      {
+        id: "detailed-production-tabs",
+        route: "/production/mapping",
+        target: "[data-tour='production-tabs']",
+        title: "產能管理的總覽／產能設定按鈕",
+        description: "總覽用來看各站點可開站數；產能設定用來修改機種站點與治具需求。",
+        placement: "bottom"
+      },
+      {
+        id: "detailed-production-filter",
+        route: "/production/mapping",
+        target: "[data-tour='production-filter-row']",
+        title: "機種選擇與限制治具按鈕",
+        description: "機種選單切換目前查看或編輯的機種；總覽中的限制治具卡片可直接定位造成瓶頸的治具。",
+        placement: "bottom"
+      },
+      {
+        id: "detailed-production-mapping",
+        route: "/production/mapping",
+        target: "[data-tour='production-mapping-panel']",
+        title: "機種站點設定區的按鈕",
+        description: "加入站點會把選取站點加入目前機種；點站點整列會切換右側需求；編輯／移除用來維護既有對應。",
+        placement: "top"
+      },
+      {
+        id: "detailed-production-requirements",
+        route: "/production/mapping",
+        target: "[data-tour='production-requirement-panel']",
+        title: "治具需求區的按鈕",
+        description: "加入治具／儲存變更寫入每站需求；取消放棄編輯；複製此站設定與批次匯入適合大量建立；清單中的編輯／刪除維護單筆需求。",
         placement: "top"
       }
     ]

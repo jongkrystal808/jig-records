@@ -14,6 +14,47 @@ export function ownershipLabel(type: "customer_supplied" | "self_purchased"): st
   return type === "customer_supplied" ? "客供" : "自購";
 }
 
+export type IdentifierStockOwnershipGroup = {
+  ownershipType: "customer_supplied" | "self_purchased";
+  label: "客供" | "自購";
+  totalQty: number;
+  entries: Array<{ identifier: string; quantity: number }>;
+};
+
+export function groupIdentifierStockByOwnership(
+  rows: Iterable<{
+    identifier: string;
+    customer_supplied_qty: number;
+    self_purchased_qty: number;
+  }>
+): IdentifierStockOwnershipGroup[] {
+  const sourceRows = [...rows];
+  return [
+    {
+      ownershipType: "customer_supplied" as const,
+      label: "客供" as const,
+      quantityKey: "customer_supplied_qty" as const
+    },
+    {
+      ownershipType: "self_purchased" as const,
+      label: "自購" as const,
+      quantityKey: "self_purchased_qty" as const
+    }
+  ]
+    .map(({ ownershipType, label, quantityKey }) => {
+      const entries = sourceRows
+        .filter((row) => row[quantityKey] > 0)
+        .map((row) => ({ identifier: row.identifier, quantity: row[quantityKey] }));
+      return {
+        ownershipType,
+        label,
+        totalQty: entries.reduce((sum, entry) => sum + entry.quantity, 0),
+        entries
+      };
+    })
+    .filter((group) => group.entries.length > 0);
+}
+
 export function capacityStateLabel(state: "idle" | "good" | "warn" | "danger"): string {
   if (state === "danger") return "滿載";
   if (state === "warn") return "接近上限";

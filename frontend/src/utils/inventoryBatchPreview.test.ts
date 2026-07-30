@@ -22,6 +22,8 @@ const stockRow: StockSummary = {
   fixture_code: "L-00017",
   fixture_name: "Fixture 17",
   stock_qty: 10,
+  customer_supplied_qty: 7,
+  self_purchased_qty: 3,
   min_stock_qty: 3,
   stock_status: "normal",
   last_transaction_at: null
@@ -31,7 +33,7 @@ describe("inventoryBatchPreview", () => {
   it("calculates next identifier stock for return rows", () => {
     const stats = buildInventoryPreviewStats(
       [{ resolvedFixtureId: 17, inputToken: "0001", quantity: -3 }],
-      [{ fixture_id: 17, identifier: "0001", stock_qty: 10 }],
+      [{ fixture_id: 17, identifier: "0001", stock_qty: 10, customer_supplied_qty: 7, self_purchased_qty: 3 }],
       [fixture],
       [stockRow]
     );
@@ -50,7 +52,7 @@ describe("inventoryBatchPreview", () => {
         { resolvedFixtureId: 17, inputToken: "0001", quantity: -3 },
         { resolvedFixtureId: 17, inputToken: "0001", quantity: -2 }
       ],
-      [{ fixture_id: 17, identifier: "0001", stock_qty: 10 }],
+      [{ fixture_id: 17, identifier: "0001", stock_qty: 10, customer_supplied_qty: 7, self_purchased_qty: 3 }],
       [fixture],
       [stockRow]
     );
@@ -70,7 +72,7 @@ describe("inventoryBatchPreview", () => {
   it("returns null preview stats for unresolved rows", () => {
     const stats = buildInventoryPreviewStats(
       [{ resolvedFixtureId: null, inputToken: "0001", quantity: -3 }],
-      [{ fixture_id: 17, identifier: "0001", stock_qty: 10 }],
+      [{ fixture_id: 17, identifier: "0001", stock_qty: 10, customer_supplied_qty: 7, self_purchased_qty: 3 }],
       [fixture],
       [stockRow]
     );

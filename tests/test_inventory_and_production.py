@@ -217,6 +217,8 @@ def test_fixture_reenable_recomputes_low_stock_alert(app_client):
             "fixture_code": "ALERT-001",
             "fixture_name": "Alert Fixture",
             "stock_qty": 1,
+            "customer_supplied_qty": 0,
+            "self_purchased_qty": 1,
             "min_stock_qty": 2,
             "stock_status": "low_stock",
         }

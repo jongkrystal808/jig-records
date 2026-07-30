@@ -182,6 +182,7 @@ Application shell notes:
 - the root shell now owns the onboarding picker and reuses `data-tour` anchors rendered across multiple pages
 - onboarding state is stored in lightweight reactive app state and uses route-aware step syncing
 - onboarding is now grouped into selectable flows so users can choose a page- or tab-specific tutorial instead of replaying one long linear tour
+- onboarding now keeps five concise topic flows and adds a complete detailed flow that explains the primary buttons across search, inventory, master-data, and production pages
 - the onboarding picker is currently consolidated into five flows: `查詢工作台`, `批次收 / 退料 & 收退料總檢視`, `治具 / 機種 / 站點主資料`, `產能設定與治具需求`, and `收退料帳目管理 / 治具資料品質`
 - the root shell also owns a versioned release-notice modal, with copy defined in `frontend/src/releaseNotice.ts`
 - release-note dismissal is now one-time per version per browser via `localStorage`, rather than once per account
@@ -267,6 +268,12 @@ Includes:
 - Transaction number is an explicit business-required field for receipt/return creation; the backend no longer auto-generates fallback numbers, so duplicate-transaction protection always evaluates the operator-supplied number
 - Historical transaction reads still tolerate legacy rows where `transaction_no` is `NULL` or blank; read models expose that field as nullable and the UI renders those cases as `（無單號）`
 - Batch import now uses a single batch-level `ownership_type` selector; operators choose `customer_supplied` or `self_purchased` once per batch instead of per row
+- Inventory ownership balances are derived from transaction items:
+  - `customer_supplied_qty = customer-supplied receipts - customer-supplied returns`
+  - `self_purchased_qty = self-purchased receipts - self-purchased returns`
+  - `stock_qty = customer_supplied_qty + self_purchased_qty`
+- Customer-supplied and self-purchased receipts are operationally separated, and a datecode does not repeat across ownership sources; return validation therefore remains scoped by `fixture + identifier`
+- Stock, alert, identifier-stock, and fixture-context responses expose total, customer-supplied, and self-purchased quantities
 - UI-visible inline row errors and toast feedback for failed inventory submissions
 - Preview-time `current stock` and `post-transaction stock` columns for each identifier row
 - In-batch sequential stock preview for repeated `fixture + identifier` rows
@@ -295,6 +302,7 @@ Current layout direction for inventory entry points:
 - the global top-bar `收/退料` button opens a modal that exposes only the shared batch-import flow
 - the global top-bar `匯出中心` button opens a modal that centralizes dataset, format, and range selection
 - the export-center dataset list is role-aware, so admin-only exports such as `治具資料品質` are hidden from guest/user sessions instead of failing late with `403`
+- transaction-detail exports can narrow custom scope by `customer_supplied` or `self_purchased`; export preview and the final report share the same backend item-level filter
 - the global modal intentionally excludes stock overview, low-stock panel, and recent-transaction panels
 - the shared batch modal can be opened with a preset fixture code from other pages, so the operator only needs to fill `identifier` and quantity for the next row
 - preset-fixture entry now defaults to a quick-entry presentation and keeps the large batch-paste textarea collapsed until the operator explicitly chooses `改用批次貼上`

@@ -105,7 +105,7 @@ watch(
       </div>
     </div>
 
-    <div class="search-toolbar">
+    <div class="search-toolbar" data-tour="detailed-search-controls">
       <div class="mode-switch" data-tour="search-mode-switch">
         <button class="mode-btn" :class="{ active: mode === 'fixture' }" type="button" :aria-pressed="mode === 'fixture'" @click="emit('update:mode', 'fixture')">治具</button>
         <button class="mode-btn" :class="{ active: mode === 'model' }" type="button" :aria-pressed="mode === 'model'" @click="emit('update:mode', 'model')">機種</button>
@@ -138,7 +138,7 @@ watch(
       </label>
     </div>
 
-    <div v-if="recentFixtureShortcuts.length > 0" class="shortcut-panel">
+    <div v-if="recentFixtureShortcuts.length > 0" class="shortcut-panel" data-tour="detailed-recent-shortcuts">
       <div class="smart-hint-head">
         <strong>最近收 / 退料治具</strong>
         <div class="shortcut-head-actions">

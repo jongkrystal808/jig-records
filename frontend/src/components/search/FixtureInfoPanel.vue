@@ -4,7 +4,7 @@ import { computed } from "vue";
 import UiSplitDetailLayout from "@/components/UiSplitDetailLayout.vue";
 import UiStatusPill from "@/components/UiStatusPill.vue";
 import type { Fixture, MachineModel, MaterialTransaction, StockStatus, StockSummary } from "@/types";
-import { fallbackText, stockStatusLabel } from "@/utils/display";
+import { fallbackText, stockStatusLabel, type IdentifierStockOwnershipGroup } from "@/utils/display";
 
 const TRANSACTION_PREVIEW_COUNT = 8;
 
@@ -14,7 +14,7 @@ const props = defineProps<{
   stock: StockSummary | null;
   imageUrl: string;
   imageLoadFailed: boolean;
-  identifierTags: string[];
+  identifierGroups: IdentifierStockOwnershipGroup[];
   identifierTotalQty: number;
   relatedModels: MachineModel[];
   stationRows: Array<{ model_code: string; station_code: string; station_name: string; required_qty: number }>;
@@ -61,6 +61,14 @@ const shouldShowTransactionOverviewAction = computed(() => props.transactions.le
             <dd>{{ formatCount(stock?.stock_qty ?? 0) }} pcs</dd>
           </div>
           <div>
+            <dt>客供庫存</dt>
+            <dd>{{ formatCount(stock?.customer_supplied_qty ?? 0) }} pcs</dd>
+          </div>
+          <div>
+            <dt>自購庫存</dt>
+            <dd>{{ formatCount(stock?.self_purchased_qty ?? 0) }} pcs</dd>
+          </div>
+          <div>
             <dt>最低水位</dt>
             <dd>{{ formatCount(stock?.min_stock_qty ?? 0) }}</dd>
           </div>
@@ -90,8 +98,23 @@ const shouldShowTransactionOverviewAction = computed(() => props.transactions.le
           <h3>datecode/編號庫存</h3>
           <span class="section-meta">總數 {{ formatCount(identifierTotalQty) }} pcs</span>
         </div>
-        <div v-if="identifierTags.length > 0" class="ui-chip-list">
-          <span v-for="tag in identifierTags" :key="tag" class="ui-chip">{{ tag }}</span>
+        <div v-if="identifierGroups.length > 0" class="identifier-stock-groups">
+          <section
+            v-for="group in identifierGroups"
+            :key="group.ownershipType"
+            class="identifier-stock-group"
+            :class="`identifier-stock-group--${group.ownershipType}`"
+          >
+            <div class="identifier-stock-group-head">
+              <strong>{{ group.label }}</strong>
+              <span>{{ formatCount(group.totalQty) }} pcs</span>
+            </div>
+            <div class="ui-chip-list">
+              <span v-for="entry in group.entries" :key="entry.identifier" class="ui-chip">
+                {{ entry.identifier }}: {{ formatCount(entry.quantity) }} pcs
+              </span>
+            </div>
+          </section>
         </div>
         <div v-else class="ui-empty-text">目前沒有 datecode/編號庫存摘要</div>
       </section>
@@ -182,6 +205,38 @@ p {
 
 .section-actions-left {
   justify-content: flex-start;
+}
+
+.identifier-stock-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.identifier-stock-group {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8faff;
+}
+
+.identifier-stock-group--self_purchased {
+  background: #fffaf2;
+}
+
+.identifier-stock-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #40516d;
+  font-size: 12px;
+}
+
+.identifier-stock-group-head strong {
+  color: #22314a;
+  font-size: 13px;
 }
 
 .section-toggle-btn {

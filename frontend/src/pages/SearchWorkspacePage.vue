@@ -20,7 +20,7 @@ import type {
   StockStatus
 } from "@/types";
 import { formatLocalDate } from "@/utils/date";
-import { formatIdentifierStockTags } from "@/utils/display";
+import { groupIdentifierStockByOwnership } from "@/utils/display";
 
 type SearchMode = "fixture" | "model";
 type DetailTab = "info" | "edit";
@@ -187,10 +187,9 @@ const shouldShowEmptyResultState = computed(
   () => searchResults.value.length === 0 && !shouldShowFixtureCreateForm.value && !shouldShowModelCreateForm.value
 );
 const hasUnsavedDraft = computed(() => detailTab.value === "edit" && (hasUnsavedFixtureDraft.value || hasUnsavedModelDraft.value));
-const selectedFixtureIdentifierTags = computed(() => {
-  const rows = selectedFixtureContext.value?.identifier_rows ?? [];
-  return formatIdentifierStockTags(rows.map((row) => [row.identifier, row.stock_qty] as [string, number]), formatCount);
-});
+const selectedFixtureIdentifierGroups = computed(() =>
+  groupIdentifierStockByOwnership(selectedFixtureContext.value?.identifier_rows ?? [])
+);
 const selectedFixtureIdentifierTotalQty = computed(() =>
   (selectedFixtureContext.value?.identifier_rows ?? []).reduce((sum, row) => sum + row.stock_qty, 0)
 );
@@ -757,7 +756,7 @@ onBeforeRouteLeave(() => {
                 :stock="selectedFixtureStock"
                 :image-url="selectedFixtureImage"
                 :image-load-failed="imageLoadFailed"
-                :identifier-tags="selectedFixtureIdentifierTags"
+                :identifier-groups="selectedFixtureIdentifierGroups"
                 :identifier-total-qty="selectedFixtureIdentifierTotalQty"
                 :related-models="selectedFixtureModels"
                 :station-rows="selectedFixtureStationRows"

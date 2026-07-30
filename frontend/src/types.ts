@@ -144,6 +144,8 @@ export interface StockSummary {
   fixture_code: string;
   fixture_name: string;
   stock_qty: number;
+  customer_supplied_qty: number;
+  self_purchased_qty: number;
   min_stock_qty: number;
   stock_status: StockStatus;
   last_transaction_at: string | null;
@@ -153,6 +155,8 @@ export interface IdentifierStockSummary {
   fixture_id: number;
   identifier: string;
   stock_qty: number;
+  customer_supplied_qty: number;
+  self_purchased_qty: number;
 }
 
 export interface DashboardRecentTransactionEntry {
@@ -174,6 +178,8 @@ export interface InventoryDashboardSummary {
     fixture_code: string;
     fixture_name: string;
     stock_qty: number;
+    customer_supplied_qty: number;
+    self_purchased_qty: number;
     min_stock_qty: number;
     stock_status: "low_stock" | "out_of_stock";
   }>;
@@ -291,6 +297,7 @@ export interface InventoryRecalculateResult {
 
 export interface TransactionQueryFilters {
   transaction_type?: "receipt" | "return";
+  ownership_type?: "customer_supplied" | "self_purchased";
   date_from?: string;
   date_to?: string;
   fixture_code?: string;

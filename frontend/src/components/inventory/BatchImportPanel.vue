@@ -858,14 +858,14 @@ onBeforeUnmount(() => {
         <span>{{ tutorialBannerText }}</span>
       </div>
 
-      <div class="meta-grid">
+      <div class="meta-grid" data-tour="detailed-inventory-meta">
         <label>
           <span>單號 *</span>
           <input v-model="batchTransactionNo" placeholder="例如工單號、批號、補料單號" autocomplete="off" spellcheck="false" />
         </label>
         <div class="batch-source-field">
           <span>來源</span>
-          <div class="segmented-control batch-source-control">
+          <div class="segmented-control batch-source-control" data-tour="detailed-inventory-source">
             <button
               class="segmented-btn"
               :class="{ active: batchOwnershipType === 'customer_supplied' }"
@@ -938,7 +938,7 @@ onBeforeUnmount(() => {
           <span>錯誤 {{ errorRows.length }} 筆</span>
           <span v-if="skippedRows.length > 0">已略過 {{ skippedRows.length }} 筆</span>
         </div>
-        <div class="action-group">
+        <div class="action-group" data-tour="detailed-inventory-actions">
           <button
             v-if="tutorialMode"
             class="ghost-btn panel-accent-ghost"

@@ -84,9 +84,11 @@
   - 新手導覽 flow 定義
   - 依頁面 / tab 分類的教學內容
   - 每一步對應 route / `data-tour` target / 文案 / 方向
+  - 五張單一功能精簡教學，加上一張逐區說明主要按鈕的全系統詳細版
 
 - `frontend/src/components/common/OnboardingFlowPicker.vue`
   - 新手教學分類選單
+  - 完整詳細版固定置頂為推薦入口，精簡教學另列於下方
 
 - `frontend/src/releaseNotice.ts`
   - 版本公告內容
@@ -290,7 +292,7 @@
 - fixture detail
 - model detail
 - fixture 圖片預覽
-- datecode/編號庫存摘要
+- datecode/編號庫存摘要（先依客供 / 自購分組，再於各來源區塊列出編號與數量；不在每個編號後重複來源）
 - transaction context
 - 最近收 / 退料治具快捷入口點擊後，搜尋完成會自動捲動到結果區
 - 區塊 chip 顯示切換與 localStorage 記憶
@@ -363,13 +365,15 @@
 
 - `InventoryOperationBoard.vue`
   - 收料 / 退料操作視圖
-  - KPI cards
+  - KPI cards（含總庫存、客供庫存、自購庫存）
+  - 現有庫存與低水位表格顯示總庫存 / 客供 / 自購拆分
   - 嵌入 `BatchImportPanel.vue`
 
 - `InventoryOverviewPanel.vue`
   - overview 篩選
   - 交易表格
   - 主篩選 / 進階篩選切換
+  - 進階篩選可依來源選擇全部 / 客供 / 自購
   - `4 / 3 / 2 / 1` 欄 responsive filter layout
   - page / page size / jump pager
   - `返回來源` 按鈕
@@ -385,7 +389,8 @@
   - 預填治具入口預設先走快速輸入，批次貼上框改成手動展開
   - 新治具建立
   - 相似治具確認 / 替換
-  - `目前庫存` / `交易後庫存` 預覽
+  - 依 datecode 總量顯示 `目前庫存` / `交易後庫存` 預覽
+  - `來源` 用於交易分類；退料預檢不額外增加來源限制
   - 同批重複 `治具 + datecode/編號` 的逐列累計庫存預覽
   - submit 前相同 `fixture + identifier` ready 列合併
   - tutorial sandbox 試跑
@@ -399,6 +404,8 @@
 - `ExportCenterPanel.vue`
   - 統一資料集選擇
   - role-aware dataset filtering（guest / user 不顯示 `治具資料品質`）
+  - 收退料明細的自定義條件可依來源選擇全部 / 客供 / 自購
+  - onboarding 進入匯出進階篩選步驟時會自動展開明細與自定義條件
   - 匯出格式 / 範圍選擇
   - 收退料條件篩選
   - 匯出欄位預覽
@@ -444,6 +451,7 @@
 - 批次預覽庫存資料
   - `api.listStock`
   - `api.listIdentifierStockSummary`
+  - 兩者都包含 `stock_qty / customer_supplied_qty / self_purchased_qty`
 
 ### 改收退料頁時去哪裡
 
@@ -744,7 +752,7 @@
 
 - `frontend/src/onboarding.ts`
   - 導覽 flow 定義與跨頁流程
-  - 目前共有五張教學卡：`查詢工作台`、`批次收 / 退料 & 收退料總檢視`、`治具 / 機種 / 站點主資料`、`產能設定與治具需求`、`收退料帳目管理 / 治具資料品質`
+  - 目前共有六張教學卡：`查詢工作台`、`批次收 / 退料 & 收退料總檢視`、`治具 / 機種 / 站點主資料`、`產能設定與治具需求`、`全系統按鈕與操作說明`、`收退料帳目管理 / 治具資料品質`
 
 - `frontend/src/components/common/OnboardingFlowPicker.vue`
   - 教學分類選單

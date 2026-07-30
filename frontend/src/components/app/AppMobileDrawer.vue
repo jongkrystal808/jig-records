@@ -199,7 +199,7 @@ select {
   background: linear-gradient(180deg, #4b89ff 0%, #2f6ee5 100%);
 }
 
-@media (min-width: 1201px) {
+@media (min-width: 1367px) {
   .mobile-backdrop,
   .mobile-drawer {
     display: none;

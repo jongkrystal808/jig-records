@@ -16,6 +16,7 @@ const router = useRouter();
 const OVERVIEW_DEFAULT_PAGE_SIZE = 50;
 const OVERVIEW_QUERY_KEYS = [
   "transaction_type",
+  "ownership_type",
   "date_from",
   "date_to",
   "fixture_code",
@@ -28,7 +29,16 @@ const OVERVIEW_QUERY_KEYS = [
 
 const fixtures = ref<Fixture[]>([]);
 const stockRows = ref<StockSummary[]>([]);
-const alerts = ref<Array<{ fixture_id: number; fixture_code: string; fixture_name: string; stock_qty: number; min_stock_qty: number; stock_status: "low_stock" | "out_of_stock" }>>([]);
+const alerts = ref<Array<{
+  fixture_id: number;
+  fixture_code: string;
+  fixture_name: string;
+  stock_qty: number;
+  customer_supplied_qty: number;
+  self_purchased_qty: number;
+  min_stock_qty: number;
+  stock_status: "low_stock" | "out_of_stock";
+}>>([]);
 const transactions = ref<MaterialTransaction[]>([]);
 const overviewPage = ref<TransactionOverviewPage | null>(null);
 const overviewLoading = ref(false);
@@ -38,6 +48,7 @@ const overviewPageSize = ref(OVERVIEW_DEFAULT_PAGE_SIZE);
 function createOverviewFilters() {
   return {
     transaction_type: "" as "" | "receipt" | "return",
+    ownership_type: "" as "" | "customer_supplied" | "self_purchased",
     date_from: "",
     date_to: "",
     fixture_code: "",
@@ -63,6 +74,8 @@ const filteredAlerts = computed(() =>
 const activeFixtureIds = computed(() => new Set(fixtures.value.filter((row) => row.is_active).map((row) => row.id)));
 const activeStockRows = computed(() => filteredStockRows.value.filter((row) => activeFixtureIds.value.has(row.fixture_id)));
 const totalStockQty = computed(() => filteredStockRows.value.reduce((sum, row) => sum + row.stock_qty, 0));
+const customerSuppliedStockQty = computed(() => filteredStockRows.value.reduce((sum, row) => sum + row.customer_supplied_qty, 0));
+const selfPurchasedStockQty = computed(() => filteredStockRows.value.reduce((sum, row) => sum + row.self_purchased_qty, 0));
 const outOfStockCount = computed(() => filteredStockRows.value.filter((row) => row.stock_status === "out_of_stock").length);
 const activeFixtureCount = computed(() => filteredStockRows.value.filter((row) => row.stock_qty > 0).length);
 
@@ -116,7 +129,9 @@ const todayReturnQty = computed(() =>
 const inventorySummaryCards = computed(() => [
   { label: "缺料治具", value: outOfStockCount.value, tone: "danger", emphasis: true },
   { label: "低水位", value: filteredAlerts.value.length, tone: "warn", emphasis: true },
-  { label: "治具總數", value: totalStockQty.value, tone: "normal", emphasis: false },
+  { label: "總庫存", value: totalStockQty.value, tone: "normal", emphasis: false },
+  { label: "客供庫存", value: customerSuppliedStockQty.value, tone: "normal", emphasis: false },
+  { label: "自購庫存", value: selfPurchasedStockQty.value, tone: "normal", emphasis: false },
   { label: "有庫存治具", value: activeFixtureCount.value, tone: "normal", emphasis: false },
   { label: "今日收料", value: todayReceiptQty.value, tone: "success", emphasis: false },
   { label: "今日退料", value: todayReturnQty.value, tone: "danger", emphasis: false }
@@ -157,8 +172,13 @@ function applyOverviewStateFromRoute(query: LocationQuery): boolean {
     const value = readQueryString(query.transaction_type);
     return value === "receipt" || value === "return" ? value : "";
   })() as "" | "receipt" | "return";
+  const ownershipType = (() => {
+    const value = readQueryString(query.ownership_type);
+    return value === "customer_supplied" || value === "self_purchased" ? value : "";
+  })() as "" | "customer_supplied" | "self_purchased";
   const nextFilters: typeof overviewFilters.value = {
     transaction_type: transactionType,
+    ownership_type: ownershipType,
     date_from: readQueryString(query.date_from),
     date_to: readQueryString(query.date_to),
     fixture_code: readQueryString(query.fixture_code),
@@ -171,6 +191,7 @@ function applyOverviewStateFromRoute(query: LocationQuery): boolean {
 
   const changed =
     overviewFilters.value.transaction_type !== nextFilters.transaction_type ||
+    overviewFilters.value.ownership_type !== nextFilters.ownership_type ||
     overviewFilters.value.date_from !== nextFilters.date_from ||
     overviewFilters.value.date_to !== nextFilters.date_to ||
     overviewFilters.value.fixture_code !== nextFilters.fixture_code ||
@@ -194,6 +215,7 @@ function buildOverviewRouteQuery(): LocationQueryRaw {
   const preservedEntries = Object.entries(route.query).filter(([key]) => !OVERVIEW_QUERY_KEYS.includes(key as (typeof OVERVIEW_QUERY_KEYS)[number]));
   const query: LocationQueryRaw = Object.fromEntries(preservedEntries);
   if (overviewFilters.value.transaction_type) query.transaction_type = overviewFilters.value.transaction_type;
+  if (overviewFilters.value.ownership_type) query.ownership_type = overviewFilters.value.ownership_type;
   if (overviewFilters.value.date_from) query.date_from = overviewFilters.value.date_from;
   if (overviewFilters.value.date_to) query.date_to = overviewFilters.value.date_to;
   if (overviewFilters.value.fixture_code.trim()) query.fixture_code = overviewFilters.value.fixture_code.trim();
@@ -262,6 +284,7 @@ function buildOverviewFilters(): TransactionQueryFilters {
   }
   return {
     transaction_type: overviewFilters.value.transaction_type || undefined,
+    ownership_type: overviewFilters.value.ownership_type || undefined,
     date_from: overviewFilters.value.date_from || undefined,
     date_to: overviewFilters.value.date_to || undefined,
     fixture_code: fixtureKeywords.length > 0 ? fixtureKeywords.join(",") : undefined,

@@ -34,6 +34,8 @@ class StockSummaryRead(ORMModel):
     fixture_code: str
     fixture_name: str
     stock_qty: int
+    customer_supplied_qty: int
+    self_purchased_qty: int
     min_stock_qty: int
     stock_status: Literal["normal", "low_stock", "out_of_stock"]
     last_transaction_at: datetime | None
@@ -44,6 +46,8 @@ class StockAlertRead(ORMModel):
     fixture_code: str
     fixture_name: str
     stock_qty: int
+    customer_supplied_qty: int
+    self_purchased_qty: int
     min_stock_qty: int
     stock_status: Literal["low_stock", "out_of_stock"]
 
@@ -72,6 +76,8 @@ class IdentifierStockSummaryRead(ORMModel):
     fixture_id: int
     identifier: str
     stock_qty: int
+    customer_supplied_qty: int
+    self_purchased_qty: int
 
 
 class StockTransactionItemRead(ORMModel):

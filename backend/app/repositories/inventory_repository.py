@@ -45,6 +45,7 @@ class InventoryRepository:
         date_to: datetime | None = None,
         fixture_code: str | None = None,
         transaction_no: str | None = None,
+        ownership_type: str | None = None,
         identifier_exact_matches: list[str] | None = None,
         identifier_contains: str | None = None,
         created_by: str | None = None,
@@ -69,6 +70,8 @@ class InventoryRepository:
         stmt = self._apply_fixture_code_filter(stmt, fixture_code_expr, fixture_code)
         if transaction_no:
             stmt = stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
+        if ownership_type:
+            stmt = stmt.where(MaterialTransactionItem.ownership_type == ownership_type)
         stmt = self._apply_identifier_filter(
             stmt,
             identifier_exact_matches=identifier_exact_matches,
@@ -316,6 +319,64 @@ class InventoryRepository:
         if touch_last_transaction:
             summary.last_transaction_at = datetime.now(tz=timezone.utc)
 
+    @staticmethod
+    def _signed_stock_qty_expr():
+        return case(
+            (MaterialTransaction.transaction_type == "receipt", MaterialTransactionItem.quantity),
+            else_=-MaterialTransactionItem.quantity,
+        )
+
+    def _stock_breakdown_subquery(self, customer_id: int | None = None):
+        signed_qty_expr = self._signed_stock_qty_expr()
+        stmt = (
+            select(
+                MaterialTransactionItem.fixture_id.label("fixture_id"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (MaterialTransactionItem.ownership_type == "customer_supplied", signed_qty_expr),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("customer_supplied_qty"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (MaterialTransactionItem.ownership_type == "self_purchased", signed_qty_expr),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("self_purchased_qty"),
+            )
+            .join(MaterialTransaction, MaterialTransaction.id == MaterialTransactionItem.transaction_id)
+            .where(MaterialTransactionItem.fixture_id.is_not(None))
+            .group_by(MaterialTransactionItem.fixture_id)
+        )
+        if customer_id is not None:
+            stmt = stmt.where(MaterialTransaction.customer_id == customer_id)
+        return stmt.subquery()
+
+    @staticmethod
+    def _stock_summary_expressions(stock_breakdown):
+        customer_supplied_qty_expr = func.coalesce(stock_breakdown.c.customer_supplied_qty, 0)
+        self_purchased_qty_expr = func.coalesce(stock_breakdown.c.self_purchased_qty, 0)
+        stock_qty_expr = func.coalesce(FixtureStockSummary.stock_qty, 0)
+        min_stock_qty_expr = func.coalesce(FixtureStockLevel.min_stock_qty, 0)
+        stock_status_expr = case(
+            (Fixture.is_active.is_(False), "normal"),
+            (FixtureStockSummary.stock_status.is_not(None), FixtureStockSummary.stock_status),
+            else_="normal",
+        )
+        return (
+            customer_supplied_qty_expr,
+            self_purchased_qty_expr,
+            stock_qty_expr,
+            min_stock_qty_expr,
+            stock_status_expr,
+        )
+
     def get_available_identifier_qty(self, *, fixture_id: int, identifier: str) -> int:
         stmt = (
             select(
@@ -348,25 +409,29 @@ class InventoryRepository:
         return int(row.receipt_qty or 0) - int(row.return_qty or 0)
 
     def list_stock_summary_rows(self, customer_id: int | None = None) -> list[dict]:
-        stock_status_expr = case(
-            (Fixture.is_active.is_(False), "normal"),
-            (FixtureStockSummary.stock_status.is_not(None), FixtureStockSummary.stock_status),
-            else_="normal",
-        )
+        stock_breakdown = self._stock_breakdown_subquery(customer_id)
+        (
+            customer_supplied_qty_expr,
+            self_purchased_qty_expr,
+            stock_qty_expr,
+            min_stock_qty_expr,
+            stock_status_expr,
+        ) = self._stock_summary_expressions(stock_breakdown)
         stmt = (
             select(
                 Fixture.id.label("fixture_id"),
                 Fixture.code.label("fixture_code"),
                 Fixture.name.label("fixture_name"),
-                case((FixtureStockSummary.stock_qty.is_not(None), FixtureStockSummary.stock_qty), else_=0).label("stock_qty"),
-                case((FixtureStockLevel.min_stock_qty.is_not(None), FixtureStockLevel.min_stock_qty), else_=0).label(
-                    "min_stock_qty"
-                ),
+                stock_qty_expr.label("stock_qty"),
+                customer_supplied_qty_expr.label("customer_supplied_qty"),
+                self_purchased_qty_expr.label("self_purchased_qty"),
+                min_stock_qty_expr.label("min_stock_qty"),
                 stock_status_expr.label("stock_status"),
                 FixtureStockSummary.last_transaction_at.label("last_transaction_at"),
             )
             .outerjoin(FixtureStockSummary, FixtureStockSummary.fixture_id == Fixture.id)
             .outerjoin(FixtureStockLevel, FixtureStockLevel.fixture_id == Fixture.id)
+            .outerjoin(stock_breakdown, stock_breakdown.c.fixture_id == Fixture.id)
             .order_by(Fixture.code)
         )
         if customer_id is not None:
@@ -374,25 +439,29 @@ class InventoryRepository:
         return [dict(row._mapping) for row in self.db.execute(stmt).all()]
 
     def get_stock_summary_row(self, fixture_id: int, customer_id: int | None = None) -> dict | None:
-        stock_status_expr = case(
-            (Fixture.is_active.is_(False), "normal"),
-            (FixtureStockSummary.stock_status.is_not(None), FixtureStockSummary.stock_status),
-            else_="normal",
-        )
+        stock_breakdown = self._stock_breakdown_subquery(customer_id)
+        (
+            customer_supplied_qty_expr,
+            self_purchased_qty_expr,
+            stock_qty_expr,
+            min_stock_qty_expr,
+            stock_status_expr,
+        ) = self._stock_summary_expressions(stock_breakdown)
         stmt = (
             select(
                 Fixture.id.label("fixture_id"),
                 Fixture.code.label("fixture_code"),
                 Fixture.name.label("fixture_name"),
-                case((FixtureStockSummary.stock_qty.is_not(None), FixtureStockSummary.stock_qty), else_=0).label("stock_qty"),
-                case((FixtureStockLevel.min_stock_qty.is_not(None), FixtureStockLevel.min_stock_qty), else_=0).label(
-                    "min_stock_qty"
-                ),
+                stock_qty_expr.label("stock_qty"),
+                customer_supplied_qty_expr.label("customer_supplied_qty"),
+                self_purchased_qty_expr.label("self_purchased_qty"),
+                min_stock_qty_expr.label("min_stock_qty"),
                 stock_status_expr.label("stock_status"),
                 FixtureStockSummary.last_transaction_at.label("last_transaction_at"),
             )
             .outerjoin(FixtureStockSummary, FixtureStockSummary.fixture_id == Fixture.id)
             .outerjoin(FixtureStockLevel, FixtureStockLevel.fixture_id == Fixture.id)
+            .outerjoin(stock_breakdown, stock_breakdown.c.fixture_id == Fixture.id)
             .where(Fixture.id == fixture_id)
         )
         if customer_id is not None:
@@ -401,24 +470,28 @@ class InventoryRepository:
         return None if row is None else dict(row._mapping)
 
     def list_stock_alert_rows(self, customer_id: int | None = None) -> list[dict]:
-        stock_status_expr = case(
-            (Fixture.is_active.is_(False), "normal"),
-            (FixtureStockSummary.stock_status.is_not(None), FixtureStockSummary.stock_status),
-            else_="normal",
-        )
+        stock_breakdown = self._stock_breakdown_subquery(customer_id)
+        (
+            customer_supplied_qty_expr,
+            self_purchased_qty_expr,
+            stock_qty_expr,
+            min_stock_qty_expr,
+            stock_status_expr,
+        ) = self._stock_summary_expressions(stock_breakdown)
         stmt = (
             select(
                 Fixture.id.label("fixture_id"),
                 Fixture.code.label("fixture_code"),
                 Fixture.name.label("fixture_name"),
-                case((FixtureStockSummary.stock_qty.is_not(None), FixtureStockSummary.stock_qty), else_=0).label("stock_qty"),
-                case((FixtureStockLevel.min_stock_qty.is_not(None), FixtureStockLevel.min_stock_qty), else_=0).label(
-                    "min_stock_qty"
-                ),
+                stock_qty_expr.label("stock_qty"),
+                customer_supplied_qty_expr.label("customer_supplied_qty"),
+                self_purchased_qty_expr.label("self_purchased_qty"),
+                min_stock_qty_expr.label("min_stock_qty"),
                 stock_status_expr.label("stock_status"),
             )
             .outerjoin(FixtureStockSummary, FixtureStockSummary.fixture_id == Fixture.id)
             .outerjoin(FixtureStockLevel, FixtureStockLevel.fixture_id == Fixture.id)
+            .outerjoin(stock_breakdown, stock_breakdown.c.fixture_id == Fixture.id)
             .where(Fixture.is_active.is_(True), stock_status_expr.in_(["low_stock", "out_of_stock"]))
             .order_by(Fixture.code)
         )
@@ -475,22 +548,33 @@ class InventoryRepository:
         return rows
 
     def list_identifier_stock_summary_rows(self, customer_id: int | None = None, fixture_id: int | None = None) -> list[dict]:
-        stock_qty_expr = (
-            func.coalesce(
-                func.sum(
-                    case(
-                        (MaterialTransaction.transaction_type == "receipt", MaterialTransactionItem.quantity),
-                        else_=-MaterialTransactionItem.quantity,
-                    )
-                ),
-                0,
-            )
+        signed_qty_expr = self._signed_stock_qty_expr()
+        customer_supplied_qty_expr = func.coalesce(
+            func.sum(
+                case(
+                    (MaterialTransactionItem.ownership_type == "customer_supplied", signed_qty_expr),
+                    else_=0,
+                )
+            ),
+            0,
         )
+        self_purchased_qty_expr = func.coalesce(
+            func.sum(
+                case(
+                    (MaterialTransactionItem.ownership_type == "self_purchased", signed_qty_expr),
+                    else_=0,
+                )
+            ),
+            0,
+        )
+        stock_qty_expr = customer_supplied_qty_expr + self_purchased_qty_expr
         stmt = (
             select(
                 MaterialTransactionItem.fixture_id.label("fixture_id"),
                 MaterialTransactionItem.identifier.label("identifier"),
                 stock_qty_expr.label("stock_qty"),
+                customer_supplied_qty_expr.label("customer_supplied_qty"),
+                self_purchased_qty_expr.label("self_purchased_qty"),
             )
             .join(MaterialTransaction, MaterialTransaction.id == MaterialTransactionItem.transaction_id)
             .join(Fixture, Fixture.id == MaterialTransactionItem.fixture_id)
@@ -578,6 +662,7 @@ class InventoryRepository:
         customer_id: int | None = None,
         *,
         transaction_type: str | None = None,
+        ownership_type: str | None = None,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
         fixture_code: str | None = None,
@@ -611,6 +696,8 @@ class InventoryRepository:
             stmt = stmt.where(MaterialTransaction.customer_id == customer_id)
         if transaction_type:
             stmt = stmt.where(MaterialTransaction.transaction_type == transaction_type)
+        if ownership_type:
+            stmt = stmt.where(MaterialTransactionItem.ownership_type == ownership_type)
         if date_from is not None:
             stmt = stmt.where(MaterialTransaction.occurred_at >= date_from)
         if date_to is not None:
@@ -655,6 +742,7 @@ class InventoryRepository:
         date_to: datetime | None = None,
         fixture_code: str | None = None,
         transaction_no: str | None = None,
+        ownership_type: str | None = None,
         identifier_exact_matches: list[str] | None = None,
         identifier_contains: str | None = None,
         created_by: str | None = None,
@@ -689,6 +777,8 @@ class InventoryRepository:
         stmt = self._apply_fixture_code_filter(stmt, fixture_code_expr, fixture_code)
         if transaction_no:
             stmt = stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
+        if ownership_type:
+            stmt = stmt.where(MaterialTransactionItem.ownership_type == ownership_type)
         stmt = self._apply_identifier_filter(
             stmt,
             identifier_exact_matches=identifier_exact_matches,

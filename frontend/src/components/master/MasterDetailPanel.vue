@@ -94,7 +94,7 @@ const hardDeleteMeta = computed(() => {
 </script>
 
 <template>
-  <article class="panel detail-panel" :class="{ 'detail-panel-create': isCreateMode }">
+  <article class="panel detail-panel" data-tour="detailed-master-detail" :class="{ 'detail-panel-create': isCreateMode }">
     <UiSectionHeader class="panel-head" :class="{ 'panel-head-create': isCreateMode }" :title="`${tabTitle}詳細資料`" :description="isCreateMode ? '新增資料' : selectedDetailLabel">
       <template #actions>
         <span v-if="isCreateMode" class="mode-chip mode-chip-create">新增模式</span>

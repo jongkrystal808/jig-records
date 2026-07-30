@@ -290,21 +290,29 @@
   - `1-4` 碼純數字會同時匹配不同 padding 寬度的 legacy 值
   - 其餘輸入值會以原值精確查詢
 - `ownership_type` 在 transaction item 層
+- 庫存來源算法固定為：
+  - `customer_supplied_qty = 客供收料 - 客供退料`
+  - `self_purchased_qty = 自購收料 - 自購退料`
+  - `stock_qty = customer_supplied_qty + self_purchased_qty`
+- `/inventory/stock`、`/inventory/alerts`、`/inventory/identifier-stock-summary` 都回傳總庫存、客供庫存與自購庫存。
+- 客供 / 自購收料在作業上分開，且 datecode 不跨來源重複；退料可用量維持以 `fixture_id + identifier` 總量查核。
 - 批次貼上匯入前端仍走 `/receipts` / `/returns`
 - 前端批次貼上欄允許直接插入 literal `Tab`，組成 `fixture-code<TAB>identifier<TAB>quantity` 後再由前端解析並送到 `/receipts` / `/returns`
 - 前端顯示文案可將 `identifier` 呈現為 `datecode/編號`，但 backend API / schema / DB 欄位名仍維持 `identifier`
 - CSV 匯入走 `/inventory/transactions/import`
 - `POST /inventory/receipts` 與 `POST /inventory/returns` 的 `transaction_no` 現在是明確必填；repository 不再自動產生 fallback 單號
 - 交易歷史讀取模型 (`/inventory/transactions`、`/inventory/admin/transactions`、`/inventory/transactions/overview`) 仍容許 legacy `NULL / 空字串 transaction_no`，repository 讀取時會正規化成 `None`
-- overview 查詢支援 `transaction_type` / `date_from` / `date_to` / `fixture_code` / `transaction_no` / `identifier` / `created_by`
+- overview 查詢支援 `transaction_type` / `ownership_type` / `date_from` / `date_to` / `fixture_code` / `transaction_no` / `identifier` / `created_by`
+- `ownership_type` 可使用 `customer_supplied` 或 `self_purchased`，直接在 item-level 查詢套用，確保分頁 `total` 與結果一致
 - `/inventory/transactions/overview` 直接回傳 item-level page contract：`items / page / page_size / total`
 - overview 的 `fixture_code` filter 現在可接受逗號分隔的多關鍵字，供前端把頁內 fixture filter 與全域 fixture keyword 一起帶入
 - 報表匯出支援 `summary|detail` 與 `xlsx|txt`
 - 匯出 preview 由 `/inventory/transactions/export-report/preview` 提供
+- 收退料報表與 preview 都支援 `ownership_type=customer_supplied|self_purchased`，並在 transaction item 層套用來源條件
 - `BatchImportPanel` 預覽現在會同時使用：
   - `GET /inventory/stock`
   - `GET /inventory/identifier-stock-summary`
-  來顯示 `目前庫存` 與 `交易後庫存`
+  顯示該 datecode 的總 `目前庫存` 與 `交易後庫存`
 - onboarding 教學模式不會新增後端 tutorial endpoint；只是前端不真正送出 `/receipts` 或 `/returns`
 
 - 被刪治具若選擇保留歷史，交易查詢與匯出以 `deleted_fixture_code` / `deleted_fixture_name` fallback 顯示

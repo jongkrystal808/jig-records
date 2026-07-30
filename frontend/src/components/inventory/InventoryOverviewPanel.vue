@@ -7,6 +7,7 @@ import { formatLocalDate } from "@/utils/date";
 const props = defineProps<{
   filters: {
     transaction_type: "" | "receipt" | "return";
+    ownership_type: "" | "customer_supplied" | "self_purchased";
     date_from: string;
     date_to: string;
     fixture_code: string;
@@ -52,6 +53,15 @@ function updateFilter<Key extends keyof typeof props.filters>(key: Key, value: (
 }
 
 const showAdvancedFilters = ref(false);
+const advancedFilterCount = computed(
+  () =>
+    [
+      props.filters.ownership_type,
+      props.filters.transaction_no.trim(),
+      props.filters.tracking_code.trim(),
+      props.filters.created_by.trim()
+    ].filter(Boolean).length
+);
 const totalPages = computed(() => Math.max(1, Math.ceil(props.total / props.pageSize)));
 const hasRows = computed(() => props.rows.length > 0);
 const pageDraft = ref(String(props.page));
@@ -71,6 +81,16 @@ watch(
   () => props.page,
   (value) => {
     pageDraft.value = String(value);
+  },
+  { immediate: true }
+);
+
+watch(
+  () => advancedFilterCount.value,
+  (count) => {
+    if (count > 0) {
+      showAdvancedFilters.value = true;
+    }
   },
   { immediate: true }
 );
@@ -115,15 +135,27 @@ function displayTransactionNo(value: string | null): string {
       <div class="overview-secondary-row">
         <button
           class="outline-btn advanced-toggle"
+          data-tour="overview-advanced-toggle"
           type="button"
           :aria-expanded="showAdvancedFilters"
           aria-controls="overview-advanced-filters"
           @click="showAdvancedFilters = !showAdvancedFilters"
         >
-          {{ showAdvancedFilters ? "收合進階篩選" : "進階篩選" }}
+          {{ showAdvancedFilters ? "收合進階篩選" : advancedFilterCount > 0 ? `進階篩選（${advancedFilterCount}）` : "進階篩選" }}
         </button>
       </div>
       <div v-if="showAdvancedFilters" id="overview-advanced-filters" class="overview-fields overview-fields-advanced">
+        <label>
+          <span>來源</span>
+          <select
+            :value="filters.ownership_type"
+            @change="updateFilter('ownership_type', ($event.target as HTMLSelectElement).value as '' | 'customer_supplied' | 'self_purchased')"
+          >
+            <option value="">全部</option>
+            <option value="customer_supplied">客供</option>
+            <option value="self_purchased">自購</option>
+          </select>
+        </label>
         <label>
           <span>單號</span>
           <input :value="filters.transaction_no" placeholder="RCV-20260526-000001" @input="updateFilter('transaction_no', ($event.target as HTMLInputElement).value)" />
@@ -137,7 +169,7 @@ function displayTransactionNo(value: string | null): string {
           <input :value="filters.created_by" placeholder="輸入人員名稱" @input="updateFilter('created_by', ($event.target as HTMLInputElement).value)" />
         </label>
       </div>
-      <div class="overview-actions">
+      <div class="overview-actions" data-tour="overview-filter-actions">
         <button class="outline-btn" type="button" @click="emit('reset')">重設</button>
         <button class="primary-btn" type="submit" :disabled="loading">
           {{ loading ? "查詢中..." : "查詢" }}
@@ -147,7 +179,7 @@ function displayTransactionNo(value: string | null): string {
 
     <div class="overview-toolbar">
       <span class="overview-summary">共 {{ total }} 筆，第 {{ page }} / {{ totalPages }} 頁</span>
-      <div class="overview-pager">
+      <div class="overview-pager" data-tour="overview-pager">
         <label class="page-size-field">
           <span>每頁</span>
           <select :value="pageSize" :disabled="loading" @change="emit('update:pageSize', Number(($event.target as HTMLSelectElement).value))">

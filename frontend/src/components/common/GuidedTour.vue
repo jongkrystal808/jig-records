@@ -32,6 +32,8 @@ const props = defineProps<{
   open: boolean;
   steps: GuidedTourStep[];
   currentIndex: number;
+  flowLabel?: string;
+  flowSectionLabel?: string;
 }>();
 
 const emit = defineEmits<{
@@ -163,7 +165,10 @@ onBeforeUnmount(() => {
         height: `${spotlightRect.height + 16}px`
       }"></div>
       <aside ref="tourCardRef" class="tour-card" :style="cardStyle">
-        <div class="tour-step-count">步驟 {{ currentIndex + 1 }} / {{ steps.length }}</div>
+        <div class="tour-context">
+          <span v-if="flowSectionLabel" class="tour-flow-label">{{ flowSectionLabel }}</span>
+          <span class="tour-step-count">{{ flowLabel || "新手教學" }} · 步驟 {{ currentIndex + 1 }} / {{ steps.length }}</span>
+        </div>
         <h3>{{ currentStep.title }}</h3>
 
         <img
@@ -237,6 +242,25 @@ onBeforeUnmount(() => {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+}
+
+.tour-context {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tour-flow-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(47, 110, 229, 0.12);
+  color: #1f5fcf;
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .tour-step-count {

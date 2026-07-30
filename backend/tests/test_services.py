@@ -1052,6 +1052,72 @@ class InventoryServiceTests(ServiceTestCase):
         self.assertIsNotNone(transaction)
         self.assertEqual(transaction.transaction_no, "12005436")
 
+    def test_stock_summary_exposes_customer_and_self_purchased_balances(self) -> None:
+        bundle = self.seed_customer_bundle()
+        fixture_id = bundle["fixture_a"].id
+        summary = self.db.get(FixtureStockSummary, fixture_id)
+        self.assertIsNotNone(summary)
+        summary.stock_qty = 0
+        self.db.commit()
+
+        for transaction_no, ownership_type, quantity in [
+            ("BREAKDOWN-CUSTOMER-001", "customer_supplied", 4),
+            ("BREAKDOWN-SELF-001", "self_purchased", 6),
+        ]:
+            self.inventory_service.receipt(
+                StockTransactionCreate(
+                    customer_id=bundle["customer"].id,
+                    created_by="Tester",
+                    transaction_no=transaction_no,
+                    items=[
+                        {
+                            "fixture_id": fixture_id,
+                            "ownership_type": ownership_type,
+                            "identifier": "2606",
+                            "quantity": quantity,
+                        }
+                    ],
+                )
+            )
+
+        self.inventory_service.return_material(
+            StockTransactionCreate(
+                customer_id=bundle["customer"].id,
+                created_by="Tester",
+                transaction_no="BREAKDOWN-RETURN-001",
+                items=[
+                    {
+                        "fixture_id": fixture_id,
+                        "ownership_type": "customer_supplied",
+                        "identifier": "2606",
+                        "quantity": 1,
+                    }
+                ],
+            )
+        )
+
+        stock_row = next(
+            row
+            for row in self.inventory_service.list_stock_summary(bundle["customer"].id)
+            if row["fixture_id"] == fixture_id
+        )
+        self.assertEqual(stock_row["customer_supplied_qty"], 3)
+        self.assertEqual(stock_row["self_purchased_qty"], 6)
+        self.assertEqual(stock_row["stock_qty"], 9)
+        self.assertEqual(
+            stock_row["stock_qty"],
+            stock_row["customer_supplied_qty"] + stock_row["self_purchased_qty"],
+        )
+
+        identifier_row = next(
+            row
+            for row in self.inventory_service.list_identifier_stock_summary(bundle["customer"].id)
+            if row["fixture_id"] == fixture_id and row["identifier"] == "2606"
+        )
+        self.assertEqual(identifier_row["stock_qty"], 9)
+        self.assertEqual(identifier_row["customer_supplied_qty"], 3)
+        self.assertEqual(identifier_row["self_purchased_qty"], 6)
+
     def test_duplicate_transaction_guard_blocks_recent_identical_submission(self) -> None:
         bundle = self.seed_customer_bundle()
         payload = self._make_receipt_payload(bundle, transaction_no="DUP-0001")
@@ -1087,6 +1153,7 @@ class InventoryServiceTests(ServiceTestCase):
         payload = StockTransactionCreate(
             customer_id=bundle["customer"].id,
             created_by="Tester",
+            transaction_no="LEGACY-NUMERIC-0001",
             items=[
                 {
                     "fixture_id": bundle["fixture_a"].id,
@@ -1104,6 +1171,7 @@ class InventoryServiceTests(ServiceTestCase):
         payload = StockTransactionCreate(
             customer_id=bundle["customer"].id,
             created_by="Tester",
+            transaction_no="LEGACY-ALPHANUMERIC-0001",
             items=[
                 {
                     "fixture_id": bundle["fixture_a"].id,
@@ -1196,6 +1264,50 @@ class InventoryServiceTests(ServiceTestCase):
         self.assertEqual(rows[0]["治具編號"], "FX-A")
         self.assertEqual(rows[0]["識別碼"], "2024W12")
         self.assertEqual(rows[0]["收料數"], 3)
+
+    def test_transaction_export_report_filters_detail_rows_by_ownership_type(self) -> None:
+        bundle = self.seed_customer_bundle()
+        transaction = self.inventory_service.repo.create_transaction(
+            customer_id=bundle["customer"].id,
+            transaction_type="receipt",
+            occurred_at=datetime(2026, 6, 10, 8, 30, tzinfo=timezone.utc),
+            created_by="Export Tester",
+            transaction_no="RCV-EXPORT-SOURCE",
+            note=None,
+        )
+        self.inventory_service.repo.add_transaction_item(
+            transaction_id=transaction.id,
+            fixture_id=bundle["fixture_a"].id,
+            ownership_type="customer_supplied",
+            identifier="CUSTOMER-001",
+            quantity=5,
+            note=None,
+        )
+        self.inventory_service.repo.add_transaction_item(
+            transaction_id=transaction.id,
+            fixture_id=bundle["fixture_a"].id,
+            ownership_type="self_purchased",
+            identifier="SELF-001",
+            quantity=3,
+            note=None,
+        )
+        self.db.commit()
+
+        _, customer_rows = self.inventory_service.build_transaction_export_report(
+            customer_id=bundle["customer"].id,
+            report_type="detail",
+            ownership_type="customer_supplied",
+        )
+        self.assertEqual([row["識別碼"] for row in customer_rows], ["CUSTOMER-001"])
+        self.assertEqual(customer_rows[0]["收料數"], 5)
+
+        self_preview = self.inventory_service.get_transaction_export_preview(
+            customer_id=bundle["customer"].id,
+            report_type="detail",
+            ownership_type="self_purchased",
+        )
+        self.assertEqual(self_preview["raw_item_count"], 1)
+        self.assertEqual(self_preview["export_row_count"], 1)
 
     def test_transaction_queries_match_legacy_identifier_by_exact_value(self) -> None:
         bundle = self.seed_customer_bundle()
@@ -1317,12 +1429,35 @@ class InventoryServiceTests(ServiceTestCase):
         self.assertEqual({row["fixture_code"] for row in filtered["items"]}, {"FX-A"})
         self.assertEqual(filtered["items"][1]["note"], "tx note")
 
+        customer_supplied = self.inventory_service.list_transaction_overview_page(
+            page=1,
+            page_size=10,
+            customer_id=customer_id,
+            ownership_type="customer_supplied",
+        )
+        self.assertEqual(customer_supplied["total"], 1)
+        self.assertEqual(customer_supplied["items"][0]["transaction_no"], "OV-002")
+        self.assertEqual(customer_supplied["items"][0]["ownership_type"], "customer_supplied")
+
+        self_purchased = self.inventory_service.list_transaction_overview_page(
+            page=1,
+            page_size=10,
+            customer_id=customer_id,
+            ownership_type="self_purchased",
+        )
+        self.assertEqual(self_purchased["total"], 2)
+        self.assertEqual(
+            {row["transaction_no"] for row in self_purchased["items"]},
+            {"OV-001", "OV-003"},
+        )
+
     def test_return_error_message_includes_item_index_and_identifier_context(self) -> None:
         bundle = self.seed_customer_bundle()
         self.inventory_service.receipt(
             StockTransactionCreate(
                 customer_id=bundle["customer"].id,
                 created_by="Tester",
+                transaction_no="RETURN-CONTEXT-RECEIPT-0001",
                 items=[
                     {
                         "fixture_id": bundle["fixture_a"].id,
@@ -1339,6 +1474,7 @@ class InventoryServiceTests(ServiceTestCase):
                 StockTransactionCreate(
                     customer_id=bundle["customer"].id,
                     created_by="Tester",
+                    transaction_no="RETURN-CONTEXT-RETURN-0001",
                     items=[
                         {
                             "fixture_id": bundle["fixture_b"].id,
@@ -1355,9 +1491,9 @@ class InventoryServiceTests(ServiceTestCase):
     def test_import_transactions_csv_rolls_back_on_invalid_row(self) -> None:
         bundle = self.seed_customer_bundle()
         csv_content = (
-            "transaction_type,fixture_code,ownership_type,identifier,quantity,created_by,occurred_at,note\n"
-            "receipt,FX-A,self_purchased,2606,5,Tester,2026-06-09T08:30:00+00:00,\n"
-            "receipt,NOT-EXIST,self_purchased,2606,5,Tester,2026-06-09T08:30:00+00:00,\n"
+            "transaction_type,transaction_no,fixture_code,ownership_type,identifier,quantity,created_by,occurred_at,note\n"
+            "receipt,CSV-VALID-0001,FX-A,self_purchased,2606,5,Tester,2026-06-09T08:30:00+00:00,\n"
+            "receipt,CSV-INVALID-0001,NOT-EXIST,self_purchased,2606,5,Tester,2026-06-09T08:30:00+00:00,\n"
         )
 
         with self.assertRaises(ValueError) as exc:

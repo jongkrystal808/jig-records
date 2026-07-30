@@ -18,6 +18,8 @@ type AlertRow = {
   fixture_code: string;
   fixture_name: string;
   stock_qty: number;
+  customer_supplied_qty: number;
+  self_purchased_qty: number;
   min_stock_qty: number;
   stock_status: "low_stock" | "out_of_stock";
 };
@@ -39,6 +41,7 @@ function appendTransactionFilterParams(
 ): URLSearchParams {
   setOptionalParam(params, "customer_id", customerId);
   setOptionalParam(params, "transaction_type", filters?.transaction_type);
+  setOptionalParam(params, "ownership_type", filters?.ownership_type);
   setOptionalParam(params, "date_from", filters?.date_from);
   setOptionalParam(params, "date_to", filters?.date_to);
   setOptionalParam(params, "fixture_code", filters?.fixture_code);
@@ -98,6 +101,7 @@ export const inventoryApi = {
     date_to?: string;
     fixture_code?: string;
     transaction_no?: string;
+    ownership_type?: "customer_supplied" | "self_purchased";
     identifier?: string;
   }) {
     const search = new URLSearchParams({
@@ -110,6 +114,7 @@ export const inventoryApi = {
     setOptionalParam(search, "date_to", params.date_to);
     setOptionalParam(search, "fixture_code", params.fixture_code);
     setOptionalParam(search, "transaction_no", params.transaction_no);
+    setOptionalParam(search, "ownership_type", params.ownership_type);
     setOptionalParam(search, "identifier", params.identifier);
     return requestBlob(`/inventory/transactions/export-report?${search.toString()}`);
   },
@@ -121,6 +126,7 @@ export const inventoryApi = {
     date_to?: string;
     fixture_code?: string;
     transaction_no?: string;
+    ownership_type?: "customer_supplied" | "self_purchased";
     identifier?: string;
   }) {
     const search = new URLSearchParams({
@@ -132,6 +138,7 @@ export const inventoryApi = {
     setOptionalParam(search, "date_to", params.date_to);
     setOptionalParam(search, "fixture_code", params.fixture_code);
     setOptionalParam(search, "transaction_no", params.transaction_no);
+    setOptionalParam(search, "ownership_type", params.ownership_type);
     setOptionalParam(search, "identifier", params.identifier);
     return request<{ report_type: "summary" | "detail"; column_count: number; raw_item_count: number; export_row_count: number }>(
       `/inventory/transactions/export-report/preview?${search.toString()}`
