@@ -99,6 +99,8 @@ frontend/
 
 ```text
 pages/
+├─ SearchHomePage.vue
+├─ InventoryRelationsPage.vue
 ├─ InventoryPage.vue
 ├─ SearchWorkspacePage.vue
 ├─ MasterPage.vue
@@ -157,6 +159,9 @@ Composable / helper notes:
 Application shell notes:
 
 - Login / guest entry is rendered in the root app shell before route content
+- `/search` uses `SearchHomePage.vue` as a two-mode shell: every role can switch between `SearchWorkspacePage.vue` and `InventoryRelationsPage.vue`
+- guest sessions default to report mode; admin/user sessions initially default to query mode and can persist a per-account login default in browser `localStorage`
+- `/search/detail` remains a direct compatibility route for fixture/model search, onboarding, and cross-page return links
 - `/inventory` remains the operation-focused receipt/return page
 - `/inventory/overview` remains a full-page route, and its primary entry is the top-bar `更多功能` menu
 - `MasterPage` tabs now map to explicit routes: `/master/fixtures`, `/master/models`, `/master/stations`, `/master/customers`, `/master/users`, `/master/ledger`, `/master/quality`
@@ -166,12 +171,12 @@ Application shell notes:
 - the top bar surfaces login state, customer switch, today receipt/return totals, and low-stock count
 - top-bar summary data now comes from a dedicated backend dashboard-summary endpoint, rather than front-end derivation from a recent transaction slice
 - the top bar provides primary `收/退料`, `匯出中心`, and `新手教學` actions
-- the top bar provides a `更多功能` menu with `收退料總檢視` / `資料維護` / `產能管理`
+- `更多功能` omits the duplicate fixture/model query entry because both query and report are directly available from `/search`
 - clicking the logo returns to `/search`
 - `MasterPage` provides a local `返回搜尋` action, while `ProductionPage` can render `返回搜尋` or `返回來源` depending on the incoming `return_to` route query and falls back to `/search`
 - auth session and selected customer are restored from `sessionStorage` on reload, rather than waiting for a fresh login
 - customer switching is mediated by shared page-level dirty guards, so shell-level customer changes can be blocked when local drafts are still unsaved
-- `SearchWorkspacePage.vue` participates in the shared dirty-guard flow for inline fixture/model editing, covering route leave, browser reload, and shell-level customer switching
+- `SearchWorkspacePage.vue` participates in the shared dirty-guard flow at both `/search` query mode and `/search/detail`; switching from query mode to report mode also confirms before discarding an inline edit
 - the desktop top bar now drops into a compact-header mode below `1366px`, rather than holding a crowded two-row desktop layout until phone width
 - top-bar daily metrics now use click/tap popovers with keyboard close behavior, rather than hover-only disclosure
 - low-stock popover rows now expose a direct `收 / 退料` quick action that opens the shared batch modal with the fixture code prefilled
@@ -181,9 +186,9 @@ Application shell notes:
 - mobile drawer also exposes `新手教學`, so onboarding replay is not tied to the search page alone
 - the root shell now owns the onboarding picker and reuses `data-tour` anchors rendered across multiple pages
 - onboarding state is stored in lightweight reactive app state and uses route-aware step syncing
-- onboarding is now grouped into selectable flows so users can choose a page- or tab-specific tutorial instead of replaying one long linear tour
-- onboarding now keeps five concise topic flows and adds a complete detailed flow that explains the primary buttons across search, inventory, master-data, and production pages
-- the onboarding picker is currently consolidated into five flows: `查詢工作台`, `批次收 / 退料 & 收退料總檢視`, `治具 / 機種 / 站點主資料`, `產能設定與治具需求`, and `收退料帳目管理 / 治具資料品質`
+- admin/user onboarding remains grouped into selectable topic flows and a complete detailed guide
+- guest onboarding bypasses the picker and starts one combined seven-step `查詢工作台與庫存配置報表` flow directly
+- onboarding steps may provide route query requirements, allowing the guest flow to switch `/search` between `home_mode=query` and `home_mode=report`
 - the root shell also owns a versioned release-notice modal, with copy defined in `frontend/src/releaseNotice.ts`
 - release-note dismissal is now one-time per version per browser via `localStorage`, rather than once per account
 
@@ -466,7 +471,7 @@ model_id + station_id + fixture_id
 - a station's complete fixture-requirement set can be copied to another station in the same model or to a station in another model
 - copy is transactional and safe by default: existing target fixtures are skipped unless the operator explicitly enables overwrite; an unmapped target station is added to the target model in the same transaction
 - copy results report created, updated, skipped, and mapping-created counts, and the UI navigates directly to the target context after success
-- guest sessions receive a read-only production workspace without create, edit, delete, import, or save actions
+- production routes, production menu entries, and query-to-production actions are hidden from guest sessions; direct guest navigation is redirected to `/search?home_mode=report`
 
 ---
 
@@ -474,6 +479,9 @@ model_id + station_id + fixture_id
 
 Includes:
 
+- Query/report mode switching as the primary `/search` entry
+- Subject switching between fixture, station, and model views
+- Route-synchronized relation filters and pagination
 - Global search
 - Fixture search
 - Model search
@@ -489,6 +497,14 @@ API prefix:
 ```text
 /api/v2/search/*
 ```
+
+The guest inventory report intentionally reuses existing customer-scoped APIs instead of introducing a duplicate aggregate endpoint:
+
+- `/api/v2/master/fixtures`, `/models`, `/stations`
+- `/api/v2/production/model-stations`, `/fixture-requirements`
+- `/api/v2/inventory/stock`, `/identifier-stock-summary`
+
+The page assembles these responses into flat report rows for the selected customer. Its compact filter bar covers customer, keyword, fixture, model, station, stock-water status, and line/department storage. The result is a dense, paginated table with sticky headings and configuration status. All roles can open this report or the detailed global-search workspace from the `/search` mode switch; `/search/detail` continues to provide direct access to `/api/v2/search/*` for compatibility flows.
 
 ---
 
@@ -820,9 +836,35 @@ Displayed using:
 
 ## 13. Search-first UI
 
-Global search is the core user entry point.
+`/search` provides two directly switchable modes:
 
-Search should support:
+- `query`: fixture/model detailed search workspace
+- `report`: inventory and configuration report
+- guest default: `report`
+- admin/user initial default: `query`; signed-in users can persist either mode as their per-account login default
+- `home_mode=query|report` preserves explicit mode navigation and cross-page return context
+
+Report mode behavior:
+
+- uses a report-style filter bar without a separate view-mode switch
+- combines fixture, model, station, model-station, requirement, and stock data for the selected customer
+- filters by customer, keyword, fixture, model, station, water status, and storage
+- links filter choices in user-selection order: the first active field is the priority anchor, later selectors are narrowed by preceding fields, and later choices do not remove options from the anchor
+- clears a later select automatically only when a changed higher-priority condition makes that selection invalid
+- keeps `customer`, `q`, `fixture`, `model`, `station`, `water`, `storage`, `priority`, and `page` in route query state
+- presents flat rows with sticky table headings, zebra striping, stock status, and configuration status
+- displays every report column by default and lets guests hide or restore individual columns; at least one column remains visible and the preference is persisted in browser `localStorage`
+- exports all rows matching the currently applied filters without pagination limits, while including only currently visible columns and preserving report order and display labels
+- enables maximum-open-station calculation once a model is selected: `all stations` uses the authoritative model query and renders every mapped station, while a selected station uses the authoritative single-station capacity endpoint
+- keeps each station's bottleneck fixture collapsed by default and expands it independently on demand
+- supports `today receipt`, `today return`, `date-range receipt`, and `date-range return` report filters by paging through the transaction-overview API and matching returned fixture codes; date values are ignored unless a direction-bearing transaction mode is active
+- makes fixture codes interactive image-preview triggers backed by the existing authenticated fixture-image endpoint
+- stays read-only and uses horizontal table scrolling on narrow screens
+- uses the existing blue/white shell; green/orange/red remain semantic stock and configuration status colors
+
+The global-search UI is available to every role through the `/search` query tab. `/search/detail` remains a direct compatibility route for existing links, onboarding steps, and return flows.
+
+Detailed search should support:
 
 - Fixture code
 - Fixture name
@@ -856,7 +898,7 @@ Search behavior updates:
 - Model detail drill-down is limited to the selected model and selected station context where applicable
 - Search and inventory labels now expose the identifier concept to end users as `datecode/編號` without changing the internal field contract
 - Search result navigation now scrolls to the result panel after search completion, and the scroll target is computed after layout settles so the `最近收 / 退料治具` block does not offset the landing position
-- The search workspace can also be opened with route query state such as `?mode=fixture&q=FX-001`, which is used by cross-page handoff flows
+- The detailed search workspace can also be opened with route query state such as `/search/detail?mode=fixture&q=FX-001`, which is used by cross-page handoff flows
 - route-restored search state now also carries `page`, `selected_id`, and `detail`, so refresh and cross-page return preserve the current result and edit context
 - in-context fixture/model editing now participates in route leave and browser unload confirmation when unsaved drafts exist
 

@@ -128,6 +128,7 @@ function stockTone(status: StockStatus | undefined): "normal" | "warn" | "danger
 const customerId = computed(() => selectedCustomerId.value ?? undefined);
 const canEdit = computed(() => authSession.value?.role !== "guest");
 const canOperateInventory = computed(() => authSession.value?.role !== "guest");
+const canAccessProduction = computed(() => authSession.value?.role !== "guest");
 const hasActiveQuery = computed(() => committedQuery.value.trim().length > 0);
 const panelLoading = computed(() => loading.value || detailLoading.value);
 const selectedFixture = computed(() => selectedFixtureContext.value?.fixture ?? null);
@@ -321,7 +322,14 @@ function buildSearchRouteQuery(): LocationQueryRaw {
 }
 
 function buildSearchReturnTo(): string {
-  return router.resolve({ name: "search", query: buildSearchRouteQuery() }).fullPath;
+  const query = buildSearchRouteQuery();
+  if (route.name === "search") {
+    query.home_mode = "query";
+  }
+  return router.resolve({
+    name: route.name === "search" ? "search" : "search-detail",
+    query
+  }).fullPath;
 }
 
 function confirmDiscardSearchDraft(message = "目前有未儲存的修改，離開後會遺失。要繼續嗎？"): boolean {
@@ -788,6 +796,7 @@ onBeforeRouteLeave(() => {
                 :fixtures="selectedModelFixtures"
                 :visible-sections="visibleModelSections"
                 :format-count="formatCount"
+                :can-access-production="canAccessProduction"
                 :go-to-production="goToProduction"
               />
               <ModelEditForm

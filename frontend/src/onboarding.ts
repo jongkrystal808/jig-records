@@ -1,6 +1,7 @@
 export type TourPlacement = "top" | "bottom" | "left" | "right";
 
 export type OnboardingFlowId =
+  | "guest-search-report"
   | "search-basics"
   | "inventory-workflow"
   | "master-basics"
@@ -29,6 +30,7 @@ export interface OnboardingStepImage {
 export interface OnboardingStep {
   id: string;
   route: string;
+  query?: Record<string, string>;
   target: string;
   title: string;
   description: string;
@@ -55,10 +57,83 @@ export interface OnboardingFlow {
   requiresInventoryAccess?: boolean;
   requiresMasterAccess?: boolean;
   requiresAdminAccess?: boolean;
+  guestOnly?: boolean;
   steps: OnboardingStep[];
 }
 
 export const onboardingFlows: OnboardingFlow[] = [
+  {
+    id: "guest-search-report",
+    sectionLabel: "訪客首頁",
+    label: "查詢工作台與庫存配置報表",
+    summary: "一次認識訪客可使用的查詢與報表功能。",
+    guestOnly: true,
+    steps: [
+      {
+        id: "guest-home-mode-switch",
+        route: "/search",
+        query: { home_mode: "query" },
+        target: "[data-tour='home-mode-switch']",
+        title: "首頁可在查詢與報表間切換",
+        description: "訪客登入後預設開啟報表；需要查單一治具或機種時，可直接切到查詢工作台。",
+        placement: "bottom"
+      },
+      {
+        id: "guest-search-mode",
+        route: "/search",
+        query: { home_mode: "query" },
+        target: "[data-tour='search-mode-switch']",
+        title: "先選治具或機種",
+        description: "治具模式適合查看庫存、圖片與關聯資料；機種模式適合查看站點與所需治具。",
+        placement: "bottom"
+      },
+      {
+        id: "guest-search-input",
+        route: "/search",
+        query: { home_mode: "query" },
+        target: "[data-tour='search-query-field']",
+        title: "輸入代碼或名稱開始查詢",
+        description: "可輸入治具代碼、治具名稱或機種代碼，選取結果後查看詳細內容。",
+        placement: "bottom"
+      },
+      {
+        id: "guest-report-switch",
+        route: "/search",
+        query: { home_mode: "report" },
+        target: "[data-tour='home-mode-switch']",
+        title: "切到報表查看整體庫存與配置",
+        description: "報表模式會組合治具、庫存、機種與站點，適合一次檢查多筆資料。",
+        placement: "bottom"
+      },
+      {
+        id: "guest-report-filters",
+        route: "/search",
+        query: { home_mode: "report" },
+        target: "[data-tour='report-filter-panel']",
+        title: "用聯動條件縮小報表範圍",
+        description: "可依治具、機種、站點、水位、儲位與今日／指定日期收退料篩選；日期只有搭配收料或退料模式才會生效。",
+        placement: "bottom"
+      },
+      {
+        id: "guest-report-capacity",
+        route: "/search",
+        query: { home_mode: "report" },
+        target: "[data-tour='report-capacity-trigger']",
+        title: "選好機種後計算各站點最大開站數",
+        description: "只選機種並保留「全部站點」會列出所有已綁定站點；再指定站點則只計算該站。瓶頸治具預設收起，需要時可逐站展開。",
+        placement: "bottom"
+      },
+      {
+        id: "guest-report-results",
+        route: "/search",
+        query: { home_mode: "report" },
+        target: "[data-tour='report-result-table']",
+        title: "報表支援圖片、欄位選擇與篩選結果匯出",
+        description: "點治具代碼可看圖片；右上可選顯示欄位，匯出時會輸出全部符合篩選的資料。",
+        placement: "top"
+      }
+    ]
+  },
   {
     id: "search-basics",
     sectionLabel: "首頁查詢",
@@ -67,7 +142,7 @@ export const onboardingFlows: OnboardingFlow[] = [
     steps: [
       {
         id: "search-onboarding-entry",
-        route: "/search",
+        route: "/search/detail",
         target: "[data-tour='search-onboarding-entry']",
         title: "右下角固定保留教學入口",
         description: "點這裡開啟教學選單，之後想重看其他教學也從這裡進。",
@@ -75,7 +150,7 @@ export const onboardingFlows: OnboardingFlow[] = [
       },
       {
         id: "search-mode",
-        route: "/search",
+        route: "/search/detail",
         target: "[data-tour='search-mode-switch']",
         title: "先決定查治具還是查機種",
         description: "兩種模式對應不同的資料視角，先選模式再輸入關鍵字，查到的內容會完全不同：",
@@ -87,7 +162,7 @@ export const onboardingFlows: OnboardingFlow[] = [
       },
       {
         id: "search-input",
-        route: "/search",
+        route: "/search/detail",
         target: "[data-tour='search-query-field']",
         title: "查詢欄支援代碼與名稱",
         description: "可輸入治具或機種的編號、代碼、名稱，查到後再決定要看哪個區塊。",
@@ -95,7 +170,7 @@ export const onboardingFlows: OnboardingFlow[] = [
       },
       {
         id: "search-sections",
-        route: "/search",
+        route: "/search/detail",
         target: "[data-tour='search-section-chips']",
         title: "查到資料後，用區塊籤控制畫面內容",
         description: "先開你現在需要的區塊，其餘隨時可以切換：",
@@ -692,7 +767,7 @@ export const onboardingFlows: OnboardingFlow[] = [
       },
       {
         id: "detailed-search-controls",
-        route: "/search",
+        route: "/search/detail",
         target: "[data-tour='detailed-search-controls']",
         title: "查詢列的每個按鈕",
         description: "先選資料類型，再輸入代碼或名稱：",
@@ -706,7 +781,7 @@ export const onboardingFlows: OnboardingFlow[] = [
       },
       {
         id: "detailed-search-sections",
-        route: "/search",
+        route: "/search/detail",
         target: "[data-tour='search-section-chips']",
         title: "結果區塊按鈕：決定畫面要顯示什麼",
         description: "每個按鈕都是顯示／隱藏切換，不會修改資料：",

@@ -14,7 +14,12 @@
 
 - `frontend/src/router/index.ts`
   - 路由表
-  - `/search` -> `SearchWorkspacePage.vue`
+  - `/search` -> `SearchHomePage.vue`
+    - `查詢` -> `SearchWorkspacePage.vue`
+    - `報表` -> `InventoryRelationsPage.vue`
+    - guest 預設報表；admin / user 初始預設查詢
+  - `/search/detail` -> `SearchWorkspacePage.vue`
+  - `/inventory/filter-view`、`/inventory/relations` -> redirect `/search`
   - `/inventory` -> `InventoryPage.vue`
   - `/inventory/overview` -> `InventoryPage.vue`
   - `/master` -> redirect `/master/fixtures`
@@ -234,7 +239,59 @@
   - `frontend/src/components/app/AppToastStack.vue`
   - 狀態邏輯在 `frontend/src/toastState.ts`
 
-## 查詢頁
+## 查詢／報表雙模式首頁
+
+- page：`frontend/src/pages/SearchHomePage.vue`
+- route：`/search`
+- 所有角色都可用首頁按鈕切換：
+  - 查詢：原治具 / 機種詳細查詢
+  - 報表：治具庫存與配置報表
+- guest 每次預設報表；admin / user 首次預設查詢
+- admin / user 可把目前模式設為個人登入後預設，依 `authSession.user.id` 保存於 `localStorage`
+- `home_mode=query|report` 保存明確模式與跨頁返回狀態
+- 查詢模式有未儲存修改時，切到報表前先確認
+
+## 庫存配置報表
+
+- page：`frontend/src/pages/InventoryRelationsPage.vue`
+- route：`/search` 的報表模式
+
+### 目前責任分工
+
+- 以目前 `selectedCustomerId` 載入並組合正式資料
+- 報表篩選：客戶、關鍵字、治具、機種、站點、水位狀態、儲位
+- 篩選依實際選擇順序聯動；第一個非空欄位優先，後續 select options 由先前條件縮限
+- 高優先條件變更時，只清掉已不相容的下游 select，不反向改動第一條件
+- route query 同步：`customer / q / fixture / model / station / water / storage / priority / page`
+- 密集型 table、sticky header、斑馬紋、水平捲動及分頁
+- 表格預設全欄顯示；欄位選擇器採兩欄淡藍選項卡（手機為單欄），可逐欄顯示／隱藏或全部顯示，至少保留一欄，偏好保存在 `localStorage`
+- `匯出篩選結果` 輸出所有符合目前篩選條件的資料，不受分頁限制，但只包含目前可見欄位，並產生含 UTF-8 BOM 的 Excel 相容 CSV
+- `計算最大開站數` 在 draft 機種選好後啟用：站點空值（全部站點）呼叫 `api.getModelQuery` 列出所有 mapped stations，指定站點則呼叫 `api.getStationCapacity`
+- capacity 卡片預設收起瓶頸治具，以 `expandedBottleneckStationIds` 逐站控制展開
+- 收退料篩選支援今日收／退與指定日期收／退；指定日期欄只在 range mode 啟用，交易結果以 `listTransactionOverviewPage` 全分頁 fixture code 回篩報表
+- 收退料模式與日期 query 組裝：`frontend/src/utils/reportTransactionFilters.ts`
+- 治具代碼是圖片預覽按鈕，使用 `fetchFixtureImageObjectUrl` 載入 blob，對話框支援 loading / missing / Escape / backdrop close
+- 以水位狀態呈現正常 / 低水位 / 缺料，以配置狀態呈現已配置 / 未配置 / 未綁定
+- 報表本身維持唯讀，不顯示編輯與收退料動作
+- 客戶切換時重新取得全部關聯資料
+
+### 資料來源
+
+- `api.listFixtures` / `api.listModels` / `api.listStations`
+- `api.listModelStations` / `api.listFixtureRequirements`
+- `api.listStock` / `api.listIdentifierStockSummary`
+- `fetchFixtureImageObjectUrl`
+
+### 關鍵規則
+
+- 每筆 fixture requirement 形成一筆正式配置列。
+- 沒有 requirement 的治具保留為 `未綁定` 列；已有 model-station 但沒有治具需求時保留為 `未配置` 列。
+- 水位與儲位都由 fixture / stock 正式資料產生，不使用展示假值。
+
+## 治具 / 機種詳細查詢
+
+- route：日常入口為 `/search` 的查詢模式；`/search/detail` 保留相容入口
+- `/search/detail` 用於舊連結、新手教學與既有跨頁返回流程，不再於 `更多功能` 重複列出
 
 - page：`frontend/src/pages/SearchWorkspacePage.vue`
 - 子元件：
@@ -257,7 +314,7 @@
   - fixture / model context lazy fetch
   - in-context edit dirty state / route leave / browser unload / customer switch guard
   - fixture detail -> inventory overview / batch modal handoff
-    - overview handoff 只帶 `fixture_code` 與 `return_to`
+    - overview handoff 只帶 `fixture_code` 與指回 `/search/detail` 的 `return_to`
   - 開啟 onboarding 分類選單
   - 搜尋結果自動 scroll 進第一屏
   - idle hero 不再使用固定 viewport-height 垂直置中
@@ -321,7 +378,7 @@
   - `fetchFixtureImageObjectUrl`
   - `GET /api/v2/master/fixtures/{fixture_code}/image`
 
-### 改查詢頁時去哪裡
+### 改詳細查詢頁時去哪裡
 
 - 改查詢 state、route query handoff、load more、快捷入口資料來源、selected context 載入、section persistence、搜尋後結果區自動定位
   - `frontend/src/pages/SearchWorkspacePage.vue`
@@ -752,10 +809,11 @@
 
 - `frontend/src/onboarding.ts`
   - 導覽 flow 定義與跨頁流程
-  - 目前共有六張教學卡：`查詢工作台`、`批次收 / 退料 & 收退料總檢視`、`治具 / 機種 / 站點主資料`、`產能設定與治具需求`、`全系統按鈕與操作說明`、`收退料帳目管理 / 治具資料品質`
+  - admin / user 維持分類選單；guest 使用單一 `guest-search-report` 流程，點新手教學後直接開始
+  - guest 流程以 step `query.home_mode` 在查詢與報表間切換
 
 - `frontend/src/components/common/OnboardingFlowPicker.vue`
-  - 教學分類選單
+  - admin / user 教學分類選單；guest 不開啟此選單
 
 - `frontend/src/toastState.ts`
   - 成功 / 失敗提示

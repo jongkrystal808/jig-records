@@ -50,7 +50,22 @@
   - `frontend/src/components/app/AppToastStack.vue`
   - 狀態在 `frontend/src/toastState.ts`
 
-- 改查詢頁
+- 改查詢／報表雙模式首頁（`/search`）
+  - `frontend/src/pages/SearchHomePage.vue`
+  - 所有角色可切換查詢／報表；guest 預設報表，admin / user 初始預設查詢
+  - 登入預設偏好、`home_mode` route state、切換前 dirty confirmation 都在這個 page
+
+- 改首頁的庫存配置報表模式
+  - `frontend/src/pages/InventoryRelationsPage.vue`
+  - 正式資料由 master / inventory / production clients 組合
+  - 客戶、關鍵字、治具、機種、站點、水位、儲位篩選與分頁都在這個 page
+  - 篩選選擇順序、第一優先提示、下游選項聯動與 `priority` query 也在這個 page
+  - 機種全部站點／指定單站最大開站數、治具代碼圖片預覽、表格欄位選擇與本機偏好、全部篩選結果 CSV 匯出都在這個 page
+  - 今日／指定日期收退料模式、交易分頁 fixture code 回篩、瓶頸治具逐站展開也在這個 page
+  - CSV quoting helper：`frontend/src/utils/csv.ts`
+  - 收退料日期套用規則：`frontend/src/utils/reportTransactionFilters.ts`
+
+- 改治具 / 機種詳細查詢（`/search` 查詢模式；`/search/detail` 相容入口）
   - `frontend/src/pages/SearchWorkspacePage.vue`
   - `frontend/src/components/search/SearchHeroSection.vue`
   - `frontend/src/components/search/SearchResultPanel.vue`
@@ -61,9 +76,9 @@
   - 查詢 contract / lazy context：`frontend/src/api/searchClient.ts`
   - 查詢型別：`frontend/src/types.ts`
   - route query handoff（`mode` / `q` / `page` / `selected_id` / `detail`）：`frontend/src/pages/SearchWorkspacePage.vue`
-  - fixture detail -> overview handoff 只帶 `fixture_code` 與 `return_to`
+  - fixture detail -> overview handoff 會依來源指回 `/search?home_mode=query...` 或 `/search/detail`
 
-- 改查詢頁最近收 / 退料治具快捷入口
+- 改詳細查詢頁最近收 / 退料治具快捷入口
   - 資料整理：`frontend/src/pages/SearchWorkspacePage.vue`
   - 顯示與點擊入口：`frontend/src/components/search/SearchHeroSection.vue`
   - 搜尋完成後自動定位結果區：`frontend/src/pages/SearchWorkspacePage.vue`
@@ -309,7 +324,9 @@
   - `frontend/src/components/app/AppTopbar.vue`
   - `frontend/src/components/app/AppMobileDrawer.vue`
   - `frontend/src/onboarding.ts`
-  - 收斂後的 flow 卡片與步驟合併也在 `frontend/src/onboarding.ts`
+  - guest 點擊後直接啟動、admin / user picker 分流在 `App.vue`
+  - guest 的查詢＋報表合併流程、`home_mode` step query 在 `frontend/src/onboarding.ts`
+  - guest production route guard：`frontend/src/router/index.ts`
 
 - 改 migration compatibility / schema patch 退場
   - runtime gate：`backend/app/core/migrations.py`

@@ -19,6 +19,16 @@ describe("onboarding flows", () => {
     expect(flow?.steps.find((step) => step.id === "inventory-export-filters")?.description).toContain("客供／自購");
   });
 
+  it("provides one guest-only flow that covers both query and report modes", () => {
+    const flow = getOnboardingFlow("guest-search-report");
+    const modes = new Set(flow?.steps.map((step) => step.query?.home_mode).filter(Boolean));
+
+    expect(flow?.guestOnly).toBe(true);
+    expect(modes).toEqual(new Set(["query", "report"]));
+    expect(flow?.steps.some((step) => step.id === "guest-report-capacity")).toBe(true);
+    expect(flow?.steps.some((step) => step.id === "guest-report-results")).toBe(true);
+  });
+
   it("provides a complete detailed guide with all major button groups", () => {
     const flow = getOnboardingFlow("system-detailed-guide");
     const stepIds = new Set(flow?.steps.map((step) => step.id));

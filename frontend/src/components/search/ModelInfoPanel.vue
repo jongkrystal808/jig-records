@@ -10,6 +10,7 @@ defineProps<{
   fixtures: Array<ModelQueryFixture & { identifierTags: string[] }>;
   visibleSections: Record<string, boolean>;
   formatCount: (value: number) => string;
+  canAccessProduction: boolean;
   goToProduction: () => void;
 }>();
 
@@ -30,7 +31,15 @@ function stockTone(status: string): "normal" | "warn" | "danger" {
             <h2>{{ model?.code || "尚未選擇機種" }}</h2>
             <p>{{ model?.name || "請先從查詢結果選擇機種" }}</p>
           </div>
-          <button class="outline-btn" type="button" :disabled="!model" @click="goToProduction">前往產能管理</button>
+          <button
+            v-if="canAccessProduction"
+            class="outline-btn"
+            type="button"
+            :disabled="!model"
+            @click="goToProduction"
+          >
+            前往產能管理
+          </button>
         </div>
 
         <dl class="ui-summary-grid ui-summary-grid--single">

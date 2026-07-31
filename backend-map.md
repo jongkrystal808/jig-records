@@ -431,6 +431,18 @@
 
 ### Search
 
+首頁 `/search` 報表模式的 `InventoryRelationsPage.vue` 不走獨立 search aggregate API；它在目前客戶範圍內組合既有 master / inventory / production 端點：
+
+- `/master/fixtures`、`/master/models`、`/master/stations`
+- `/production/model-stations`、`/production/fixture-requirements`
+- `/production/models/{model_id}/query`（報表選機種＋全部站點時取得所有 mapped station capacity）
+- `/production/capacity/stations/{station_id}?model_id=...`（報表指定單一站點時取得該站 capacity）
+- `/inventory/stock`、`/inventory/identifier-stock-summary`
+- `/inventory/transactions/overview`（今日或指定日期收／退料篩選，前端逐頁取得符合的 fixture codes）
+- `/master/fixtures/{fixture_code}/image`（點擊報表治具代碼時載入圖片）
+
+以下 Search module 服務所有角色在 `/search` 的查詢模式，以及相容入口 `/search/detail` 的分頁搜尋與 lazy context。
+
 - Router：`backend/app/routers/search.py`
 - Service：`backend/app/services/search_service.py`
 - Repository：`backend/app/repositories/search_repository.py` 主查詢，並協同 `master_repository.py` / `inventory_repository.py` / `production_repository.py`
@@ -457,6 +469,7 @@
 #### 前端入口
 
 - `frontend/src/pages/SearchWorkspacePage.vue`
+  - route：`/search/detail`
   - 雙模式查詢：治具 / 機種
   - load more 主結果分頁
   - fixture detail / model detail lazy 載入

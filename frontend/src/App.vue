@@ -66,35 +66,40 @@ const currentCustomerId = computed(() => selectedCustomerId.value ?? undefined);
 const currentRole = computed(() => authSession.value?.role ?? "guest");
 const selectedCustomer = computed(() => customers.value.find((row) => row.id === selectedCustomerId.value) ?? null);
 const canEnterMaster = computed(() => authSession.value?.role !== "guest");
+const canEnterProduction = computed(() => authSession.value?.role !== "guest");
 const canOperateInventory = computed(() => authSession.value?.role !== "guest");
 const canAccessAdminOnboarding = computed(() => authSession.value?.role === "admin");
 const currentOnboardingFlow = computed(() => getOnboardingFlow(onboardingFlowId.value));
 const currentOnboardingSteps = computed(() => currentOnboardingFlow.value?.steps ?? []);
 const currentOnboardingStep = computed(() => currentOnboardingSteps.value[onboardingStepIndex.value] ?? null);
 const onboardingFlowCards = computed(() =>
-  onboardingFlows.map((flow) => {
-    let disabled = false;
-    let disabledReason = "";
-    if (flow.requiresInventoryAccess && !canOperateInventory.value) {
-      disabled = true;
-      disabledReason = "訪客不可操作收退料";
-    } else if (flow.requiresMasterAccess && !canEnterMaster.value) {
-      disabled = true;
-      disabledReason = "訪客不可進入資料維護";
-    } else if (flow.requiresAdminAccess && !canAccessAdminOnboarding.value) {
-      disabled = true;
-      disabledReason = "只有 Admin 可觀看這組教學";
-    }
-    return {
-      id: flow.id,
-      sectionLabel: flow.sectionLabel,
-      label: flow.label,
-      summary: flow.summary,
-      stepCount: flow.steps.length,
-      disabled,
-      disabledReason
-    };
-  })
+  onboardingFlows
+    .filter((flow) =>
+      currentRole.value === "guest" ? flow.guestOnly === true : flow.guestOnly !== true
+    )
+    .map((flow) => {
+      let disabled = false;
+      let disabledReason = "";
+      if (flow.requiresInventoryAccess && !canOperateInventory.value) {
+        disabled = true;
+        disabledReason = "訪客不可操作收退料";
+      } else if (flow.requiresMasterAccess && !canEnterMaster.value) {
+        disabled = true;
+        disabledReason = "訪客不可進入資料維護";
+      } else if (flow.requiresAdminAccess && !canAccessAdminOnboarding.value) {
+        disabled = true;
+        disabledReason = "只有 Admin 可觀看這組教學";
+      }
+      return {
+        id: flow.id,
+        sectionLabel: flow.sectionLabel,
+        label: flow.label,
+        summary: flow.summary,
+        stepCount: flow.steps.length,
+        disabled,
+        disabledReason
+      };
+    })
 );
 const dateTimeFormatter = new Intl.DateTimeFormat("zh-TW", {
   month: "2-digit",
@@ -126,7 +131,7 @@ const menuEntries = computed(() =>
   [
     { label: "收退料總檢視", to: "/inventory/overview", disabled: false },
     canEnterMaster.value ? { label: "資料維護", to: "/master", disabled: false } : null,
-    { label: "產能管理", to: "/production", disabled: false }
+    canEnterProduction.value ? { label: "產能管理", to: "/production", disabled: false } : null
   ].filter((entry): entry is { label: string; to: string; disabled: boolean } => entry !== null)
 );
 
@@ -166,6 +171,10 @@ function openOnboardingPicker(): void {
   selectedCustomerId.value = onboardingCustomerId;
   onboardingActive.value = false;
   onboardingStepIndex.value = 0;
+  if (currentRole.value === "guest") {
+    void startOnboardingFlow("guest-search-report");
+    return;
+  }
   onboardingPickerOpen.value = true;
 }
 
@@ -182,12 +191,20 @@ async function syncOnboardingRoute(): Promise<void> {
   batchModalOpen.value = step.openBatchModal ?? false;
   exportModalOpen.value = step.openExportModal ?? false;
   moreMenuOpen.value = step.openMoreMenu ?? false;
+  const targetQuery = {
+    ...route.query,
+    ...(step.query ?? {}),
+    tour: "1"
+  };
   if (route.path !== step.route) {
-    await router.push({ path: step.route, query: { ...route.query, tour: "1" } });
+    await router.push({ path: step.route, query: targetQuery });
     return;
   }
-  if (route.query.tour !== "1") {
-    await router.replace({ path: step.route, query: { ...route.query, tour: "1" } });
+  const stepQueryChanged = Object.entries(step.query ?? {}).some(
+    ([key, value]) => route.query[key] !== value
+  );
+  if (route.query.tour !== "1" || stepQueryChanged) {
+    await router.replace({ path: step.route, query: targetQuery });
   }
 }
 
@@ -234,7 +251,13 @@ async function startOnboardingFlow(flowId: OnboardingFlowId): Promise<void> {
   onboardingFlowId.value = flow.id;
   onboardingStepIndex.value = 0;
   onboardingActive.value = true;
-  await router.push({ path: flow.steps[0].route, query: { tour: "1" } });
+  await router.push({
+    path: flow.steps[0].route,
+    query: {
+      ...(flow.steps[0].query ?? {}),
+      tour: "1"
+    }
+  });
 }
 
 async function loadTopbarStats(): Promise<void> {

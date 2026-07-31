@@ -1737,8 +1737,29 @@ watch(
 );
 watch(selectedCustomerId, async () => {
   await loadData();
-  syncEditorFromSelection();
+  applyMasterDeepLinkSelection();
 });
+
+function applyMasterDeepLinkSelection(): void {
+  const fixtureId = Number.parseInt(typeof route.query.fixture_id === "string" ? route.query.fixture_id : "", 10);
+  const modelId = Number.parseInt(typeof route.query.model_id === "string" ? route.query.model_id : "", 10);
+  const stationId = Number.parseInt(typeof route.query.station_id === "string" ? route.query.station_id : "", 10);
+  if (activeTab.value === "fixture" && fixtures.value.some((row) => row.id === fixtureId)) {
+    selectedFixtureId.value = fixtureId;
+  } else if (activeTab.value === "model" && models.value.some((row) => row.id === modelId)) {
+    selectedModelId.value = modelId;
+  } else if (activeTab.value === "station" && stations.value.some((row) => row.id === stationId)) {
+    selectedStationId.value = stationId;
+  }
+  syncEditorFromSelection();
+}
+
+watch(
+  () => route.query,
+  () => {
+    applyMasterDeepLinkSelection();
+  }
+);
 
 watch(
   hasUnsavedChanges,
@@ -1754,7 +1775,7 @@ onMounted(async () => {
   document.addEventListener("click", handleDocumentClick);
   activeTab.value = resolveMasterTabFromPath(route.path);
   await loadData();
-  syncEditorFromSelection();
+  applyMasterDeepLinkSelection();
 });
 
 onBeforeUnmount(() => {
