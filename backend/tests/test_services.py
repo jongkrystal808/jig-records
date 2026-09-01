@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.core.auth import SessionContext, _get_db as auth_get_db, create_session_token, require_permission
@@ -904,6 +904,70 @@ class ApiErrorFormatTests(unittest.TestCase):
 
 
 class ProductionServiceTests(ServiceTestCase):
+    def test_model_query_uses_constant_query_count_for_many_requirements(self) -> None:
+        bundle = self.seed_customer_bundle()
+        self.production_service.create_model_station(
+            ModelStationCreate(
+                customer_id=bundle["customer"].id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+            )
+        )
+        fixtures = []
+        for index in range(25):
+            fixture = self.repo.create_fixture(
+                customer_id=bundle["customer"].id,
+                responsible_user_id=None,
+                code=f"PERF-{index:03d}",
+                name=f"Performance Fixture {index}",
+                line_storage_location=None,
+                department_storage_location=None,
+                description=None,
+            )
+            fixtures.append(fixture)
+            self.db.add_all(
+                [
+                    FixtureStockLevel(
+                        fixture_id=fixture.id,
+                        min_stock_qty=1,
+                        warning_threshold=0,
+                        alert_enabled=True,
+                    ),
+                    FixtureStockSummary(
+                        fixture_id=fixture.id,
+                        stock_qty=10,
+                        returned_qty=0,
+                        stock_status="normal",
+                    ),
+                    FixtureRequirement(
+                        model_id=bundle["model"].id,
+                        station_id=bundle["station"].id,
+                        fixture_id=fixture.id,
+                        required_qty=1,
+                    ),
+                ]
+            )
+        self.db.commit()
+        model_id = bundle["model"].id
+        customer_id = bundle["customer"].id
+        statement_count = 0
+
+        def count_statement(*_args) -> None:
+            nonlocal statement_count
+            statement_count += 1
+
+        event.listen(self.engine, "before_cursor_execute", count_statement)
+        try:
+            result = self.production_service.get_model_query(
+                model_id,
+                customer_id=customer_id,
+            )
+        finally:
+            event.remove(self.engine, "before_cursor_execute", count_statement)
+
+        self.assertEqual(result["fixture_type_count"], len(fixtures))
+        self.assertLessEqual(statement_count, 5)
+
     def test_designated_requirement_uses_only_selected_identifier_stock(self) -> None:
         bundle = self.seed_customer_bundle()
         self.inventory_service.receipt(
@@ -1575,6 +1639,66 @@ class InventoryServiceTests(ServiceTestCase):
         self.assertEqual(identifier_row["customer_supplied_qty"], 5)
         self.assertEqual(identifier_row["self_purchased_qty"], 0)
         self.assertEqual(identifier_row["stock_qty"], 5)
+
+    def test_return_rechecks_flushed_ownership_balance_within_one_batch(self) -> None:
+        bundle = self.seed_customer_bundle()
+        fixture_id = bundle["fixture_a"].id
+        summary = self.db.get(FixtureStockSummary, fixture_id)
+        self.assertIsNotNone(summary)
+        summary.stock_qty = 0
+        self.db.commit()
+
+        self.inventory_service.receipt(
+            StockTransactionCreate(
+                customer_id=bundle["customer"].id,
+                transaction_no="BATCH-OWNERSHIP-RECEIPT-001",
+                items=[
+                    {
+                        "fixture_id": fixture_id,
+                        "ownership_type": "customer_supplied",
+                        "identifier": "2606",
+                        "quantity": 3,
+                    },
+                    {
+                        "fixture_id": fixture_id,
+                        "ownership_type": "self_purchased",
+                        "identifier": "2606",
+                        "quantity": 10,
+                    },
+                ],
+            )
+        )
+
+        with self.assertRaisesRegex(ValueError, "剩餘可退 1 pcs"):
+            self.inventory_service.return_material(
+                StockTransactionCreate(
+                    customer_id=bundle["customer"].id,
+                    transaction_no="BATCH-OWNERSHIP-RETURN-001",
+                    items=[
+                        {
+                            "fixture_id": fixture_id,
+                            "ownership_type": "customer_supplied",
+                            "identifier": "2606",
+                            "quantity": 2,
+                        },
+                        {
+                            "fixture_id": fixture_id,
+                            "ownership_type": "customer_supplied",
+                            "identifier": "2606",
+                            "quantity": 2,
+                        },
+                    ],
+                )
+            )
+
+        stock_row = next(
+            row
+            for row in self.inventory_service.list_stock_summary(bundle["customer"].id)
+            if row["fixture_id"] == fixture_id
+        )
+        self.assertEqual(stock_row["customer_supplied_qty"], 3)
+        self.assertEqual(stock_row["self_purchased_qty"], 10)
+        self.assertEqual(stock_row["stock_qty"], 13)
 
     def test_duplicate_transaction_guard_blocks_recent_identical_submission(self) -> None:
         bundle = self.seed_customer_bundle()

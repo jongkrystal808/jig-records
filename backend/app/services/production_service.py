@@ -430,24 +430,25 @@ class ProductionService:
         model_id: int,
         customer_id: int | None = None,
     ) -> tuple[int, str | None]:
-        requirements = self.repo.list_station_requirements(station_id, model_id=model_id, customer_id=customer_id)
-        if not requirements:
+        requirement_rows = self.repo.list_model_query_requirement_rows(
+            model_id=model_id,
+            station_ids=[station_id],
+            customer_id=customer_id,
+        )
+        if not requirement_rows:
             return 0, None
 
         min_capacity: int | None = None
         bottleneck_code: str | None = None
 
-        for req in requirements:
-            if req.required_qty <= 0:
+        for row in requirement_rows:
+            if row["required_qty"] <= 0:
                 continue
-            stock_qty = self.repo.get_requirement_stock_qty(req)
-            capacity = floor(stock_qty / req.required_qty)
-            fixture = self.repo.get_fixture(req.fixture_id, customer_id=customer_id)
-            fixture_code = "unknown" if fixture is None else fixture.code
+            capacity = floor(row["stock_qty"] / row["required_qty"])
 
             if min_capacity is None or capacity < min_capacity:
                 min_capacity = capacity
-                bottleneck_code = fixture_code
+                bottleneck_code = row["fixture_code"]
 
         max_count = 0 if min_capacity is None else min_capacity
         return max_count, bottleneck_code
@@ -495,13 +496,14 @@ class ProductionService:
             for row in self.repo.list_stations_by_model(model_id, customer_id=customer_id)
             if row["station_id"] in station_id_set
         ]
-        station_requirements: dict[int, list] = {}
-        for station_id in station_ids:
-            station_requirements[station_id] = self.repo.list_station_requirements(
-                station_id,
-                model_id=model_id,
-                customer_id=customer_id,
-            )
+        requirement_rows = self.repo.list_model_query_requirement_rows(
+            model_id=model_id,
+            station_ids=station_ids,
+            customer_id=customer_id,
+        )
+        station_requirements: dict[int, list[dict]] = {}
+        for row in requirement_rows:
+            station_requirements.setdefault(row["station_id"], []).append(row)
 
         fixture_rows: dict[int, dict] = {}
         station_requirement_rows: list[dict] = []
@@ -512,56 +514,52 @@ class ProductionService:
             min_capacity: int | None = None
             bottleneck_code: str | None = None
             for req in requirements:
-                if req.required_qty <= 0:
+                if req["required_qty"] <= 0:
                     continue
-                fixture = self.repo.get_fixture(req.fixture_id, customer_id=customer_id)
-                if fixture is None:
-                    continue
-                stock_qty = self.repo.get_requirement_stock_qty(req)
-                level = self.repo.get_stock_level(req.fixture_id)
-                min_stock_qty = 0 if level is None else level.min_stock_qty
+                stock_qty = req["stock_qty"]
+                min_stock_qty = req["min_stock_qty"]
                 if stock_qty <= 0:
                     stock_status = "out_of_stock"
                 elif stock_qty < min_stock_qty:
                     stock_status = "low_stock"
                 else:
                     stock_status = "normal"
-                capacity = floor(stock_qty / req.required_qty)
+                capacity = floor(stock_qty / req["required_qty"])
                 station_requirement_rows.append(
                     {
                         "model_id": model.id,
                         "model_code": model.code,
                         "station_id": station_row["station_id"],
                         "station_code": station_row["station_code"],
-                        "fixture_id": fixture.id,
-                        "fixture_code": fixture.code,
-                        "fixture_name": fixture.name,
-                        "required_qty": req.required_qty,
-                        "designated_mode": req.designated_mode,
-                        "designated_identifiers": req.designated_identifiers,
+                        "fixture_id": req["fixture_id"],
+                        "fixture_code": req["fixture_code"],
+                        "fixture_name": req["fixture_name"],
+                        "required_qty": req["required_qty"],
+                        "designated_mode": req["designated_mode"],
+                        "designated_identifiers": req["designated_identifiers"],
                         "stock_qty": stock_qty,
                         "max_open_station_count": capacity,
                         "stock_status": stock_status,
                     }
                 )
-                if req.fixture_id not in fixture_rows:
-                    fixture_rows[req.fixture_id] = {
-                        "fixture_id": fixture.id,
-                        "fixture_code": fixture.code,
-                        "fixture_name": fixture.name,
+                if req["fixture_id"] not in fixture_rows:
+                    fixture_rows[req["fixture_id"]] = {
+                        "fixture_id": req["fixture_id"],
+                        "fixture_code": req["fixture_code"],
+                        "fixture_name": req["fixture_name"],
                         "stock_qty": stock_qty,
                         "min_stock_qty": min_stock_qty,
-                        "required_per_station": req.required_qty,
+                        "required_per_station": req["required_qty"],
                         "stock_status": stock_status,
                     }
                 else:
-                    fixture_rows[req.fixture_id]["required_per_station"] = max(
-                        fixture_rows[req.fixture_id]["required_per_station"], req.required_qty
+                    fixture_rows[req["fixture_id"]]["required_per_station"] = max(
+                        fixture_rows[req["fixture_id"]]["required_per_station"], req["required_qty"]
                     )
 
                 if min_capacity is None or capacity < min_capacity:
                     min_capacity = capacity
-                    bottleneck_code = fixture.code
+                    bottleneck_code = req["fixture_code"]
 
             station_capacity = 0 if min_capacity is None else min_capacity
             station_query_rows.append(

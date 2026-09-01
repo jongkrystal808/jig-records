@@ -1,4 +1,4 @@
-# 2026-06 to 2026-08 Update
+# 2026-06 to 2026-09 Update
 
 這份文件整理目前已確認的 2026 年 6 月至 8 月更新，來源包含：
 
@@ -6,6 +6,16 @@
 - 目前專案程式碼狀態
 - `task.md` 的 `Update Log`
 - 已同步過的架構與 map 文件
+
+## 2026-09 Update
+
+### 2026-09-01 P1 查詢與頁面載入效能改善
+
+- storage overview 移除逐 storage code 查 container／placement 的 N+1，改由 repository 單次 grouped projection；新增回歸測試，30 個 storage codes 的 overview 固定最多 2 次 SQL。
+- production station capacity／model query 改用 model-scoped requirement projection，批量取得 fixture、stock summary、stock level、designated stock 與 identifiers；新增回歸測試，25 筆 requirements 的 model query 固定最多 5 次 SQL。
+- Modern Production 單筆 mapping／requirement CRUD 改成本地集合 patch，完成後只刷新一次 authoritative model query；初始化關聯資料只載入目前機種的 100 筆 page，不再抓整個客戶的 mapping／requirement 全集。
+- Modern Master 的 fixture／model／station／customer／user 清單改為 active-tab server-side paging，keyword／status 在 backend 篩選並以 250ms debounce 載入；ledger 與 quality 只在進入各自 tab 後載入，quality 所需完整關聯 context 不再拖慢其他 tab。
+- 驗證：新增後端效能測試 `2 passed`；完整 backend suite `147 passed, 2 subtests passed`；frontend `73` 個測試檔／`227 passed`；production build 通過。
 
 ## 2026-08 Update
 

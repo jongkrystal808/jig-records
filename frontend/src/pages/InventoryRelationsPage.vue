@@ -667,6 +667,7 @@ function openFixtureMaintenance(row: ReportRow): void {
     query: {
       ...uiSurfaceRouteQuery("modern"),
       fixture_id: String(row.fixtureId),
+      keyword: row.fixtureCode,
       edit: "1",
       return_to: route.fullPath
     }

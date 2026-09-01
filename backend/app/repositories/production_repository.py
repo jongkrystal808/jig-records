@@ -299,6 +299,105 @@ class ProductionRepository:
             )
         return list(self.db.scalars(stmt))
 
+    def list_model_query_requirement_rows(
+        self,
+        *,
+        model_id: int,
+        station_ids: list[int],
+        customer_id: int | None = None,
+    ) -> list[dict]:
+        if not station_ids:
+            return []
+        signed_qty = case(
+            (MaterialTransaction.transaction_type == "receipt", MaterialTransactionItem.quantity),
+            else_=-MaterialTransactionItem.quantity,
+        )
+        designated_stock = (
+            select(
+                FixtureRequirementIdentifier.requirement_id.label("requirement_id"),
+                func.coalesce(func.sum(signed_qty), 0).label("stock_qty"),
+            )
+            .select_from(FixtureRequirementIdentifier)
+            .join(
+                FixtureRequirement,
+                FixtureRequirement.id == FixtureRequirementIdentifier.requirement_id,
+            )
+            .join(
+                MaterialTransactionItem,
+                (MaterialTransactionItem.fixture_id == FixtureRequirement.fixture_id)
+                & (MaterialTransactionItem.identifier == FixtureRequirementIdentifier.identifier),
+            )
+            .join(MaterialTransaction, MaterialTransaction.id == MaterialTransactionItem.transaction_id)
+            .group_by(FixtureRequirementIdentifier.requirement_id)
+            .subquery("model_query_designated_stock")
+        )
+        stmt = (
+            select(
+                FixtureRequirement.id.label("id"),
+                FixtureRequirement.station_id.label("station_id"),
+                FixtureRequirement.fixture_id.label("fixture_id"),
+                Fixture.code.label("fixture_code"),
+                Fixture.name.label("fixture_name"),
+                FixtureRequirement.required_qty.label("required_qty"),
+                FixtureRequirement.designated_mode.label("designated_mode"),
+                case(
+                    (
+                        FixtureRequirement.designated_mode.is_(True),
+                        func.coalesce(designated_stock.c.stock_qty, 0),
+                    ),
+                    else_=func.coalesce(FixtureStockSummary.stock_qty, 0),
+                ).label("stock_qty"),
+                func.coalesce(FixtureStockLevel.min_stock_qty, 0).label("min_stock_qty"),
+            )
+            .join(MachineModel, MachineModel.id == FixtureRequirement.model_id)
+            .join(Station, Station.id == FixtureRequirement.station_id)
+            .join(Fixture, Fixture.id == FixtureRequirement.fixture_id)
+            .outerjoin(FixtureStockSummary, FixtureStockSummary.fixture_id == FixtureRequirement.fixture_id)
+            .outerjoin(FixtureStockLevel, FixtureStockLevel.fixture_id == FixtureRequirement.fixture_id)
+            .outerjoin(
+                designated_stock,
+                designated_stock.c.requirement_id == FixtureRequirement.id,
+            )
+            .where(
+                FixtureRequirement.model_id == model_id,
+                FixtureRequirement.station_id.in_(station_ids),
+            )
+        )
+        if customer_id is not None:
+            stmt = stmt.where(
+                MachineModel.customer_id == customer_id,
+                Station.customer_id == customer_id,
+                Fixture.customer_id == customer_id,
+            )
+        rows = [
+            dict(row._mapping)
+            for row in self.db.execute(
+                stmt.order_by(FixtureRequirement.station_id, Fixture.code)
+            ).all()
+        ]
+        requirement_ids = [int(row["id"]) for row in rows]
+        identifiers_by_requirement = {requirement_id: [] for requirement_id in requirement_ids}
+        if requirement_ids:
+            identifier_rows = self.db.execute(
+                select(
+                    FixtureRequirementIdentifier.requirement_id,
+                    FixtureRequirementIdentifier.identifier,
+                )
+                .where(FixtureRequirementIdentifier.requirement_id.in_(requirement_ids))
+                .order_by(
+                    FixtureRequirementIdentifier.requirement_id,
+                    FixtureRequirementIdentifier.identifier,
+                )
+            ).all()
+            for requirement_id, identifier in identifier_rows:
+                identifiers_by_requirement[int(requirement_id)].append(str(identifier))
+        for row in rows:
+            row["designated_mode"] = bool(row["designated_mode"])
+            row["designated_identifiers"] = identifiers_by_requirement[int(row["id"])]
+            row["stock_qty"] = int(row["stock_qty"] or 0)
+            row["min_stock_qty"] = int(row["min_stock_qty"] or 0)
+        return rows
+
     def list_all_requirements(self, customer_id: int | None = None) -> list[FixtureRequirement]:
         stmt = select(FixtureRequirement).options(selectinload(FixtureRequirement.designated_identifier_rows)).order_by(
             FixtureRequirement.model_id,

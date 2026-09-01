@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.models import Base
@@ -171,6 +171,29 @@ class StorageServiceTests(unittest.TestCase):
         self.assertEqual(len(detail["placements"]), 1)
         self.assertEqual(detail["placements"][0]["target_type"], "storage_code")
         self.assertEqual(detail["placements"][0]["storage_code"], "T2")
+
+    def test_overview_query_count_does_not_grow_with_storage_codes(self) -> None:
+        self.service.register_codes(
+            StorageCodeRegister(
+                customer_id=self.customer.id,
+                location_text=",".join(f"CODE-{index:03d}" for index in range(30)),
+            )
+        )
+        customer_id = self.customer.id
+        statement_count = 0
+
+        def count_statement(*_args) -> None:
+            nonlocal statement_count
+            statement_count += 1
+
+        event.listen(self.engine, "before_cursor_execute", count_statement)
+        try:
+            overview = self.service.get_overview(customer_id)
+        finally:
+            event.remove(self.engine, "before_cursor_execute", count_statement)
+
+        self.assertEqual(len(overview["codes"]), 30)
+        self.assertLessEqual(statement_count, 2)
 
 
 if __name__ == "__main__":

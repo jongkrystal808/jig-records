@@ -1,4 +1,4 @@
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.models.inventory import FixtureStockSummary
@@ -106,6 +106,56 @@ class StorageRepository:
                 or_(StorageCode.code.ilike(f"%{normalized}%"), StorageCode.container_id.in_(matching_container_ids))
             )
         return list(self.db.scalars(stmt.order_by(StorageCode.code)))
+
+    def list_code_overview_rows(self, customer_id: int, keyword: str = "") -> list[dict]:
+        pending_quantity = case(
+            (
+                and_(
+                    FixturePlacement.id.is_not(None),
+                    FixturePlacement.quantity.is_(None),
+                ),
+                1,
+            ),
+            else_=0,
+        )
+        stmt = (
+            select(
+                StorageCode.id.label("id"),
+                StorageCode.customer_id.label("customer_id"),
+                StorageCode.container_id.label("container_id"),
+                StorageContainer.name.label("container_name"),
+                StorageCode.code.label("code"),
+                StorageCode.is_active.label("is_active"),
+                func.count(func.distinct(FixturePlacement.fixture_id)).label("fixture_type_count"),
+                func.coalesce(func.sum(FixturePlacement.quantity), 0).label("total_quantity"),
+                func.coalesce(func.sum(pending_quantity), 0).label("pending_quantity_count"),
+                StorageCode.created_at.label("created_at"),
+                StorageCode.updated_at.label("updated_at"),
+            )
+            .outerjoin(StorageContainer, StorageContainer.id == StorageCode.container_id)
+            .outerjoin(FixturePlacement, FixturePlacement.storage_code_id == StorageCode.id)
+            .where(StorageCode.customer_id == customer_id)
+        )
+        normalized = keyword.strip()
+        if normalized:
+            pattern = f"%{normalized}%"
+            stmt = stmt.where(
+                or_(
+                    StorageCode.code.ilike(pattern),
+                    StorageContainer.name.ilike(pattern),
+                )
+            )
+        stmt = stmt.group_by(
+            StorageCode.id,
+            StorageCode.customer_id,
+            StorageCode.container_id,
+            StorageContainer.name,
+            StorageCode.code,
+            StorageCode.is_active,
+            StorageCode.created_at,
+            StorageCode.updated_at,
+        ).order_by(StorageCode.code)
+        return [dict(row._mapping) for row in self.db.execute(stmt).all()]
 
     def list_placements(self, fixture_id: int) -> list[FixturePlacement]:
         return list(

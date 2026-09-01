@@ -266,6 +266,19 @@ class InventoryRepository:
     def get_fixture(self, fixture_id: int) -> Fixture | None:
         return self.db.get(Fixture, fixture_id)
 
+    def lock_fixtures_for_update(self, fixture_ids: list[int]) -> dict[int, Fixture]:
+        unique_fixture_ids = sorted(set(fixture_ids))
+        if not unique_fixture_ids:
+            return {}
+        stmt = (
+            select(Fixture)
+            .where(Fixture.id.in_(unique_fixture_ids))
+            .order_by(Fixture.id.asc())
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return {fixture.id: fixture for fixture in self.db.scalars(stmt)}
+
     def get_fixture_by_code(self, code: str, customer_id: int | None = None) -> Fixture | None:
         stmt = select(Fixture).where(Fixture.code == code)
         if customer_id is not None:
@@ -325,6 +338,21 @@ class InventoryRepository:
 
     def get_or_create_stock_summary(self, fixture_id: int) -> FixtureStockSummary:
         summary = self.db.get(FixtureStockSummary, fixture_id)
+        if summary:
+            return summary
+        summary = FixtureStockSummary(fixture_id=fixture_id, stock_qty=0, returned_qty=0, stock_status="normal")
+        self.db.add(summary)
+        self.db.flush()
+        return summary
+
+    def get_or_create_stock_summary_for_update(self, fixture_id: int) -> FixtureStockSummary:
+        stmt = (
+            select(FixtureStockSummary)
+            .where(FixtureStockSummary.fixture_id == fixture_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        summary = self.db.scalar(stmt)
         if summary:
             return summary
         summary = FixtureStockSummary(fixture_id=fixture_id, stock_qty=0, returned_qty=0, stock_status="normal")
@@ -409,24 +437,8 @@ class InventoryRepository:
     def get_available_identifier_qty(self, *, fixture_id: int, identifier: str, ownership_type: str) -> int:
         stmt = (
             select(
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (MaterialTransaction.transaction_type == "receipt", MaterialTransactionItem.quantity),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ).label("receipt_qty"),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (MaterialTransaction.transaction_type == "return", MaterialTransactionItem.quantity),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ).label("return_qty"),
+                MaterialTransaction.transaction_type,
+                MaterialTransactionItem.quantity,
             )
             .join(MaterialTransaction, MaterialTransaction.id == MaterialTransactionItem.transaction_id)
             .where(
@@ -434,9 +446,13 @@ class InventoryRepository:
                 MaterialTransactionItem.identifier == identifier,
                 MaterialTransactionItem.ownership_type == ownership_type,
             )
+            .order_by(MaterialTransactionItem.id.asc())
+            .with_for_update()
         )
-        row = self.db.execute(stmt).one()
-        return int(row.receipt_qty or 0) - int(row.return_qty or 0)
+        return sum(
+            int(row.quantity) if row.transaction_type == "receipt" else -int(row.quantity)
+            for row in self.db.execute(stmt)
+        )
 
     def list_stock_summary_rows(self, customer_id: int | None = None) -> list[dict]:
         stock_breakdown = self._stock_breakdown_subquery(customer_id)

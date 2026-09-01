@@ -16,6 +16,7 @@ function transaction(
     transaction_type: "receipt",
     transaction_no: `TX-${id}`,
     occurred_at: "2026-07-31",
+    actor_user_id: 1,
     created_by: "tester",
     fixture_id: id,
     fixture_code: fixtureCode,

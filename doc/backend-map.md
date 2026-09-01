@@ -242,6 +242,7 @@
 - 只有在治具需求關聯能唯一判定時，`T2` 類短碼才解析為完整 `model_id + station_id`
 - 已知位置數量總和不可超過 `fixture_stock_summary.stock_qty`；空白數量保留為待分配
 - 所有讀寫 API 都沿用 assigned-customer scope；guest 只能讀取
+- storage overview 由 repository 以 `storage_codes + storage_containers + fixture_placements` 單次聚合取得代碼、容器與數量摘要；service 不再逐代碼查 container／placement。效能回歸測試固定驗證 30 個代碼仍最多 2 次 SQL
 
 ### Inventory Admin Ledger
 
@@ -353,6 +354,7 @@
   - `stock_qty = customer_supplied_qty + self_purchased_qty`
 - `/inventory/stock`、`/inventory/alerts`、`/inventory/identifier-stock-summary` 都回傳總庫存、客供庫存與自購庫存。
 - 退料可用量依 `fixture_id + identifier + ownership_type` 分類查核，不能用另一來源的餘額退料。
+- 收退料寫入會先依 fixture id 固定順序取得 row lock；identifier/ownership ledger 與 stock summary 使用 locking read，批次每筆 flush 後才驗證下一筆，避免 MySQL 並行 lost update 與雙重超退。
 - 批次貼上匯入前端仍走 `/receipts` / `/returns`
 - 前端方格將固定的治具、identifier、數量欄序列化為 `fixture-code<TAB>identifier<TAB>quantity`，再沿用既有解析與 `/receipts` / `/returns`
 - 前端顯示文案可將 `identifier` 呈現為 `datecode/編號`，但 backend API / schema / DB 欄位名仍維持 `identifier`
@@ -369,6 +371,7 @@
 - 報表匯出支援 `summary|detail` 與 `xlsx|txt`
 - 匯出 preview 由 `/inventory/transactions/export-report/preview` 提供
 - 收退料報表與 preview 都支援 `ownership_type=customer_supplied|self_purchased`，並在 transaction item 層套用來源條件
+- MySQL staging concurrency regression 位於 `backend/tests/test_inventory_concurrency_mysql.py`；只有設定 `MYSQL_STAGING_DATABASE_URL` 時執行，使用兩個獨立 session 驗證並行收料增量與超退拒絕，結束後清理測試資料。
 - `BatchImportPanel` 預覽現在會同時使用：
   - `GET /inventory/stock`
   - `GET /inventory/identifier-stock-summary`
@@ -467,6 +470,7 @@
 - capacity 查詢必須帶 `model_id`
 - `current_open_station_count` 已退場
 - `get_model_query` 的 `max_open_station_count` 以瓶頸站點最小值為準
+- station capacity 與 model query 共用 model-scoped requirement projection；fixture、stock summary、stock level 與 designated stock 在固定批次查詢中取得，不再逐站／逐 requirement 查詢。效能回歸測試以 25 筆需求驗證 model query 最多 5 次 SQL
 - production 頁有兩套前端批次貼上匯入流程：mapping 與 requirement
 - production import 預覽先在 service 依客戶範圍比對正式資料；requirement 的相同 `model + station + fixture` 若數量不同標記為 conflict。import 預設 `overwrite_existing=false`，衝突只略過；只有 UI 明確確認並送出 `overwrite_existing=true` 才更新數量，未出現在匯入內容的其他綁定不會刪除
 - frontend 目前會先依 `model_stations` 收斂可選站點；backend 仍以 `get_model_station(...)` 作最終防線，拒絕未映射的 `model_id + station_id`

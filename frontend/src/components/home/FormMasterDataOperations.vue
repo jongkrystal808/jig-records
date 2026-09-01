@@ -262,7 +262,13 @@ function openFullMaintenance(
     path: paths[view.value],
     query: {
       ...uiSurfaceRouteQuery("modern"),
-      ...(row ? { [entityKeys[view.value]]: String(row.id), edit: "1" } : {}),
+      ...(row
+        ? {
+            [entityKeys[view.value]]: String(row.id),
+            keyword: "username" in row ? row.username : row.code,
+            edit: "1"
+          }
+        : {}),
     },
   });
 }

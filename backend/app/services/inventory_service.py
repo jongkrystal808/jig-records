@@ -130,6 +130,16 @@ class InventoryService:
                 actor_user_id=actor_user_id,
             )
         occurred_at = self._normalize_occurred_at(payload.occurred_at)
+        fixtures_by_id = self.repo.lock_fixtures_for_update([item.fixture_id for item in payload.items])
+        for item_index, item in enumerate(payload.items, start=1):
+            fixture = fixtures_by_id.get(item.fixture_id)
+            if fixture is None:
+                self.db.rollback()
+                raise ValueError(f"第 {item_index} 筆：治具不存在：ID {item.fixture_id}")
+            if fixture.customer_id != payload.customer_id:
+                self.db.rollback()
+                raise ValueError(f"第 {item_index} 筆：治具 {fixture.code} 不屬於目前客戶 {payload.customer_id}")
+
         try:
             transaction = self.repo.create_transaction(
                 customer_id=payload.customer_id,
@@ -147,13 +157,7 @@ class InventoryService:
         changed_station_model_pairs: set[tuple[int, int]] = set()
 
         for item_index, item in enumerate(payload.items, start=1):
-            fixture = self.repo.get_fixture(item.fixture_id)
-            if fixture is None:
-                self.db.rollback()
-                raise ValueError(f"第 {item_index} 筆：治具不存在：ID {item.fixture_id}")
-            if fixture.customer_id != payload.customer_id:
-                self.db.rollback()
-                raise ValueError(f"第 {item_index} 筆：治具 {fixture.code} 不屬於目前客戶 {payload.customer_id}")
+            fixture = fixtures_by_id[item.fixture_id]
 
             if transaction_type == "return":
                 identifier = item.identifier or ""
@@ -182,7 +186,7 @@ class InventoryService:
                 note=item.note,
             )
             level = self.repo.get_or_create_stock_level(item.fixture_id)
-            summary = self.repo.get_or_create_stock_summary(item.fixture_id)
+            summary = self.repo.get_or_create_stock_summary_for_update(item.fixture_id)
             delta_quantity = item.quantity
 
             if transaction_type == "receipt":
@@ -196,6 +200,7 @@ class InventoryService:
                 summary.returned_qty += delta_quantity
 
             self.repo.set_stock_status(summary, level.min_stock_qty)
+            self.db.flush()
             changed_station_model_pairs.update(
                 self.capacity_service.get_affected_station_model_pairs_by_fixture(
                     item.fixture_id,

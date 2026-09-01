@@ -334,8 +334,7 @@ class StorageService:
 
     def get_overview(self, customer_id: int, keyword: str = "") -> dict:
         containers = self.repo.list_containers(customer_id, keyword)
-        codes = self.repo.list_codes(customer_id, keyword)
-        code_rows = [self._serialize_code(code) for code in codes]
+        code_rows = self.repo.list_code_overview_rows(customer_id, keyword)
         code_rows_by_container: dict[int, list[dict]] = {}
         for row in code_rows:
             if row["container_id"] is not None:
@@ -369,23 +368,6 @@ class StorageService:
             "fixture_type_count": 0,
             "total_quantity": 0,
             "pending_quantity_count": 0,
-            "created_at": row.created_at,
-            "updated_at": row.updated_at,
-        }
-
-    def _serialize_code(self, row: StorageCode) -> dict:
-        container = self.repo.get_container(row.container_id) if row.container_id is not None else None
-        fixture_type_count, total_quantity, pending_quantity_count = self.repo.placement_counts_for_code(row.id)
-        return {
-            "id": row.id,
-            "customer_id": row.customer_id,
-            "container_id": row.container_id,
-            "container_name": None if container is None else container.name,
-            "code": row.code,
-            "is_active": row.is_active,
-            "fixture_type_count": fixture_type_count,
-            "total_quantity": total_quantity,
-            "pending_quantity_count": pending_quantity_count,
             "created_at": row.created_at,
             "updated_at": row.updated_at,
         }

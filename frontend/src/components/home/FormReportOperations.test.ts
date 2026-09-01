@@ -78,6 +78,7 @@ function mockApi(): void {
       transaction_type: "receipt",
       transaction_no: "TX-1",
       occurred_at: "2026-08-06T08:00:00",
+      actor_user_id: 1,
       created_by: "Admin",
       fixture_id: 1,
       fixture_code: "C-00001",

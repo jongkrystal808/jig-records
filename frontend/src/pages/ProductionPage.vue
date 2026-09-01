@@ -12,7 +12,7 @@ import { useProductionBatchImport } from "@/composables/useProductionBatchImport
 import { useProductionEditorState } from "@/composables/useProductionEditorState";
 import { requestConfirmation } from "@/confirmState";
 import { pushToast } from "@/toastState";
-import type { Fixture, FixtureRequirementListItem, IdentifierStockSummary, MachineModel, ModelQuery, ModelQueryStationRequirement, ModelStation, Station, StationCapacity, StockSummary } from "@/types";
+import type { Fixture, FixtureRequirement, FixtureRequirementListItem, IdentifierStockSummary, MachineModel, ModelQuery, ModelQueryStationRequirement, ModelStation, Station, StationCapacity, StockSummary } from "@/types";
 import { formatLocalDate } from "@/utils/date";
 import { matchesFixtureKeywords, parseFixtureKeywords } from "@/utils/fixtureSearch";
 import { getAvailableRequirementStations } from "@/utils/productionStations";
@@ -49,6 +49,47 @@ function nowString(): string {
 
 function touchUpdatedAt(): void {
   updatedAt.value = nowString();
+}
+
+function upsertMapping(row: ModelStation): void {
+  const index = mappings.value.findIndex((item) => item.id === row.id);
+  if (index === -1) {
+    mappings.value = [...mappings.value, row];
+    return;
+  }
+  mappings.value = mappings.value.map((item) => (item.id === row.id ? row : item));
+}
+
+function toRequirementListItem(row: FixtureRequirement): FixtureRequirementListItem | null {
+  const model = models.value.find((item) => item.id === row.model_id);
+  const station = stations.value.find((item) => item.id === row.station_id);
+  const fixture = fixtures.value.find((item) => item.id === row.fixture_id);
+  if (!model || !station || !fixture) return null;
+  return {
+    ...row,
+    model_code: model.code,
+    station_code: station.code,
+    fixture_code: fixture.code,
+    fixture_name: fixture.name,
+    stock_qty: modelQuery.value?.station_requirements.find(
+      (item) =>
+        item.station_id === row.station_id &&
+        item.fixture_id === row.fixture_id
+    )?.stock_qty
+  };
+}
+
+function upsertRequirement(row: FixtureRequirement): void {
+  const listItem = toRequirementListItem(row);
+  if (!listItem) return;
+  const index = fixtureRequirements.value.findIndex((item) => item.id === row.id);
+  if (index === -1) {
+    fixtureRequirements.value = [...fixtureRequirements.value, listItem];
+    return;
+  }
+  fixtureRequirements.value = fixtureRequirements.value.map((item) =>
+    item.id === row.id ? listItem : item
+  );
 }
 
 const selectedModel = computed(() => models.value.find((row) => row.id === modelId.value) ?? null);
@@ -260,7 +301,7 @@ const {
   selectedModelCode,
   onImported: async () => {
     await loadData(false);
-    await Promise.all([refreshCapacity(), refreshModelQuery()]);
+    await refreshModelQuery();
   }
 });
 
@@ -363,9 +404,13 @@ async function selectModelForWorkspace(nextModelId: number | null): Promise<void
     return;
   }
   updateModelId(nextModelId);
+  if (selectedCustomerId.value) {
+    await loadModelRelations(selectedCustomerId.value, nextModelId);
+  }
   resetMappingEditorWithoutPrompt();
   syncRequirementStationSelection();
   resetRequirementEditorWithoutPrompt();
+  await refreshModelQuery();
 }
 
 function focusBottleneckEvidence(): void {
@@ -385,6 +430,38 @@ function downloadCsv(filename: string, content: string): void {
   URL.revokeObjectURL(url);
 }
 
+async function loadModelRelations(customerId: number, targetModelId: number | null): Promise<void> {
+  if (targetModelId === null) {
+    mappings.value = [];
+    fixtureRequirements.value = [];
+    return;
+  }
+  const loadMappings = async (): Promise<ModelStation[]> => {
+    const result: ModelStation[] = [];
+    let page = 1;
+    while (true) {
+      const response = await api.listModelStationsPage(customerId, page, 100, targetModelId);
+      result.push(...response.items);
+      if (result.length >= response.total) return result;
+      page += 1;
+    }
+  };
+  const loadRequirements = async (): Promise<FixtureRequirementListItem[]> => {
+    const result: FixtureRequirementListItem[] = [];
+    let page = 1;
+    while (true) {
+      const response = await api.listFixtureRequirementsPage(customerId, page, 100, targetModelId);
+      result.push(...response.items);
+      if (result.length >= response.total) return result;
+      page += 1;
+    }
+  };
+  [mappings.value, fixtureRequirements.value] = await Promise.all([
+    loadMappings(),
+    loadRequirements()
+  ]);
+}
+
 
 async function loadData(showLoading = true): Promise<void> {
   if (showLoading) {
@@ -396,32 +473,39 @@ async function loadData(showLoading = true): Promise<void> {
     modelQuery.value = null;
     stationCapacity.value = null;
     const customerId = selectedCustomerId.value ?? undefined;
-    const [modelRows, stationRows, fixtureRows, mappingRows, requirementRows, inventoryRows] = await Promise.all([
+    const [modelRows, stationRows, fixtureRows, inventoryRows] = await Promise.all([
       customerId ? api.listModels(customerId) : Promise.resolve([]),
       customerId ? api.listStations(customerId) : Promise.resolve([]),
       api.listFixtures(customerId),
-      customerId ? api.listModelStations(customerId) : Promise.resolve([]),
-      customerId ? api.listFixtureRequirements(customerId) : Promise.resolve([]),
       api.listStock(customerId)
     ]);
     models.value = modelRows;
     stations.value = stationRows;
     fixtures.value = fixtureRows;
-    mappings.value = mappingRows;
-    fixtureRequirements.value = requirementRows;
     stockRows.value = inventoryRows;
 
-    modelId.value = modelRows.find((row) => row.id === modelId.value)?.id ?? modelRows[0]?.id ?? null;
+    const routeModelId = parseRouteEntityId("model_id");
+    modelId.value =
+      modelRows.find((row) => row.id === routeModelId)?.id ??
+      modelRows.find((row) => row.id === modelId.value)?.id ??
+      modelRows[0]?.id ??
+      null;
+    if (customerId) {
+      await loadModelRelations(customerId, modelId.value);
+    } else {
+      mappings.value = [];
+      fixtureRequirements.value = [];
+    }
     applyRouteProductionSelection();
     if (
       shouldResetEditorContext ||
-      (editingMappingId.value !== null && !mappingRows.some((row) => row.id === editingMappingId.value))
+      (editingMappingId.value !== null && !mappings.value.some((row) => row.id === editingMappingId.value))
     ) {
       resetMappingEditorWithoutPrompt();
     }
     if (
       shouldResetEditorContext ||
-      (editingRequirementId.value !== null && !requirementRows.some((row) => row.id === editingRequirementId.value))
+      (editingRequirementId.value !== null && !fixtureRequirements.value.some((row) => row.id === editingRequirementId.value))
     ) {
       resetRequirementEditorWithoutPrompt();
     }
@@ -470,18 +554,19 @@ async function saveMapping(): Promise<void> {
     const currentModelId = modelId.value as number;
     const currentStationId = mappingStationId.value as number;
     const payload = { customer_id: selectedCustomerId.value, model_id: currentModelId, station_id: currentStationId };
+    let savedMapping: ModelStation;
     if (editingMappingId.value === null) {
-      await api.createModelStation(payload);
+      savedMapping = await api.createModelStation(payload);
       pushToast("站點設定已新增", "success");
     } else {
-      await api.updateModelStation(editingMappingId.value, payload);
+      savedMapping = await api.updateModelStation(editingMappingId.value, payload);
       pushToast("站點設定已更新", "success");
     }
-    await loadData(false);
+    upsertMapping(savedMapping);
     updateSelectedStationId(currentStationId);
     resetMappingEditorWithoutPrompt();
     resetRequirementEditorWithoutPrompt();
-    await Promise.all([refreshCapacity(), refreshModelQuery()]);
+    await refreshModelQuery();
   } catch (err) {
     pushToast(err instanceof Error ? err.message : editingMappingId.value === null ? "新增站點設定失敗" : "更新站點設定失敗", "error");
   } finally {
@@ -518,8 +603,8 @@ async function removeMapping(rowId: number): Promise<void> {
   try {
     await api.deleteModelStation(rowId, selectedCustomerId.value);
     if (editingMappingId.value === rowId) resetMappingEditorWithoutPrompt();
-    await loadData(false);
-    await Promise.all([refreshCapacity(), refreshModelQuery()]);
+    mappings.value = mappings.value.filter((row) => row.id !== rowId);
+    await refreshModelQuery();
     pushToast("站點設定已刪除", "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "刪除站點設定失敗", "error");
@@ -565,20 +650,21 @@ async function saveRequirement(): Promise<void> {
         row.fixture_id === currentFixtureId
     );
     const targetRequirementId = editingRequirementId.value ?? existingRequirement?.id ?? null;
+    let savedRequirement: FixtureRequirement;
     if (targetRequirementId === null) {
-      await api.createFixtureRequirement(payload);
+      savedRequirement = await api.createFixtureRequirement(payload);
       pushToast("治具需求已加入", "success");
     } else {
-      await api.updateFixtureRequirement(targetRequirementId, payload);
+      savedRequirement = await api.updateFixtureRequirement(targetRequirementId, payload);
       pushToast(
         editingRequirementId.value === null ? "此治具已存在，需求數量已更新" : "治具需求已更新",
         "success"
       );
     }
-    await loadData(false);
+    upsertRequirement(savedRequirement);
     updateSelectedStationId(currentStationId);
     resetRequirementEditorWithoutPrompt();
-    await Promise.all([refreshCapacity(), refreshModelQuery()]);
+    await refreshModelQuery();
     touchUpdatedAt();
   } catch (err) {
     pushToast(err instanceof Error ? err.message : editingRequirementId.value === null ? "儲存 requirement 失敗" : "更新 requirement 失敗", "error");
@@ -605,8 +691,8 @@ async function removeRequirement(requirementId: number): Promise<void> {
   try {
     await api.deleteFixtureRequirement(requirementId, selectedCustomerId.value);
     if (editingRequirementId.value === requirementId) resetRequirementEditorWithoutPrompt();
-    await loadData(false);
-    await Promise.all([refreshCapacity(), refreshModelQuery()]);
+    fixtureRequirements.value = fixtureRequirements.value.filter((row) => row.id !== requirementId);
+    await refreshModelQuery();
     pushToast("Requirement 已刪除", "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "刪除 requirement 失敗", "error");
@@ -661,12 +747,12 @@ async function copyRequirementSettings(payload: {
       overwrite_existing: payload.overwriteExisting
     });
     showRequirementCopyModal.value = false;
-    await loadData(false);
     updateModelId(payload.targetModelId);
+    await loadModelRelations(selectedCustomerId.value, payload.targetModelId);
     updateSelectedStationId(payload.targetStationId);
     resetMappingEditorWithoutPrompt();
     resetRequirementEditorWithoutPrompt();
-    await Promise.all([refreshCapacity(), refreshModelQuery()]);
+    await refreshModelQuery();
     pushToast(
       `複製完成：新增 ${result.created_count}、更新 ${result.updated_count}、跳過 ${result.skipped_count}${
         result.mapping_created ? "，並已加入目標站點" : ""
@@ -701,6 +787,7 @@ async function refreshCapacity(): Promise<void> {
 async function refreshModelQuery(): Promise<void> {
   if (modelId.value === null) {
     modelQuery.value = null;
+    stationCapacity.value = null;
     return;
   }
   try {
@@ -709,6 +796,18 @@ async function refreshModelQuery(): Promise<void> {
       undefined,
       selectedCustomerId.value ?? undefined
     );
+    const stationRow = modelQuery.value.stations.find((row) => row.station_id === requirementStationId.value);
+    stationCapacity.value = stationRow
+      ? {
+          model_id: modelQuery.value.model_id,
+          model_code: modelQuery.value.model_code,
+          station_id: stationRow.station_id,
+          station_code: stationRow.station_code,
+          station_name: stationRow.station_name,
+          max_open_station_count: stationRow.max_open_station_count,
+          bottleneck_fixture_code: stationRow.bottleneck_fixture_code
+        }
+      : null;
     touchUpdatedAt();
   } catch (err) {
     modelQuery.value = null;
@@ -747,6 +846,7 @@ async function importModelStationsCsv(source: Event | File): Promise<void> {
     }
     const result = await api.importModelStationsCsv(selectedCustomerId.value ?? undefined, await file.text(), file.name);
     await loadData(false);
+    await refreshModelQuery();
     pushToast(`匯入站點設定完成，共 ${result.imported_count} 筆。`, "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "匯入站點設定失敗", "error");
@@ -788,7 +888,7 @@ async function importFixtureRequirementsCsv(source: Event | File): Promise<void>
     }
     const result = await api.importFixtureRequirementsCsv(selectedCustomerId.value ?? undefined, await file.text(), file.name);
     await loadData(false);
-    await Promise.all([refreshCapacity(), refreshModelQuery()]);
+    await refreshModelQuery();
     pushToast(`匯入 requirement 完成，共 ${result.imported_count} 筆。`, "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "匯入 requirement 失敗", "error");
@@ -800,27 +900,27 @@ async function importFixtureRequirementsCsv(source: Event | File): Promise<void>
 }
 
 watch(
-  [modelId, availableRequirementStations],
-  async () => {
-    syncRequirementStationSelection();
-    await refreshCapacity();
-    await refreshModelQuery();
-  },
-  { flush: "post" }
-);
-
-watch(
   requirementStationId,
-  async () => {
-    await refreshCapacity();
-    await refreshModelQuery();
+  () => {
+    const stationRow = modelQuery.value?.stations.find((row) => row.station_id === requirementStationId.value);
+    stationCapacity.value = stationRow && modelQuery.value
+      ? {
+          model_id: modelQuery.value.model_id,
+          model_code: modelQuery.value.model_code,
+          station_id: stationRow.station_id,
+          station_code: stationRow.station_code,
+          station_name: stationRow.station_name,
+          max_open_station_count: stationRow.max_open_station_count,
+          bottleneck_fixture_code: stationRow.bottleneck_fixture_code
+        }
+      : null;
   },
   { flush: "post" }
 );
 
 watch(selectedCustomerId, async () => {
   await loadData();
-  await Promise.all([refreshCapacity(), refreshModelQuery()]);
+  await refreshModelQuery();
 });
 
 watch([selectedCustomerId, fixtureId], loadIdentifierStocks, { immediate: true });
@@ -836,14 +936,22 @@ watch(
 watch(
   () => [route.query.model_id, route.query.station_id, route.query.fixture_id],
   async () => {
+    const previousModelId = modelId.value;
     applyRouteProductionSelection();
-    await Promise.all([refreshCapacity(), refreshModelQuery()]);
+    if (
+      modelId.value !== previousModelId &&
+      selectedCustomerId.value
+    ) {
+      await loadModelRelations(selectedCustomerId.value, modelId.value);
+      syncRequirementStationSelection();
+      await refreshModelQuery();
+    }
   }
 );
 
 onMounted(async () => {
   await loadData();
-  await Promise.all([refreshCapacity(), refreshModelQuery()]);
+  await refreshModelQuery();
   hasMounted.value = true;
 });
 

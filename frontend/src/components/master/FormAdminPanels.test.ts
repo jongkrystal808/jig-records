@@ -14,6 +14,7 @@ const transaction: MaterialTransaction = {
   transaction_type: "receipt",
   transaction_no: "REC-0041",
   occurred_at: "2026-08-11T08:30:00Z",
+  actor_user_id: 1,
   created_by: "admin",
   note: "表單介面測試",
   created_at: "2026-08-11T08:30:00Z",

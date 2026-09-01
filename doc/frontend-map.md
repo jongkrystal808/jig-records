@@ -652,7 +652,8 @@
 
 - `MasterPage.vue`
   - route-driven tab state
-  - 初始化載入
+  - 只載入目前作用中的 tab；fixture / model / station / customer / user 清單使用 10 筆 server-side paging、後端 keyword／status filter，搜尋輸入採 250ms debounce
+  - customer／user 編輯所需的完整 assignment options 只在對應 tab 載入；ledger 沿用獨立分頁，quality 因快速修正需要關聯 context，進入 quality tab 才載入完整 fixture / model / station 集合
   - editor mode、import / export 與跨區導覽協調
   - import / export / template download
   - summary metrics
@@ -716,14 +717,14 @@
 - `治具資料品質` 中的 `沒有任何機種關聯` 會跳到 `產能管理 -> 治具需求`
 ### API 對應
 
-- 頁面初始化
-  - `api.getFixtureQualityReport`
-  - `api.listFixtures`
-  - `api.listModels`
-  - `api.listStations`
-  - `api.listCustomers`
-  - `api.listCustomerUsers`
-  - `api.listUsers`
+- 作用中 tab 載入
+  - fixture：`api.listFixturesPage` + `api.listCustomerUsers`
+  - model：`api.listModelsPage`
+  - station：`api.listStationsPage`
+  - customer：`api.listCustomersPage` + assignment 用 `api.listUsers`
+  - user：`api.listUsersPage` + assignment 用 `api.listCustomers`
+  - ledger：`useMasterLedger.ts` 的 transaction page
+  - quality：進入該 tab 後才呼叫 `api.getFixtureQualityReport` 與完整 fixture / model / station 關聯 context
 
 - fixture tab
   - `api.createFixture`
@@ -827,12 +828,13 @@
 ### 目前責任分工
 
 - `ProductionPage.vue`
-  - 初始化資料載入
+  - 初始化主資料後，mapping／requirement 只以目前 `model_id` 呼叫 100 筆 server-side page，必要時逐頁補齊，不再載入整個客戶的所有關聯
   - overview / configure route orchestration
   - `model_id` / `return_to` query sync
   - customer switch / route leave / browser unload unsaved-change guard
   - dirty-state 排除自動繼承的機種 / 站點 context，只追蹤使用者可儲存的站點、治具與數量欄位
   - 站點設定 / 治具需求 CRUD
+  - 單筆 mapping／requirement 新增、更新、刪除直接 patch 本地集合，再以單次 model query 更新 capacity 與瓶頸；不再每次重抓 models、stations、fixtures、mappings、requirements、stock 六組資料
   - CSV import / export
   - 批次匯入解析與缺資料補建
   - 治具需求建立時不要求使用者先手動建立 mapping；後端會自動補底層關係
@@ -893,8 +895,9 @@
   - `api.listModels`
   - `api.listStations`
   - `api.listFixtures`
-  - `api.listModelStations`
-  - `api.listFixtureRequirements`
+  - `api.listStock`
+  - `api.listModelStationsPage`（目前機種）
+  - `api.listFixtureRequirementsPage`（目前機種）
 
 - mapping
   - `api.createModelStation`

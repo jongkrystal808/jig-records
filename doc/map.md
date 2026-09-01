@@ -122,6 +122,7 @@
   - 資料表：`backend/app/models/storage.py`
   - migration：`backend/alembic/versions/0019_fixture_storage_index.py`
   - 儲位文字自動同步入口：`backend/app/services/master_service.py`
+  - overview 效能：`StorageRepository.list_code_overview_rows()` 以單一 grouped query 產出 container／placement 摘要；不要在 service 恢復逐 code 查詢
 
 - 改治具 / 機種詳細查詢（`/search` 查詢模式；`/search/detail` 相容入口）
   - `frontend/src/pages/SearchWorkspacePage.vue`
@@ -178,6 +179,7 @@
 
 - 改資料維護頁
   - `frontend/src/pages/MasterPage.vue`
+  - Modern 清單也使用 active-tab server paging；搜尋／狀態條件由 page API 執行，quality 的完整關聯 context 只在進入 quality tab 後載入
   - `frontend/src/components/master/MasterListPanel.vue`
   - `frontend/src/components/master/MasterDetailPanel.vue`
   - 品質快速修正 modal：`frontend/src/components/master/FixtureQualityQuickEditModal.vue`
@@ -200,6 +202,7 @@
 
 - 改產能頁
   - `frontend/src/pages/ProductionPage.vue`
+  - mapping／requirement 以目前 model 的 page API 載入；單筆 CRUD patch 本地集合後只刷新一次 model query，批次匯入／複製才允許範圍重載
   - `ProductionPage.vue` 目前負責 overview/configure route sync 與 `model_id` / `return_to` query 保留；未儲存離頁由共用 `unsavedChangesGuard.ts` 協調
   - `InventoryRelationsPage.vue`、`MasterPage.vue`、`ProductionPage.vue` 的大型樣式分別位於 `frontend/src/styles/surfaces/inventory-relations.css`、`master.css`、`production.css`
   - `frontend/src/components/production/ProductionHeaderSection.vue`

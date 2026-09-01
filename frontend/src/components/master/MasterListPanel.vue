@@ -10,6 +10,7 @@ const props = defineProps<{
   activeTab: MasterTab;
   tabTitle: string;
   currentRowsLength: number;
+  totalRows: number;
   keyword: string;
   searchPlaceholder: string;
   loading: boolean;
@@ -50,7 +51,7 @@ function handleRowKeydown(event: KeyboardEvent, id: number): void {
     <UiSectionHeader class="panel-head" :title="`${tabTitle}清單`" />
 
     <div v-if="currentRowsLength > 0" class="list-footer" data-tour="detailed-master-pager">
-      <span>第 {{ listPage }} / {{ listTotalPages }} 頁，共 {{ currentRowsLength }} 筆</span>
+      <span>第 {{ listPage }} / {{ listTotalPages }} 頁，共 {{ totalRows }} 筆</span>
       <div class="pager-actions">
         <button class="outline-btn small" type="button" :disabled="loading || listPage <= 1" @click="onPreviousPage">上一頁</button>
         <button class="outline-btn small" type="button" :disabled="loading || listPage >= listTotalPages" @click="onNextPage">下一頁</button>

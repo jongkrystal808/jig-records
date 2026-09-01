@@ -192,7 +192,8 @@ Composable / helper notes:
 - `frontend/src/utils/productionStations.ts` holds the model-scoped station derivation used by Production overview/configure flows, so selectable stations stay limited to the current model's mapped station set
 - `frontend/src/components/UiAutocompleteInput.vue` is the shared autocomplete input shell used by Production editing flows
 - `frontend/src/pages/ProductionPage.vue` is kept as route-level orchestration plus data loading, route query sync (`model_id`, `return_to`), and leave/customer-switch guards, rather than carrying batch domain logic inline
-- `frontend/src/pages/MasterPage.vue` now acts as route-level orchestration for route/tab state, customer scope, editor presentation, imports, and cross-feature navigation
+- `frontend/src/pages/ProductionPage.vue` loads model-station mappings and fixture requirements only for the current model through bounded 100-row pages. Single-record mutations patch the local scoped collections and refresh the authoritative model query once; full reloads are reserved for bulk operations whose affected records are not known locally
+- `frontend/src/pages/MasterPage.vue` now acts as route-level orchestration for route/tab state, customer scope, editor presentation, imports, and cross-feature navigation. Its ordinary fixture/model/station/customer/user lists are server-paged and only the active tab is loaded; the quality tab loads its wider relation context on demand
 - `frontend/src/components/master/MasterToolbar.vue` owns the responsive tab selector, overflow actions, and hidden import/image inputs; `useMasterCrudActions.ts`, `useMasterEntityDeletion.ts`, `useMasterLedger.ts`, and `useMasterQuality.ts` own CRUD, permanent deletion, ledger, and quality API orchestration respectively
 - `FixtureQualityQuickEditModal.vue` and `MasterPermanentDeleteModal.vue` are independent modal components built on `UiModalShell.vue`
 - `MasterPage.vue` keeps master records in a read-only summary state after selection; form state is populated only after the user explicitly enters edit mode
@@ -226,6 +227,8 @@ Application shell notes:
 - `/inventory/overview` remains a full-page route; in Workspace its primary and only quick-operation entry is the fourth frontline Workbench tab, and it is not duplicated in the top-bar `更多功能` menu
 - `MasterPage` tabs now map to explicit routes: `/master/fixtures`, `/master/models`, `/master/stations`, `/master/customers`, `/master/users`, `/master/ledger`, `/master/quality`
 - `/storage` is the dedicated fixture-storage index route across system surfaces. It registers comma-separated location codes, groups codes into optional containers, and edits fixture placement quantities; guest sessions retain read-only access.
+- storage overview aggregation is repository-owned and query-count bounded: containers are loaded once and storage-code placement counts are produced by one grouped query instead of per-code lookups
+- production model/capacity reads use one model-scoped requirement projection plus one designated-identifier batch; query count is bounded independently of the number of requirements
 - Modern `MasterPage` user maintenance includes the customer multi-select in its create/edit flow, requires at least one selected customer on save, preserves the current selection during activation changes, and labels legacy empty assignments as unassigned
 - master-data list panels now surface `current page / total pages / total rows` and paging actions above the list table, instead of below it
 - guest users do not see `資料維護`, and router guard blocks direct `/master` access
@@ -351,6 +354,7 @@ Includes:
   - `self_purchased_qty = self-purchased receipts - self-purchased returns`
   - `stock_qty = customer_supplied_qty + self_purchased_qty`
 - Returnable quantity is validated independently for each `fixture + identifier + ownership_type`, so one ownership source can never be returned against another source's balance
+- Receipt/return writes lock every affected fixture in ascending id order before validation. Identifier ownership rows and stock summaries use MySQL locking reads, and each item is flushed before the next item is validated; concurrent writes therefore cannot lose stock increments or approve two returns against the same old balance
 - Receipt/return writes derive the operator from the authenticated session user. `material_transactions.actor_user_id` stores the stable user reference and `created_by` stores the display-name snapshot; request payloads, CSV rows, and import query parameters cannot override either value
 - Stock, alert, identifier-stock, and fixture-context responses expose total, customer-supplied, and self-purchased quantities
 - UI-visible inline row errors and toast feedback for failed inventory submissions
@@ -361,6 +365,8 @@ Includes:
 - Admin transaction reversal with full customer-scoped stock recomputation
 - Admin one-click inventory-state rebuild from persisted transaction items
 - Inventory overview filters now use a primary + advanced split with responsive `4 / 3 / 2 / 1` column behavior, instead of collapsing to a single long column too early
+
+The MySQL two-connection concurrency regression is opt-in because it writes temporary staging rows. Set `MYSQL_STAGING_DATABASE_URL` and run `python -m pytest backend/tests/test_inventory_concurrency_mysql.py -q`; the test cleans up its uniquely named customer, fixture, user, and transactions.
 
 API prefix:
 

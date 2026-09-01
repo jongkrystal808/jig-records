@@ -49,6 +49,11 @@ const loading = ref(false);
 const saving = ref(false);
 const listPage = ref(1);
 const listPageSize = 10;
+const listTotal = ref(0);
+const entityTotals = ref<Partial<Record<MasterTab, number>>>({});
+let masterListReloadTimer: ReturnType<typeof setTimeout> | null = null;
+let hasMasterMounted = false;
+let assignedUsersCustomerId: number | null = null;
 
 const selectedFixtureId = ref<number | null>(null);
 const selectedModelId = ref<number | null>(null);
@@ -286,87 +291,21 @@ function resolveMasterTabFromPath(pathname: string): MasterTab {
 
 const searchPlaceholder = computed(() => `搜尋${tabTitleMap[activeTab.value]}編號 / 名稱`);
 
-const filteredFixtures = computed(() =>
-  fixtures.value.filter((row) => {
-    const byKeyword =
-      !keyword.value ||
-      row.code.toLowerCase().includes(keyword.value.toLowerCase()) ||
-      row.name.toLowerCase().includes(keyword.value.toLowerCase());
-    const byStatus =
-      statusFilter.value.length === 0 ||
-      (statusFilter.value.includes("active") && row.is_active) ||
-      (statusFilter.value.includes("inactive") && !row.is_active);
-    return byKeyword && byStatus;
-  })
-);
-
-const filteredModels = computed(() =>
-  models.value.filter((row) => {
-    const byKeyword =
-      !keyword.value ||
-      row.code.toLowerCase().includes(keyword.value.toLowerCase()) ||
-      row.name.toLowerCase().includes(keyword.value.toLowerCase());
-    const byStatus =
-      statusFilter.value.length === 0 ||
-      (statusFilter.value.includes("active") && row.is_active) ||
-      (statusFilter.value.includes("inactive") && !row.is_active);
-    return byKeyword && byStatus;
-  })
-);
-
-const filteredStations = computed(() =>
-  stations.value.filter((row) => {
-    const byKeyword =
-      !keyword.value ||
-      row.code.toLowerCase().includes(keyword.value.toLowerCase()) ||
-      row.name.toLowerCase().includes(keyword.value.toLowerCase());
-    const byStatus =
-      statusFilter.value.length === 0 ||
-      (statusFilter.value.includes("active") && row.is_active) ||
-      (statusFilter.value.includes("inactive") && !row.is_active);
-    return byKeyword && byStatus;
-  })
-);
-
-const filteredCustomers = computed(() =>
-  customerRows.value.filter(
-    (row) =>
-      !keyword.value ||
-      row.code.toLowerCase().includes(keyword.value.toLowerCase()) ||
-      row.name.toLowerCase().includes(keyword.value.toLowerCase())
-  )
-);
-
-const filteredUsers = computed(() =>
-  users.value.filter((row) => {
-    const byKeyword =
-      !keyword.value ||
-      row.username.toLowerCase().includes(keyword.value.toLowerCase()) ||
-      (row.email ?? "").toLowerCase().includes(keyword.value.toLowerCase()) ||
-      row.display_name.toLowerCase().includes(keyword.value.toLowerCase());
-    const byStatus =
-      statusFilter.value.length === 0 ||
-      (statusFilter.value.includes("active") && row.is_active) ||
-      (statusFilter.value.includes("inactive") && !row.is_active);
-    return byKeyword && byStatus;
-  })
-);
-
 const currentRows = computed(() => {
-  if (activeTab.value === "fixture") return filteredFixtures.value;
-  if (activeTab.value === "model") return filteredModels.value;
-  if (activeTab.value === "station") return filteredStations.value;
-  if (activeTab.value === "customer") return filteredCustomers.value;
+  if (activeTab.value === "fixture") return fixtures.value;
+  if (activeTab.value === "model") return models.value;
+  if (activeTab.value === "station") return stations.value;
+  if (activeTab.value === "customer") return customerRows.value;
   if (activeTab.value === "ledger") return ledgerTransactions.value;
-  return filteredUsers.value;
+  return users.value;
 });
 
-const listTotalPages = computed(() => Math.max(1, Math.ceil(currentRows.value.length / listPageSize)));
-const pagedFixtureRows = computed(() => filteredFixtures.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
-const pagedModelRows = computed(() => filteredModels.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
-const pagedStationRows = computed(() => filteredStations.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
-const pagedCustomerRows = computed(() => filteredCustomers.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
-const pagedUserRows = computed(() => filteredUsers.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
+const listTotalPages = computed(() => Math.max(1, Math.ceil(listTotal.value / listPageSize)));
+const pagedFixtureRows = computed(() => fixtures.value);
+const pagedModelRows = computed(() => models.value);
+const pagedStationRows = computed(() => stations.value);
+const pagedCustomerRows = computed(() => customerRows.value);
+const pagedUserRows = computed(() => users.value);
 
 const emptyStateMessage = computed(() => {
   if (loading.value) return "資料載入中...";
@@ -402,7 +341,7 @@ const masterSummaryFields = computed(() => {
   const yesNoStatus = (active: boolean) => (active ? "啟用中" : "停用");
   if (activeTab.value === "fixture" && selectedFixture.value) {
     const row = selectedFixture.value;
-    const responsibleUser = users.value.find((user) => user.id === row.responsible_user_id);
+    const responsibleUser = customerAssignedUsers.value.find((user) => user.id === row.responsible_user_id);
     return [
       { label: "治具編號", value: fallbackText(row.code) },
       { label: "治具名稱", value: fallbackText(row.name) },
@@ -608,11 +547,11 @@ const canDeleteMasterEntity = computed(
 );
 // Keep the page responsible only for counts; layout now lives in UiSummaryCards.
 const summaryCards = computed(() => [
-  { label: "治具總數", value: fixtures.value.length, meta: `啟用 ${fixtures.value.filter((row) => row.is_active).length}` },
-  { label: "機種總數", value: models.value.length, meta: `啟用 ${models.value.filter((row) => row.is_active).length}` },
-  { label: "站點總數", value: stations.value.length, meta: `啟用 ${stations.value.filter((row) => row.is_active).length}` },
-  { label: "客戶", value: customerRows.value.length, meta: `可見 ${customerRows.value.length}` },
-  { label: "使用者", value: users.value.length, meta: `啟用 ${users.value.filter((row) => row.is_active).length}` }
+  { label: "治具總數", value: entityTotals.value.fixture ?? "—", meta: "載入治具頁時更新" },
+  { label: "機種總數", value: entityTotals.value.model ?? "—", meta: "載入機種頁時更新" },
+  { label: "站點總數", value: entityTotals.value.station ?? "—", meta: "載入站點頁時更新" },
+  { label: "客戶", value: entityTotals.value.customer ?? "—", meta: "載入客戶頁時更新" },
+  { label: "使用者", value: entityTotals.value.user ?? "—", meta: "載入使用者頁時更新" }
 ]);
 
 function clampPage(page: number, totalPages: number): number {
@@ -620,9 +559,7 @@ function clampPage(page: number, totalPages: number): number {
 }
 
 function moveListPageBackAfterLastRowRemoval(): void {
-  const pageStart = (listPage.value - 1) * listPageSize;
-  const currentPageItemCount = currentRows.value.slice(pageStart, pageStart + listPageSize).length;
-  listPage.value = pageAfterItemRemoval(listPage.value, currentPageItemCount);
+  listPage.value = pageAfterItemRemoval(listPage.value, currentRows.value.length);
 }
 
 const {
@@ -665,16 +602,14 @@ function getSelectedListRowId(): number | null {
 
 function focusSelectedListRow(fallbackPage = listPage.value): void {
   const selectedId = getSelectedListRowId();
-  if (selectedId === null) {
-    listPage.value = clampPage(fallbackPage, listTotalPages.value);
-    return;
+  listPage.value = clampPage(fallbackPage, listTotalPages.value);
+  if (selectedId !== null && !currentRows.value.some((row) => row.id === selectedId)) {
+    if (activeTab.value === "fixture") selectedFixtureId.value = null;
+    if (activeTab.value === "model") selectedModelId.value = null;
+    if (activeTab.value === "station") selectedStationId.value = null;
+    if (activeTab.value === "customer") selectedCustomerRowId.value = null;
+    if (activeTab.value === "user") selectedUserId.value = null;
   }
-  const selectedIndex = currentRows.value.findIndex((row) => row.id === selectedId);
-  if (selectedIndex === -1) {
-    listPage.value = clampPage(fallbackPage, listTotalPages.value);
-    return;
-  }
-  listPage.value = Math.floor(selectedIndex / listPageSize) + 1;
 }
 
 type LoadDataOptions = {
@@ -683,6 +618,15 @@ type LoadDataOptions = {
   focusSelectedListRow?: boolean;
   focusSelectedLedgerRow?: boolean;
 };
+
+function currentStatusFilter(): "all" | "active" | "inactive" {
+  return statusFilter.value.length === 1 ? statusFilter.value[0] : "all";
+}
+
+function updateEntityPageTotal(tab: MasterTab, total: number): void {
+  listTotal.value = total;
+  entityTotals.value = { ...entityTotals.value, [tab]: total };
+}
 
 async function startDemoTour(): Promise<void> {
   if (!selectedGlobalCustomer.value) {
@@ -700,33 +644,13 @@ async function startDemoTour(): Promise<void> {
 async function loadData(showLoading = true, options: LoadDataOptions = {}): Promise<void> {
   const previousListPage = listPage.value;
   const previousLedgerPage = ledgerPage.value;
+  if (!options.preserveListPage && !options.focusSelectedListRow) {
+    listPage.value = 1;
+  }
   if (showLoading) {
     loading.value = true;
   }
   try {
-    const customerId = selectedCustomerId.value ?? undefined;
-    const [f, m, s, u, c, customerUsers, qualityReport] = await Promise.all([
-      api.listFixtures(customerId),
-      customerId ? api.listModels(customerId) : Promise.resolve([]),
-      customerId ? api.listStations(customerId) : Promise.resolve([]),
-      canManageUsers.value ? api.listUsers() : Promise.resolve([]),
-      api.listCustomers(),
-      customerId ? api.listCustomerUsers(customerId) : Promise.resolve([]),
-      canManageQuality.value && customerId ? api.getFixtureQualityReport(customerId) : Promise.resolve(null)
-    ]);
-    fixtures.value = f;
-    models.value = m;
-    stations.value = s;
-    users.value = u;
-    customerRows.value = c;
-    customerAssignedUsers.value = customerUsers;
-    fixtureQualityReport.value = qualityReport;
-
-    selectedFixtureId.value = f.find((row) => row.id === selectedFixtureId.value)?.id ?? null;
-    selectedModelId.value = m.find((row) => row.id === selectedModelId.value)?.id ?? null;
-    selectedStationId.value = s.find((row) => row.id === selectedStationId.value)?.id ?? null;
-    selectedUserId.value = u.find((row) => row.id === selectedUserId.value)?.id ?? null;
-    selectedCustomerRowId.value = c.find((row) => row.id === selectedCustomerRowId.value)?.id ?? null;
     if (!canManageUsers.value && activeTab.value === "user") {
       activeTab.value = "fixture";
     }
@@ -736,21 +660,103 @@ async function loadData(showLoading = true, options: LoadDataOptions = {}): Prom
     if (!canManageQuality.value && activeTab.value === "quality") {
       activeTab.value = "fixture";
     }
+    const customerId = selectedCustomerId.value;
+    const status = currentStatusFilter();
+    if (activeTab.value === "fixture") {
+      if (!customerId) {
+        fixtures.value = [];
+        customerAssignedUsers.value = [];
+        updateEntityPageTotal("fixture", 0);
+      } else {
+        const [page, assignedUsers] = await Promise.all([
+          api.listFixturesPage(customerId, listPage.value, listPageSize, keyword.value, status),
+          assignedUsersCustomerId === customerId
+            ? Promise.resolve(customerAssignedUsers.value)
+            : api.listCustomerUsers(customerId)
+        ]);
+        fixtures.value = page.items;
+        customerAssignedUsers.value = assignedUsers;
+        assignedUsersCustomerId = customerId;
+        updateEntityPageTotal("fixture", page.total);
+        selectedFixtureId.value = page.items.some((row) => row.id === selectedFixtureId.value)
+          ? selectedFixtureId.value
+          : null;
+      }
+    } else if (activeTab.value === "model") {
+      const page = customerId
+        ? await api.listModelsPage(customerId, listPage.value, listPageSize, keyword.value, status)
+        : { items: [], total: 0 };
+      models.value = page.items;
+      updateEntityPageTotal("model", page.total);
+      selectedModelId.value = page.items.some((row) => row.id === selectedModelId.value) ? selectedModelId.value : null;
+    } else if (activeTab.value === "station") {
+      const page = customerId
+        ? await api.listStationsPage(customerId, listPage.value, listPageSize, keyword.value, status)
+        : { items: [], total: 0 };
+      stations.value = page.items;
+      updateEntityPageTotal("station", page.total);
+      selectedStationId.value = page.items.some((row) => row.id === selectedStationId.value) ? selectedStationId.value : null;
+    } else if (activeTab.value === "customer") {
+      const [page, allUsers] = await Promise.all([
+        api.listCustomersPage(listPage.value, listPageSize, keyword.value),
+        canManageUsers.value ? api.listUsers() : Promise.resolve([])
+      ]);
+      customerRows.value = page.items;
+      users.value = allUsers;
+      updateEntityPageTotal("customer", page.total);
+      selectedCustomerRowId.value = page.items.some((row) => row.id === selectedCustomerRowId.value)
+        ? selectedCustomerRowId.value
+        : null;
+    } else if (activeTab.value === "user") {
+      const [page, allCustomers] = await Promise.all([
+        api.listUsersPage(listPage.value, listPageSize, keyword.value, status),
+        api.listCustomers()
+      ]);
+      users.value = page.items;
+      customerRows.value = allCustomers;
+      updateEntityPageTotal("user", page.total);
+      selectedUserId.value = page.items.some((row) => row.id === selectedUserId.value) ? selectedUserId.value : null;
+    } else if (activeTab.value === "quality") {
+      if (!customerId) {
+        fixtures.value = [];
+        models.value = [];
+        stations.value = [];
+        fixtureQualityReport.value = null;
+      } else {
+        const [fixtureRows, modelRows, stationRows, qualityReport] = await Promise.all([
+          api.listFixtures(customerId),
+          api.listModels(customerId),
+          api.listStations(customerId),
+          api.getFixtureQualityReport(customerId)
+        ]);
+        fixtures.value = fixtureRows;
+        models.value = modelRows;
+        stations.value = stationRows;
+        fixtureQualityReport.value = qualityReport;
+        entityTotals.value = {
+          ...entityTotals.value,
+          fixture: fixtureRows.length,
+          model: modelRows.length,
+          station: stationRows.length
+        };
+      }
+      listTotal.value = 0;
+    } else {
+      if (!options.preserveLedgerPage && !options.focusSelectedLedgerRow) {
+        ledgerPage.value = 1;
+      } else {
+        ledgerPage.value = clampPage(previousLedgerPage, ledgerTotalPages.value);
+      }
+      await loadLedgerPage({ preserveSelection: Boolean(options.focusSelectedLedgerRow) });
+      if (options.focusSelectedLedgerRow) {
+        focusSelectedLedgerRow(previousLedgerPage);
+      }
+      listTotal.value = ledgerTotal.value;
+    }
     if (options.focusSelectedListRow) {
       focusSelectedListRow(previousListPage);
     } else if (options.preserveListPage) {
       listPage.value = clampPage(previousListPage, listTotalPages.value);
-    } else {
-      listPage.value = 1;
-    }
-    if (!options.preserveLedgerPage && !options.focusSelectedLedgerRow) {
-      ledgerPage.value = 1;
-    } else {
-      ledgerPage.value = clampPage(previousLedgerPage, ledgerTotalPages.value);
-    }
-    await loadLedgerPage({ preserveSelection: Boolean(options.focusSelectedLedgerRow) });
-    if (options.focusSelectedLedgerRow) {
-      focusSelectedLedgerRow(previousLedgerPage);
     }
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "載入資料維護資料失敗", "error");
@@ -1056,12 +1062,14 @@ function downloadCurrent(): void {
   URL.revokeObjectURL(url);
 }
 
-function previousListPage(): void {
+async function previousListPage(): Promise<void> {
   listPage.value = Math.max(1, listPage.value - 1);
+  await loadData(false, { preserveListPage: true, preserveLedgerPage: true });
 }
 
-function nextListPage(): void {
+async function nextListPage(): Promise<void> {
   listPage.value = Math.min(listTotalPages.value, listPage.value + 1);
+  await loadData(false, { preserveListPage: true, preserveLedgerPage: true });
 }
 
 function updateKeyword(value: string): void {
@@ -1072,14 +1080,13 @@ function updateStatusFilter(value: Array<"active" | "inactive">): void {
   statusFilter.value = value;
 }
 
-watch([activeTab, keyword, statusFilter], () => {
+watch([keyword, statusFilter], () => {
+  if (!hasMasterMounted || activeTab.value === "ledger" || activeTab.value === "quality") return;
   listPage.value = 1;
-});
-
-watch(currentRows, () => {
-  if (listPage.value > listTotalPages.value) {
-    listPage.value = listTotalPages.value;
-  }
+  if (masterListReloadTimer) clearTimeout(masterListReloadTimer);
+  masterListReloadTimer = setTimeout(() => {
+    void loadData(false, { preserveListPage: true, preserveLedgerPage: true });
+  }, 250);
 });
 
 function downloadCsv(filename: string, content: string): void {
@@ -1197,6 +1204,9 @@ async function importCsv(event: Event): Promise<void> {
 watch(activeTab, () => {
   editorMode.value = "summary";
   mobileMasterDetailOpen.value = false;
+  if (hasMasterMounted) {
+    void loadData(false, { preserveLedgerPage: true });
+  }
 });
 watch(
   () => route.path,
@@ -1213,6 +1223,8 @@ watch(
 );
 watch(selectedCustomerId, async () => {
   editorMode.value = "summary";
+  assignedUsersCustomerId = null;
+  customerAssignedUsers.value = [];
   await loadData();
   applyMasterDeepLinkSelection();
 });
@@ -1259,12 +1271,15 @@ watch(
 onMounted(async () => {
   syncMasterViewport();
   window.addEventListener("resize", syncMasterViewport);
+  keyword.value = typeof route.query.keyword === "string" ? route.query.keyword : "";
   activeTab.value = resolveMasterTabFromPath(route.path);
   await loadData();
   applyMasterDeepLinkSelection();
+  hasMasterMounted = true;
 });
 
 onBeforeUnmount(() => {
+  if (masterListReloadTimer) clearTimeout(masterListReloadTimer);
   window.removeEventListener("resize", syncMasterViewport);
   clearFixtureImageBatchSelection();
   setCustomerSwitchGuard("master-page", false, "主資料頁有未儲存的修改");
@@ -1324,6 +1339,7 @@ onBeforeUnmount(() => {
         :active-tab="activeTab"
         :tab-title="tabTitleMap[activeTab]"
         :current-rows-length="currentRows.length"
+        :total-rows="listTotal"
         :keyword="keyword"
         :search-placeholder="searchPlaceholder"
         :loading="loading"

@@ -555,6 +555,7 @@ describe("WorkbenchUiSurface", () => {
       transaction_type: "receipt" as const,
       transaction_no: "RCV-99",
       occurred_at: "2026-08-25T08:00:00Z",
+      actor_user_id: 1,
       created_by: "Operator A",
       fixture_id: 100 + start + index,
       fixture_code: `FX-${String(start + index).padStart(3, "0")}`,

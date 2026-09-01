@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from datetime import datetime, timezone
 from io import StringIO
+from unittest.mock import Mock
 
 from sqlalchemy.dialects import mysql
 
@@ -1675,7 +1676,7 @@ def test_admin_transaction_page_filters_and_paginates_by_transaction(app_client)
             "page": 1,
             "page_size": 10,
             "fixture_code": "LEDGER-A",
-            "created_by": "Alpha",
+            "created_by": "System Admin",
             "transaction_type": "receipt",
         },
         headers=headers,
@@ -1687,6 +1688,7 @@ def test_admin_transaction_page_filters_and_paginates_by_transaction(app_client)
     assert payload["page_size"] == 10
     assert len(payload["items"]) == 1
     assert payload["items"][0]["transaction_no"] == "LEDGER-TX-001"
+    assert payload["items"][0]["created_by"] == "System Admin"
     assert payload["items"][0]["items"][0]["fixture_code"] == "LEDGER-A"
 
     paged = app_client.get(
@@ -1714,6 +1716,43 @@ def test_admin_transaction_page_mysql_sql_orders_by_transaction_id_only():
 
     assert "ORDER BY material_transactions.id DESC" in sql
     assert "occurred_at" not in sql
+
+
+def test_inventory_write_lock_queries_compile_for_mysql():
+    db = Mock()
+    db.scalars.return_value = []
+    repo = InventoryRepository(db)
+
+    repo.lock_fixtures_for_update([2, 1, 2])
+    fixture_lock_stmt = db.scalars.call_args.args[0]
+    fixture_lock_sql = str(
+        fixture_lock_stmt.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+    assert "ORDER BY fixtures.id ASC" in fixture_lock_sql
+    assert "FOR UPDATE" in fixture_lock_sql
+
+    db.scalar.return_value = object()
+    repo.get_or_create_stock_summary_for_update(1)
+    summary_lock_stmt = db.scalar.call_args.args[0]
+    summary_lock_sql = str(
+        summary_lock_stmt.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+    assert "fixture_stock_summary.fixture_id = 1" in summary_lock_sql
+    assert "FOR UPDATE" in summary_lock_sql
+
+    db.execute.return_value = []
+    repo.get_available_identifier_qty(
+        fixture_id=1,
+        identifier="2606",
+        ownership_type="customer_supplied",
+    )
+    identifier_lock_stmt = db.execute.call_args.args[0]
+    identifier_lock_sql = str(
+        identifier_lock_stmt.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+    assert "material_transaction_items.identifier = '2606'" in identifier_lock_sql
+    assert "material_transaction_items.ownership_type = 'customer_supplied'" in identifier_lock_sql
+    assert "FOR UPDATE" in identifier_lock_sql
 
 
 def test_inventory_receipt_requires_transaction_no(app_client):
