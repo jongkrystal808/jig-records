@@ -3,8 +3,10 @@ import { computed, ref, watch } from "vue";
 
 import { api } from "@/api";
 import { onboardingActive, onboardingFlowId, onboardingStepIndex } from "@/appState";
+import UiMultiSelect from "@/components/common/UiMultiSelect.vue";
 import { getOnboardingFlow } from "@/onboarding";
 import { pushToast } from "@/toastState";
+import { canManageAdminReports } from "@/utils/roles";
 
 type ExportDataset =
   | "inventory-summary"
@@ -61,11 +63,11 @@ const dateTo = ref("");
 const transactionNo = ref("");
 const fixtureCode = ref("");
 const identifier = ref("");
-const transactionType = ref<"" | "receipt" | "return">("");
-const ownershipType = ref<"" | "customer_supplied" | "self_purchased">("");
+const transactionType = ref<Array<"receipt" | "return">>([]);
+const ownershipType = ref<Array<"customer_supplied" | "self_purchased">>([]);
 
 const visibleDatasetOptions = computed(() =>
-  DATASET_OPTIONS.filter((option) => option.id !== "fixture-quality" || props.role === "admin")
+  DATASET_OPTIONS.filter((option) => option.id !== "fixture-quality" || canManageAdminReports(props.role))
 );
 const selectedDataset = computed(() => visibleDatasetOptions.value.find((option) => option.id === dataset.value) ?? visibleDatasetOptions.value[0]);
 const formatOptions = computed(() => selectedDataset.value.formats);
@@ -80,7 +82,7 @@ const previewColumns = computed(() => {
   if (dataset.value === "stations") return ["站點編號", "站點名稱", "是否啟用"];
   if (dataset.value === "station-settings") return ["機種編號", "站點編號"];
   if (dataset.value === "fixture-requirements") return ["機種編號", "站點編號", "治具編號", "需求數量"];
-  return ["治具編號", "治具名稱", "儲位", "最低水位", "總庫存", "Identifier庫存", "機種關聯數", "圖片", "問題"];
+  return ["治具編號", "儲位", "最低水位", "機種關聯", "圖片"];
 });
 
 function normalizeOptional(value: string): string | undefined {
@@ -104,38 +106,21 @@ function downloadText(content: string, filename: string, mime = "text/csv;charse
   downloadBlob(blob, filename);
 }
 
-function displayQualityIssueCodes(issueCodes: string[]): string[] {
-  const visibleCodes = issueCodes.filter((issueCode) => issueCode !== "missing_storage_location" && issueCode !== "missing_min_stock_qty");
-  if (issueCodes.includes("missing_storage_location") || issueCodes.includes("missing_min_stock_qty")) {
-    visibleCodes.unshift("missing_storage_and_min_stock");
-  }
-  return visibleCodes;
-}
-
-function qualityIssueLabel(issueCode: string): string {
-  if (issueCode === "missing_name") return "沒有名稱";
-  if (issueCode === "missing_storage_and_min_stock") return "沒有儲位 / 沒有最低水位";
-  if (issueCode === "missing_image") return "沒有圖片";
-  if (issueCode === "missing_model_relation") return "沒有任何機種關聯";
-  if (issueCode === "stock_mismatch") return "Identifier 庫存與總庫存不一致";
-  return issueCode;
-}
-
 function buildFixtureQualityCsv(report: Awaited<ReturnType<typeof api.getFixtureQualityReport>>): string {
-  const header = ["治具編號", "治具名稱", "儲位", "最低水位", "總庫存", "Identifier庫存", "機種關聯數", "圖片", "問題"];
-  const rows = report.rows.map((row) =>
+  const header = ["治具編號", "儲位", "最低水位", "機種關聯", "圖片"];
+  const rows = report.rows
+    .filter((row) =>
+      ["missing_storage_location", "missing_min_stock_qty", "missing_image", "missing_model_relation"]
+        .some((issueCode) => row.issue_codes.includes(issueCode))
+    )
+    .map((row) =>
     [
       row.fixture_code,
-      row.fixture_name ?? "",
       row.storage_location ?? "",
       String(row.min_stock_qty),
-      String(row.stock_qty),
-      String(row.identifier_stock_qty),
       String(row.related_model_count),
-      row.has_image ? "有" : "缺",
-      displayQualityIssueCodes(row.issue_codes).map((issueCode) => qualityIssueLabel(issueCode)).join(" / ")
-    ].map((value) => `"${String(value).replace(/"/g, '""')}"`)
-  );
+      row.has_image ? "有" : "缺"
+    ].map((value) => `"${String(value).replace(/"/g, '""')}"`));
   return [header, ...rows].map((row) => row.join(",")).join("\n");
 }
 
@@ -156,13 +141,13 @@ async function exportReport(): Promise<void> {
         customer_id: props.customerId,
         report_type: dataset.value === "inventory-summary" ? "summary" : "detail",
         file_format: fileFormat.value as "xlsx" | "txt",
-        transaction_type: supportsCustomScope.value && usingCustomScope.value ? (transactionType.value || undefined) : undefined,
+        transaction_type: supportsCustomScope.value && usingCustomScope.value && transactionType.value.length ? [...transactionType.value] : undefined,
         date_from: supportsCustomScope.value && usingCustomScope.value ? normalizeOptional(dateFrom.value) : undefined,
         date_to: supportsCustomScope.value && usingCustomScope.value ? normalizeOptional(dateTo.value) : undefined,
         transaction_no: supportsCustomScope.value && usingCustomScope.value ? normalizeOptional(transactionNo.value) : undefined,
         fixture_code: supportsCustomScope.value && usingCustomScope.value ? normalizeOptional(fixtureCode.value) : undefined,
         ownership_type:
-          dataset.value === "inventory-detail" && usingCustomScope.value ? (ownershipType.value || undefined) : undefined,
+          dataset.value === "inventory-detail" && usingCustomScope.value && ownershipType.value.length ? [...ownershipType.value] : undefined,
         identifier: supportsCustomScope.value && usingCustomScope.value ? normalizeOptional(identifier.value) : undefined
       });
       const fallbackName = `transaction-${dataset.value === "inventory-summary" ? "summary" : "detail"}.${fileFormat.value}`;
@@ -199,7 +184,7 @@ watch(
       scopeMode.value = "all";
     }
     if (value !== "inventory-detail") {
-      ownershipType.value = "";
+      ownershipType.value = [];
     }
   },
   { immediate: true }
@@ -234,10 +219,10 @@ watch(
   <section class="export-panel" data-tour="inventory-export-content">
     <header class="export-head">
       <div class="title-row">
-        <h2>統一匯出中心</h2>
+        <h2 id="global-export-modal-title">統一匯出中心</h2>
         <span class="export-pill">Export Center</span>
       </div>
-      <button class="outline-btn" type="button" @click="emit('close')">關閉</button>
+      <button class="outline-btn" data-modal-initial-focus type="button" @click="emit('close')">關閉</button>
     </header>
 
     <fieldset class="selection-block selection-fieldset" data-tour="detailed-export-dataset">
@@ -299,22 +284,8 @@ watch(
       </div>
 
       <div class="field-grid">
-        <label class="field">
-          <span>交易類型</span>
-          <select v-model="transactionType">
-            <option value="">全部</option>
-            <option value="receipt">收料</option>
-            <option value="return">退料</option>
-          </select>
-        </label>
-        <label v-if="dataset === 'inventory-detail'" class="field" data-tour="detailed-export-source">
-          <span>來源</span>
-          <select v-model="ownershipType">
-            <option value="">全部</option>
-            <option value="customer_supplied">客供</option>
-            <option value="self_purchased">自購</option>
-          </select>
-        </label>
+        <UiMultiSelect v-model="transactionType" label="交易類型" placeholder="全部類型" :options="[{ value: 'receipt', label: '收料' }, { value: 'return', label: '退料' }]" />
+        <UiMultiSelect v-if="dataset === 'inventory-detail'" v-model="ownershipType" data-tour="detailed-export-source" label="來源" placeholder="全部來源" :options="[{ value: 'customer_supplied', label: '客供' }, { value: 'self_purchased', label: '自購' }]" />
         <label class="field">
           <span>單號</span>
           <input v-model="transactionNo" placeholder="25123456" spellcheck="false" />

@@ -15,6 +15,7 @@ def app_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
     monkeypatch.setenv("AUTH_SECRET_KEY", "test-secret-key")
     monkeypatch.setenv("AUTH_TOKEN_TTL_SECONDS", "3600")
+    monkeypatch.setenv("FIXTURE_IMAGE_DIR", str(tmp_path / "fixture-images"))
 
     for module_name in list(sys.modules):
         if module_name == "backend" or module_name.startswith("backend."):

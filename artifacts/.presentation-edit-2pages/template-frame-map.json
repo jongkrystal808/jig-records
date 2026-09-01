@@ -1,0 +1,45 @@
+{
+  "outputSlides": [
+    {
+      "outputSlide": 1,
+      "sourceSlide": 2,
+      "narrativeRole": "現場操作與庫存改善總結",
+      "reuseMode": "duplicate-slide",
+      "editTargets": [
+        { "sourceElementId": "sh/b29kza94", "action": "rewrite", "role": "title" },
+        { "sourceElementId": "sh/a10jqpsj", "action": "rewrite", "role": "module" },
+        { "sourceElementId": "sh/r65knqtk", "action": "rewrite", "role": "reason" },
+        { "sourceElementId": "sh/ahwrqhgj", "action": "rewrite", "role": "before-headline" },
+        { "sourceElementId": "sh/bip8jmho", "action": "rewrite", "role": "before-bullets" },
+        { "sourceElementId": "sh/do3q9szq", "action": "rewrite", "role": "before-keywords" },
+        { "sourceElementId": "sh/65kfmpor", "action": "rewrite", "role": "after-caption" },
+        { "sourceElementIds": ["sh/9o7ulg3y", "sh/ba9cn6l4", "sh/je9crql0", "sh/69wbilcj", "sh/exgvmlcv", "sh/gzydovul"], "action": "rewrite", "role": "cost-values" },
+        { "sourceElementId": "sh/c76hk361", "action": "rewrite", "role": "page-number" },
+        { "sourceElementId": "nt/hwbqtkby", "action": "rewrite", "role": "sources" }
+      ]
+    },
+    {
+      "outputSlide": 2,
+      "sourceSlide": 4,
+      "narrativeRole": "產能、報表與資料治理總結",
+      "reuseMode": "duplicate-slide",
+      "editTargets": [
+        { "sourceElementId": "sh/rm1k7yt4", "action": "rewrite", "role": "title" },
+        { "sourceElementId": "sh/ql8jytsj", "action": "rewrite", "role": "module" },
+        { "sourceElementId": "sh/3ihk3et8", "action": "rewrite", "role": "reason" },
+        { "sourceElementId": "sh/a5kr2xg3", "action": "rewrite", "role": "before-headline" },
+        { "sourceElementId": "sh/v6tsv2xo", "action": "rewrite", "role": "before-bullets" },
+        { "sourceElementId": "sh/h4fa9wfy", "action": "rewrite", "role": "before-keywords" },
+        { "sourceElementId": "sh/2xkrih8b", "action": "rewrite", "role": "after-caption" },
+        { "sourceElementIds": ["sh/5ony1oj6", "sh/vy5gbe14", "sh/nulw7u18", "sh/elwba54j", "sh/qhcb6l47", "sh/sjut8vmd"], "action": "rewrite", "role": "cost-values" },
+        { "sourceElementId": "sh/gna9gr25", "action": "rewrite", "role": "page-number" },
+        { "sourceElementId": "nt/jyx0ra1s", "action": "rewrite", "role": "sources" }
+      ]
+    }
+  ],
+  "omittedSourceSlides": [
+    { "sourceSlide": 1, "reason": "總覽內容併入輸出第 1 頁" },
+    { "sourceSlide": 3, "reason": "產能公式重點以文字併入輸出第 2 頁" },
+    { "sourceSlide": 5, "reason": "權限、儲位與圖片治理重點併入輸出第 2 頁" }
+  ]
+}

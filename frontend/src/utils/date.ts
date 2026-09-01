@@ -7,8 +7,12 @@ export function formatLocalDateKey(date: Date): string {
 
 export function formatLocalDate(value: string | Date | null | undefined): string {
   if (!value) return "-";
+  if (typeof value === "string") {
+    const datePart = value.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      return datePart;
+    }
+  }
   const date = typeof value === "string" ? new Date(value) : value;
-  return Number.isNaN(date.getTime())
-    ? "-"
-    : new Intl.DateTimeFormat("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  return Number.isNaN(date.getTime()) ? "-" : formatLocalDateKey(date);
 }

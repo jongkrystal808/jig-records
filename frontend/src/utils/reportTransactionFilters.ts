@@ -7,6 +7,17 @@ export type ReportTransactionMode =
   | "range_receipt"
   | "range_return";
 
+export function reportTransactionDateError(
+  mode: ReportTransactionMode,
+  dateFrom: string,
+  dateTo: string
+): string {
+  if (!mode.startsWith("range")) return "";
+  if (!dateFrom || !dateTo) return "請同時選擇起始與結束日期。";
+  if (dateFrom > dateTo) return "起始日期不可晚於結束日期。";
+  return "";
+}
+
 export function buildReportTransactionQuery(
   mode: ReportTransactionMode,
   dateFrom: string,

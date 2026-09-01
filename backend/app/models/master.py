@@ -1,4 +1,6 @@
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.models.base import Base, TimestampMixin
@@ -72,6 +74,25 @@ class UserCustomer(Base):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), primary_key=True)
+
+
+class UserModelShortcut(Base, TimestampMixin):
+    __tablename__ = "user_model_shortcuts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "customer_id", "model_id", name="uq_user_model_shortcut_scope"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    customer_id: Mapped[int] = mapped_column(
+        ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    model_id: Mapped[int] = mapped_column(
+        ForeignKey("machine_models.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    query_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_queried_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class ModelStation(Base, TimestampMixin):

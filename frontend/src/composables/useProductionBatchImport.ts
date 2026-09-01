@@ -1,6 +1,7 @@
 import { computed, ref, watch, type ComputedRef, type Ref } from "vue";
 
 import { api } from "@/api";
+import { requestConfirmation } from "@/confirmState";
 import { pushToast } from "@/toastState";
 import type { Fixture, MachineModel, Station } from "@/types";
 import {
@@ -151,7 +152,13 @@ export function useProductionBatchImport(options: UseProductionBatchImportOption
     try {
       const rows = mappingReadyRows.value.map((row) => [row.model.resolvedCode, row.station.resolvedCode]);
       const csv = toCsv(["model_code", "station_code"], rows);
-      const result = await api.importModelStationsCsv(options.selectedCustomerId.value, csv, "batch-model-stations.csv");
+      const preview = await api.previewModelStationsCsv(options.selectedCustomerId.value, csv, "batch-model-stations.csv");
+      if (preview.error_count > 0) {
+        const firstError = preview.rows.find((row) => row.status === "error");
+        pushToast(firstError?.message ?? "機種站點差異預覽中有錯誤。", "error");
+        return;
+      }
+      const result = await api.importModelStationsCsv(options.selectedCustomerId.value, csv, "batch-model-stations.csv", false);
       showMappingBatchModal.value = false;
       clearMappingBatchImport();
       await options.onImported();
@@ -194,7 +201,34 @@ export function useProductionBatchImport(options: UseProductionBatchImportOption
         String(row.quantity)
       ]);
       const csv = toCsv(["model_code", "station_code", "fixture_code", "required_qty"], rows);
-      const result = await api.importFixtureRequirementsCsv(options.selectedCustomerId.value, csv, "batch-fixture-requirements.csv");
+      const preview = await api.previewFixtureRequirementsCsv(
+        options.selectedCustomerId.value,
+        csv,
+        "batch-fixture-requirements.csv"
+      );
+      if (preview.error_count > 0) {
+        const firstError = preview.rows.find((row) => row.status === "error");
+        pushToast(firstError?.message ?? "治具需求差異預覽中有錯誤。", "error");
+        return;
+      }
+      const conflicts = preview.rows.filter((row) => row.status === "conflict");
+      if (conflicts.length > 0) {
+        const examples = conflicts.slice(0, 5).map((row) =>
+          `${row.model_code} / ${row.station_code} / ${row.fixture_code}：${row.existing_required_qty} → ${row.incoming_required_qty}`
+        );
+        const suffix = conflicts.length > examples.length ? `\n另有 ${conflicts.length - examples.length} 筆差異。` : "";
+        const confirmed = await requestConfirmation(
+          `以下既有治具需求量將被取代：\n${examples.join("\n")}${suffix}\n\n未貼上的其他站點與治具綁定不會被刪除。`,
+          { title: "是否直接取代既有綁定？", confirmLabel: "直接取代", cancelLabel: "返回預覽" }
+        );
+        if (!confirmed) return;
+      }
+      const result = await api.importFixtureRequirementsCsv(
+        options.selectedCustomerId.value,
+        csv,
+        "batch-fixture-requirements.csv",
+        conflicts.length > 0
+      );
       showRequirementBatchModal.value = false;
       clearRequirementBatchImport();
       await options.onImported();

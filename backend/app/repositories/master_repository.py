@@ -1,8 +1,19 @@
-from sqlalchemy import delete, func, select
+from collections.abc import Iterator
+
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.models.inventory import FixtureStockLevel, FixtureStockSummary
-from backend.app.models.master import Customer, Fixture, MachineModel, ModelStation, Station, User, UserCustomer
+from backend.app.models.master import (
+    Customer,
+    Fixture,
+    MachineModel,
+    ModelStation,
+    Station,
+    User,
+    UserCustomer,
+    UserModelShortcut,
+)
 from backend.app.models.production import FixtureRequirement, MachineCapacitySummary
 
 
@@ -68,6 +79,73 @@ class MasterRepository:
             stmt = stmt.where(Fixture.customer_id == customer_id)
         return list(self.db.scalars(stmt))
 
+    def list_fixtures_page(
+        self,
+        *,
+        customer_id: int,
+        page: int,
+        page_size: int,
+        keyword: str = "",
+        is_active: bool | None = None,
+        image_codes: set[str] | None = None,
+        has_image: bool | None = None,
+    ) -> tuple[list[Fixture], int]:
+        stmt = select(Fixture).where(Fixture.customer_id == customer_id)
+        normalized = keyword.strip()
+        if normalized:
+            pattern = f"%{normalized}%"
+            stmt = stmt.where(or_(Fixture.code.ilike(pattern), Fixture.name.ilike(pattern)))
+        if is_active is not None:
+            stmt = stmt.where(Fixture.is_active == is_active)
+        if has_image is not None:
+            normalized_image_codes = {code.lower() for code in image_codes or set()}
+            if has_image and not normalized_image_codes:
+                return [], 0
+            if normalized_image_codes:
+                image_condition = func.lower(Fixture.code).in_(normalized_image_codes)
+                stmt = stmt.where(image_condition if has_image else ~image_condition)
+        total = int(self.db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0)
+        rows = list(self.db.scalars(stmt.order_by(Fixture.code).offset((page - 1) * page_size).limit(page_size)))
+        return rows, total
+
+    def iter_fixture_export_rows(
+        self,
+        *,
+        customer_id: int,
+        keyword: str = "",
+        is_active: bool | None = None,
+        image_codes: set[str] | None = None,
+        has_image: bool | None = None,
+    ) -> Iterator[dict]:
+        stmt = (
+            select(
+                Fixture.code.label("code"),
+                Fixture.name.label("name"),
+                Fixture.line_storage_location.label("line_storage_location"),
+                Fixture.department_storage_location.label("department_storage_location"),
+                func.coalesce(FixtureStockLevel.min_stock_qty, 0).label("min_stock_qty"),
+                Fixture.is_active.label("is_active"),
+            )
+            .outerjoin(FixtureStockLevel, FixtureStockLevel.fixture_id == Fixture.id)
+            .where(Fixture.customer_id == customer_id)
+        )
+        normalized = keyword.strip()
+        if normalized:
+            pattern = f"%{normalized}%"
+            stmt = stmt.where(or_(Fixture.code.ilike(pattern), Fixture.name.ilike(pattern)))
+        if is_active is not None:
+            stmt = stmt.where(Fixture.is_active == is_active)
+        if has_image is not None:
+            normalized_image_codes = {code.lower() for code in image_codes or set()}
+            if has_image and not normalized_image_codes:
+                return
+            if normalized_image_codes:
+                image_condition = func.lower(Fixture.code).in_(normalized_image_codes)
+                stmt = stmt.where(image_condition if has_image else ~image_condition)
+        rows = self.db.execute(stmt.order_by(Fixture.code).execution_options(yield_per=500))
+        for row in rows:
+            yield dict(row._mapping)
+
     def get_fixture(self, fixture_id: int) -> Fixture | None:
         return self.db.get(Fixture, fixture_id)
 
@@ -76,6 +154,23 @@ class MasterRepository:
         if customer_id is not None:
             stmt = stmt.where(Fixture.customer_id == customer_id)
         return self.db.scalar(stmt)
+
+    def list_globally_unique_fixture_codes(self, codes: list[str]) -> set[str]:
+        if not codes:
+            return set()
+        normalized_codes = {code.lower() for code in codes}
+        stmt = (
+            select(func.lower(Fixture.code).label("normalized_code"))
+            .where(func.lower(Fixture.code).in_(normalized_codes))
+            .group_by(func.lower(Fixture.code))
+            .having(func.count(Fixture.id) == 1)
+        )
+        unique_normalized_codes = set(self.db.scalars(stmt))
+        return {code for code in codes if code.lower() in unique_normalized_codes}
+
+    def is_fixture_code_globally_unique(self, code: str) -> bool:
+        stmt = select(func.count(Fixture.id)).where(func.lower(Fixture.code) == code.lower())
+        return int(self.db.scalar(stmt) or 0) == 1
 
     def get_stock_level(self, fixture_id: int) -> FixtureStockLevel | None:
         return self.db.get(FixtureStockLevel, fixture_id)
@@ -173,6 +268,28 @@ class MasterRepository:
             stmt = stmt.where(MachineModel.customer_id == customer_id)
         return list(self.db.scalars(stmt))
 
+    def list_models_page(self, *, customer_id: int, page: int, page_size: int, keyword: str = "", is_active: bool | None = None) -> tuple[list[MachineModel], int]:
+        stmt = select(MachineModel).where(MachineModel.customer_id == customer_id)
+        normalized = keyword.strip()
+        if normalized:
+            pattern = f"%{normalized}%"
+            stmt = stmt.where(or_(MachineModel.code.ilike(pattern), MachineModel.name.ilike(pattern)))
+        if is_active is not None:
+            stmt = stmt.where(MachineModel.is_active == is_active)
+        total = int(self.db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0)
+        rows = list(self.db.scalars(stmt.order_by(MachineModel.code).offset((page - 1) * page_size).limit(page_size)))
+        return rows, total
+
+    def iter_models(self, *, customer_id: int, keyword: str = "", is_active: bool | None = None) -> Iterator[MachineModel]:
+        stmt = select(MachineModel).where(MachineModel.customer_id == customer_id)
+        normalized = keyword.strip()
+        if normalized:
+            pattern = f"%{normalized}%"
+            stmt = stmt.where(or_(MachineModel.code.ilike(pattern), MachineModel.name.ilike(pattern)))
+        if is_active is not None:
+            stmt = stmt.where(MachineModel.is_active == is_active)
+        yield from self.db.scalars(stmt.order_by(MachineModel.code).execution_options(yield_per=500))
+
     def get_model(self, model_id: int, customer_id: int | None = None) -> MachineModel | None:
         stmt = select(MachineModel).where(MachineModel.id == model_id)
         if customer_id is not None:
@@ -247,6 +364,28 @@ class MasterRepository:
             stmt = stmt.where(Station.customer_id == customer_id)
         return list(self.db.scalars(stmt))
 
+    def list_stations_page(self, *, customer_id: int, page: int, page_size: int, keyword: str = "", is_active: bool | None = None) -> tuple[list[Station], int]:
+        stmt = select(Station).where(Station.customer_id == customer_id)
+        normalized = keyword.strip()
+        if normalized:
+            pattern = f"%{normalized}%"
+            stmt = stmt.where(or_(Station.code.ilike(pattern), Station.name.ilike(pattern)))
+        if is_active is not None:
+            stmt = stmt.where(Station.is_active == is_active)
+        total = int(self.db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0)
+        rows = list(self.db.scalars(stmt.order_by(Station.code).offset((page - 1) * page_size).limit(page_size)))
+        return rows, total
+
+    def iter_stations(self, *, customer_id: int, keyword: str = "", is_active: bool | None = None) -> Iterator[Station]:
+        stmt = select(Station).where(Station.customer_id == customer_id)
+        normalized = keyword.strip()
+        if normalized:
+            pattern = f"%{normalized}%"
+            stmt = stmt.where(or_(Station.code.ilike(pattern), Station.name.ilike(pattern)))
+        if is_active is not None:
+            stmt = stmt.where(Station.is_active == is_active)
+        yield from self.db.scalars(stmt.order_by(Station.code).execution_options(yield_per=500))
+
     def get_station(self, station_id: int, customer_id: int | None = None) -> Station | None:
         stmt = select(Station).where(Station.id == station_id)
         if customer_id is not None:
@@ -295,6 +434,40 @@ class MasterRepository:
     def list_users(self) -> list[User]:
         return list(self.db.scalars(select(User).order_by(User.username)))
 
+    def list_users_page(self, *, page: int, page_size: int, keyword: str = "", is_active: bool | None = None) -> tuple[list[User], int]:
+        stmt = select(User)
+        normalized = keyword.strip()
+        if normalized:
+            pattern = f"%{normalized}%"
+            stmt = stmt.where(or_(User.username.ilike(pattern), User.display_name.ilike(pattern), User.email.ilike(pattern)))
+        if is_active is not None:
+            stmt = stmt.where(User.is_active == is_active)
+        total = int(self.db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0)
+        rows = list(self.db.scalars(stmt.order_by(User.username).offset((page - 1) * page_size).limit(page_size)))
+        return rows, total
+
+    def iter_users(self, *, keyword: str = "", is_active: bool | None = None) -> Iterator[User]:
+        stmt = select(User)
+        normalized = keyword.strip()
+        if normalized:
+            pattern = f"%{normalized}%"
+            stmt = stmt.where(or_(User.username.ilike(pattern), User.display_name.ilike(pattern), User.email.ilike(pattern)))
+        if is_active is not None:
+            stmt = stmt.where(User.is_active == is_active)
+        yield from self.db.scalars(stmt.order_by(User.username).execution_options(yield_per=500))
+
+    def iter_customers(self, *, keyword: str = "", customer_ids: list[int] | None = None) -> Iterator[Customer]:
+        if customer_ids == []:
+            return
+        stmt = select(Customer)
+        if customer_ids is not None:
+            stmt = stmt.where(Customer.id.in_(customer_ids))
+        normalized = keyword.strip()
+        if normalized:
+            pattern = f"%{normalized}%"
+            stmt = stmt.where(or_(Customer.code.ilike(pattern), Customer.name.ilike(pattern)))
+        yield from self.db.scalars(stmt.order_by(Customer.code).execution_options(yield_per=500))
+
     def list_users_by_ids(self, user_ids: list[int]) -> list[User]:
         if not user_ids:
             return []
@@ -313,6 +486,19 @@ class MasterRepository:
     def list_allowed_customer_ids_for_user(self, user_id: int) -> list[int]:
         stmt = select(UserCustomer.customer_id).where(UserCustomer.user_id == user_id).order_by(UserCustomer.customer_id)
         return list(self.db.scalars(stmt))
+
+    def list_allowed_customer_ids_for_users(self, user_ids: list[int]) -> dict[int, list[int]]:
+        result = {user_id: [] for user_id in user_ids}
+        if not user_ids:
+            return result
+        rows = self.db.execute(
+            select(UserCustomer.user_id, UserCustomer.customer_id)
+            .where(UserCustomer.user_id.in_(user_ids))
+            .order_by(UserCustomer.user_id, UserCustomer.customer_id)
+        )
+        for user_id, customer_id in rows:
+            result[int(user_id)].append(int(customer_id))
+        return result
 
     def list_allowed_user_ids_for_customer(self, customer_id: int) -> list[int]:
         stmt = select(UserCustomer.user_id).where(UserCustomer.customer_id == customer_id).order_by(UserCustomer.user_id)
@@ -335,6 +521,55 @@ class MasterRepository:
             return
         self.db.add_all([UserCustomer(user_id=user_id, customer_id=customer_id) for user_id in unique_user_ids])
         self.db.flush()
+
+    def list_model_shortcut_preferences(self, *, user_id: int, customer_id: int):
+        stmt = (
+            select(UserModelShortcut, MachineModel.code)
+            .join(MachineModel, MachineModel.id == UserModelShortcut.model_id)
+            .where(
+                UserModelShortcut.user_id == user_id,
+                UserModelShortcut.customer_id == customer_id,
+                MachineModel.customer_id == customer_id,
+            )
+            .order_by(
+                UserModelShortcut.is_pinned.desc(),
+                UserModelShortcut.last_queried_at.desc(),
+                MachineModel.code,
+            )
+        )
+        return list(self.db.execute(stmt))
+
+    def get_model_shortcut_preference(
+        self,
+        *,
+        user_id: int,
+        customer_id: int,
+        model_id: int,
+    ) -> UserModelShortcut | None:
+        stmt = select(UserModelShortcut).where(
+            UserModelShortcut.user_id == user_id,
+            UserModelShortcut.customer_id == customer_id,
+            UserModelShortcut.model_id == model_id,
+        )
+        return self.db.scalar(stmt)
+
+    def create_model_shortcut_preference(
+        self,
+        *,
+        user_id: int,
+        customer_id: int,
+        model_id: int,
+    ) -> UserModelShortcut:
+        preference = UserModelShortcut(
+            user_id=user_id,
+            customer_id=customer_id,
+            model_id=model_id,
+            query_count=0,
+            is_pinned=False,
+        )
+        self.db.add(preference)
+        self.db.flush()
+        return preference
 
     def get_user(self, user_id: int) -> User | None:
         return self.db.get(User, user_id)
@@ -372,3 +607,7 @@ class MasterRepository:
         user.is_active = is_active
         self.db.flush()
         return user
+
+    def count_active_users_by_role(self, role: str) -> int:
+        stmt = select(func.count()).select_from(User).where(User.role == role, User.is_active.is_(True))
+        return int(self.db.scalar(stmt) or 0)

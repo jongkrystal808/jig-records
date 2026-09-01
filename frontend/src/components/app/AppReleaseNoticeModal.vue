@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiModalShell from "@/components/common/UiModalShell.vue";
+
 defineProps<{
   open: boolean;
   versionLabel: string;
@@ -15,14 +17,19 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <teleport to="body">
-    <div v-if="open" class="ui-modal-backdrop release-modal-backdrop" @click.self="emit('close')">
-      <div class="ui-modal-card ui-modal-card--narrow release-modal-card">
+  <UiModalShell
+    :open="open"
+    labelled-by="release-notice-title"
+    described-by="release-notice-summary"
+    layer-class="release-modal-backdrop"
+    dialog-class="ui-modal-card--narrow release-modal-card"
+    @close="emit('close')"
+  >
         <div class="release-head">
           <div>
             <span class="release-eyebrow">Release Note</span>
-            <h2>{{ title }}</h2>
-            <p>{{ summary }}</p>
+            <h2 id="release-notice-title">{{ title }}</h2>
+            <p id="release-notice-summary">{{ summary }}</p>
           </div>
           <span class="release-version">{{ versionLabel }}</span>
         </div>
@@ -32,19 +39,17 @@ const emit = defineEmits<{
         </ul>
 
         <div class="release-actions">
-          <button class="primary-btn" type="button" @click="emit('close')">知道了</button>
+          <button class="primary-btn" type="button" data-modal-initial-focus @click="emit('close')">知道了</button>
         </div>
-      </div>
-    </div>
-  </teleport>
+  </UiModalShell>
 </template>
 
 <style scoped>
-.release-modal-backdrop {
+:global(.release-modal-backdrop) {
   z-index: 140;
 }
 
-.release-modal-card {
+:global(.release-modal-card) {
   display: grid;
   gap: 16px;
 }

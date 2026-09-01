@@ -1,34 +1,38 @@
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
-from backend.app.core.auth import SessionContext, list_accessible_customers, require_permission, resolve_customer_scope
+from backend.app.core.auth import SessionContext, get_allowed_customer_ids, list_accessible_customers, list_accessible_customers_page, require_permission, resolve_customer_scope
 from backend.app.core.database import get_db
 from backend.app.schemas.auth import UserRead
 from backend.app.schemas.common import CsvImportPayload, ImportResultRead
 from backend.app.schemas.master import (
     CustomerCreate,
+    CustomerPageRead,
     CustomerRead,
     CustomerUpdate,
     FixtureCreate,
     FixtureDeleteRead,
     FixtureImageBatchUploadRead,
     FixtureImageUploadRead,
+    FixturePageRead,
     FixtureQualityReportRead,
     FixtureRead,
     FixtureUpdate,
     MachineModelCreate,
     MachineModelDeleteRead,
     MachineModelRead,
+    MachineModelPageRead,
     MachineModelUpdate,
     StationCreate,
     StationDeleteRead,
     StationRead,
+    StationPageRead,
     StationUpdate,
 )
 from backend.app.services.master_service import MasterService
 from backend.app.services.auth_service import AuthService
-from backend.app.utils.fixture_images import guess_fixture_image_media_type, resolve_fixture_image_path
+from backend.app.utils.fixture_images import guess_fixture_image_media_type
 
 router = APIRouter(prefix="/master", tags=["master"], dependencies=[Depends(require_permission("read"))])
 
@@ -37,11 +41,11 @@ router = APIRouter(prefix="/master", tags=["master"], dependencies=[Depends(requ
     "/customers",
     response_model=CustomerRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permission("manage"))],
+    dependencies=[Depends(require_permission("super_manage"))],
 )
 def create_customer(
     payload: CustomerCreate,
-    session: SessionContext = Depends(require_permission("manage")),
+    session: SessionContext = Depends(require_permission("super_manage")),
     db: Session = Depends(get_db),
 ):
     service = MasterService(db)
@@ -54,12 +58,12 @@ def create_customer(
 @router.put(
     "/customers/{customer_id}",
     response_model=CustomerRead,
-    dependencies=[Depends(require_permission("manage"))],
+    dependencies=[Depends(require_permission("super_manage"))],
 )
 def update_customer(
     customer_id: int,
     payload: CustomerUpdate,
-    session: SessionContext = Depends(require_permission("manage")),
+    session: SessionContext = Depends(require_permission("super_manage")),
     db: Session = Depends(get_db),
 ):
     service = MasterService(db)
@@ -76,6 +80,23 @@ def list_customers(session: SessionContext = Depends(require_permission("read"))
     return list_accessible_customers(session, db)
 
 
+@router.get("/customers/page", response_model=CustomerPageRead)
+def list_customers_page(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    keyword: str = Query("", max_length=160),
+    session: SessionContext = Depends(require_permission("read")),
+    db: Session = Depends(get_db),
+):
+    return list_accessible_customers_page(
+        session,
+        db,
+        page=page,
+        page_size=page_size,
+        keyword=keyword,
+    )
+
+
 @router.get("/customers/{customer_id}/users", response_model=list[UserRead])
 def list_customer_users(
     customer_id: int,
@@ -84,6 +105,42 @@ def list_customer_users(
 ):
     customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
     return AuthService(db).list_users_by_customer(customer_id)
+
+
+@router.get("/form-export")
+def export_form_master_data(
+    entity: str = Query(..., pattern="^(fixture|model|station|customer|fixture-images)$"),
+    customer_id: int | None = Query(default=None),
+    keyword: str = Query("", max_length=160),
+    status_filter: str = Query("all", pattern="^(all|active|inactive)$"),
+    image_status: str = Query("all", pattern="^(all|with-image|missing-image)$"),
+    session: SessionContext = Depends(require_permission("read")),
+    db: Session = Depends(get_db),
+):
+    accessible_customer_ids = None
+    if entity == "customer":
+        accessible_customer_ids = get_allowed_customer_ids(session, db)
+    else:
+        if customer_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="customer_id is required",
+            )
+        customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    is_active = None if status_filter == "all" else status_filter == "active"
+    content = MasterService(db).stream_form_export_csv(
+        entity=entity,
+        customer_id=customer_id,
+        keyword=keyword,
+        is_active=is_active,
+        image_status=image_status,
+        accessible_customer_ids=accessible_customer_ids,
+    )
+    return StreamingResponse(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="form-{entity}.csv"'},
+    )
 
 
 @router.post(
@@ -113,6 +170,29 @@ def list_fixtures(
 ):
     customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
     return MasterService(db).list_fixtures(customer_id=customer_id)
+
+
+@router.get("/fixtures/page", response_model=FixturePageRead)
+def list_fixtures_page(
+    customer_id: int = Query(...),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    keyword: str = Query("", max_length=160),
+    status_filter: str = Query("all", pattern="^(all|active|inactive)$"),
+    image_status: str = Query("all", pattern="^(all|with-image|missing-image)$"),
+    session: SessionContext = Depends(require_permission("read")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    is_active = None if status_filter == "all" else status_filter == "active"
+    return MasterService(db).list_fixtures_page(
+        customer_id=customer_id,
+        page=page,
+        page_size=page_size,
+        keyword=keyword,
+        is_active=is_active,
+        image_status=image_status,
+    )
 
 
 @router.get("/fixtures/quality", response_model=FixtureQualityReportRead, dependencies=[Depends(require_permission("manage"))])
@@ -172,9 +252,11 @@ def update_fixture(
     session: SessionContext = Depends(require_permission("write")),
     db: Session = Depends(get_db),
 ):
-    resolve_customer_scope(session, db, payload.customer_id, allow_empty=False)
     service = MasterService(db)
     try:
+        current_customer_id = service.get_fixture_customer_id(fixture_id)
+        resolve_customer_scope(session, db, current_customer_id, allow_empty=False)
+        resolve_customer_scope(session, db, payload.customer_id, allow_empty=False)
         return service.update_fixture(fixture_id, payload, actor=session)
     except ValueError as exc:
         message = str(exc)
@@ -268,8 +350,14 @@ def delete_fixture(
 
 
 @router.get("/fixtures/{fixture_code}/image")
-def fixture_image_by_code(fixture_code: str):
-    image_path = resolve_fixture_image_path(fixture_code)
+def fixture_image_by_code(
+    fixture_code: str,
+    customer_id: int = Query(...),
+    session: SessionContext = Depends(require_permission("read")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    image_path = MasterService(db).get_fixture_image_path(fixture_code, customer_id=customer_id)
     if image_path is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fixture image not found")
     return FileResponse(image_path, media_type=guess_fixture_image_media_type(image_path))
@@ -302,6 +390,21 @@ def list_models(
 ):
     customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
     return MasterService(db).list_models(customer_id=customer_id)
+
+
+@router.get("/models/page", response_model=MachineModelPageRead)
+def list_models_page(
+    customer_id: int = Query(...),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    keyword: str = Query("", max_length=160),
+    status_filter: str = Query("all", pattern="^(all|active|inactive)$"),
+    session: SessionContext = Depends(require_permission("read")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    is_active = None if status_filter == "all" else status_filter == "active"
+    return MasterService(db).list_models_page(customer_id=customer_id, page=page, page_size=page_size, keyword=keyword, is_active=is_active)
 
 
 @router.get("/models/export")
@@ -410,6 +513,21 @@ def list_stations(
     return MasterService(db).list_stations(customer_id=customer_id)
 
 
+@router.get("/stations/page", response_model=StationPageRead)
+def list_stations_page(
+    customer_id: int = Query(...),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    keyword: str = Query("", max_length=160),
+    status_filter: str = Query("all", pattern="^(all|active|inactive)$"),
+    session: SessionContext = Depends(require_permission("read")),
+    db: Session = Depends(get_db),
+):
+    customer_id = resolve_customer_scope(session, db, customer_id, allow_empty=False)
+    is_active = None if status_filter == "all" else status_filter == "active"
+    return MasterService(db).list_stations_page(customer_id=customer_id, page=page, page_size=page_size, keyword=keyword, is_active=is_active)
+
+
 @router.get("/stations/export")
 def export_stations(
     customer_id: int | None = Query(default=None),
@@ -485,5 +603,3 @@ def delete_station(
         message = str(exc)
         status_code = status.HTTP_404_NOT_FOUND if message.endswith("not found") else status.HTTP_400_BAD_REQUEST
         raise HTTPException(status_code=status_code, detail=message) from exc
-
-

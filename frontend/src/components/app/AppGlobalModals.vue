@@ -1,18 +1,23 @@
 <script setup lang="ts">
 import BatchImportPanel from "@/components/inventory/BatchImportPanel.vue";
 import ExportCenterPanel from "@/components/app/ExportCenterPanel.vue";
+import UiModalShell from "@/components/common/UiModalShell.vue";
+import OwnPasswordChangeModal from "@/components/app/OwnPasswordChangeModal.vue";
 
 const props = defineProps<{
   batchModalOpen: boolean;
   exportModalOpen: boolean;
+  passwordModalOpen: boolean;
   customerId: number | undefined;
   role?: string;
   batchPresetFixtureCode?: string;
+  batchPresetMode?: "receipt" | "return";
 }>();
 
 const emit = defineEmits<{
   closeBatch: [];
   closeExport: [];
+  closePassword: [];
   refreshStats: [];
   openOverviewFromBatch: [];
   batchDraftStateChange: [value: { hasPendingDraft: boolean; pendingRowCount: number; promptMessage: string }];
@@ -22,36 +27,48 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <teleport to="body">
-    <div v-if="batchModalOpen" class="ui-modal-backdrop">
-      <div class="ui-modal-card" data-tour="inventory-batch-panel">
-        <div class="modal-head">
-          <div>
-            <span class="modal-eyebrow">Global Action</span>
-            <h2>收 / 退料</h2>
-          </div>
-          <div class="modal-head-actions">
-            <button class="overview-btn" type="button" @click="emit('openOverviewFromBatch')">收退料總檢視</button>
-            <button class="outline-btn" type="button" @click="emit('closeBatch')">關閉</button>
-          </div>
+  <UiModalShell
+    :open="batchModalOpen"
+    labelled-by="global-batch-modal-title"
+    described-by="global-batch-modal-description"
+    dialog-class="global-action-modal"
+    @close="emit('closeBatch')"
+  >
+    <div data-tour="inventory-batch-panel">
+      <div class="modal-head">
+        <div>
+          <span class="modal-eyebrow">Global Action</span>
+          <h2 id="global-batch-modal-title">收 / 退料</h2>
+          <p id="global-batch-modal-description" class="sr-only">全域治具批次收退料作業</p>
         </div>
-        <BatchImportPanel
-          :customer-id="customerId"
-          :preset-fixture-code="batchPresetFixtureCode"
-          title="全域收退料匯入"
-          description="Modal 只保留批次匯入，方便在任何頁面直接處理收退料。"
-          :hide-frame="true"
-          @success="emit('refreshStats')"
-          @draft-state-change="emit('batchDraftStateChange', $event)"
-        />
+        <div class="modal-head-actions">
+          <button class="overview-btn" type="button" @click="emit('openOverviewFromBatch')">收退料總檢視</button>
+          <button class="outline-btn" data-modal-initial-focus type="button" @click="emit('closeBatch')">關閉</button>
+        </div>
       </div>
+      <BatchImportPanel
+        :customer-id="customerId"
+        :preset-fixture-code="batchPresetFixtureCode"
+        :initial-mode="batchPresetMode"
+        title="全域收退料匯入"
+        description="Modal 只保留批次匯入，方便在任何頁面直接處理收退料。"
+        :hide-frame="true"
+        @success="emit('refreshStats')"
+        @draft-state-change="emit('batchDraftStateChange', $event)"
+      />
     </div>
-    <div v-if="exportModalOpen" class="ui-modal-backdrop">
-      <div class="ui-modal-card" data-tour="inventory-export-panel">
-        <ExportCenterPanel :customer-id="customerId" :role="role" @close="emit('closeExport')" />
-      </div>
+  </UiModalShell>
+  <UiModalShell
+    :open="exportModalOpen"
+    labelled-by="global-export-modal-title"
+    dialog-class="global-action-modal"
+    @close="emit('closeExport')"
+  >
+    <div data-tour="inventory-export-panel">
+      <ExportCenterPanel :customer-id="customerId" :role="role" @close="emit('closeExport')" />
     </div>
-  </teleport>
+  </UiModalShell>
+  <OwnPasswordChangeModal :open="passwordModalOpen" @close="emit('closePassword')" />
 </template>
 
 <style scoped>

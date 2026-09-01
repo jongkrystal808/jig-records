@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.models.base import Base, TimestampMixin
@@ -19,6 +19,14 @@ ownership_type_enum = Enum(
 
 class MaterialTransaction(Base, TimestampMixin):
     __tablename__ = "material_transactions"
+    __table_args__ = (
+        Index(
+            "ix_material_transactions_report_filter",
+            "customer_id",
+            "transaction_type",
+            "occurred_at",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id", ondelete="RESTRICT"), nullable=False, index=True)
@@ -33,6 +41,14 @@ class MaterialTransaction(Base, TimestampMixin):
 
 class MaterialTransactionItem(Base):
     __tablename__ = "material_transaction_items"
+    __table_args__ = (
+        Index(
+            "ix_material_transaction_items_report_filter",
+            "fixture_id",
+            "ownership_type",
+            "transaction_id",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     transaction_id: Mapped[int] = mapped_column(

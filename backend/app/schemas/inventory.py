@@ -131,6 +131,58 @@ class TransactionOverviewPageRead(ORMModel):
     total: int
 
 
+class ConfigurationReportRowRead(ORMModel):
+    key: str
+    customer_code: str
+    fixture_id: int
+    fixture_code: str
+    fixture_name: str
+    stock_qty: int | None
+    customer_supplied_qty: int | None
+    self_purchased_qty: int | None
+    min_stock_qty: int | None
+    water_status: Literal["normal", "low", "empty", "na"]
+    line_storage: str
+    department_storage: str
+    model_id: int
+    model_code: str
+    station_id: int
+    station_code: str
+    station_name: str
+    required_qty: int | None
+    max_open_station_count: int | None
+    configuration_status: Literal["configured", "unconfigured", "unbound"]
+
+
+class ConfigurationReportPageRead(ORMModel):
+    items: list[ConfigurationReportRowRead]
+    page: int
+    page_size: int
+    total: int
+    fixture_count: int
+    attention_fixture_count: int
+    missing_configuration_count: int
+    total_stock_qty: int
+    customer_supplied_qty: int
+    self_purchased_qty: int
+    populated_columns: list[str]
+    transaction_details: list[TransactionOverviewRowRead]
+    transaction_detail_count: int
+
+
+class ConfigurationReportOptionRead(ORMModel):
+    id: int
+    code: str
+    name: str
+
+
+class ConfigurationReportOptionsRead(ORMModel):
+    fixtures: list[ConfigurationReportOptionRead]
+    models: list[ConfigurationReportOptionRead]
+    stations: list[ConfigurationReportOptionRead]
+    water_statuses: list[Literal["normal", "low", "empty"]]
+
+
 class InventoryRecalculateRead(ORMModel):
     customer_id: int | None
     fixture_count: int

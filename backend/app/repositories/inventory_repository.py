@@ -1,5 +1,7 @@
 from datetime import date, datetime, timezone
 
+from collections.abc import Iterator
+
 from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
@@ -22,6 +24,12 @@ class InventoryRepository:
             return None
         normalized = value.strip()
         return normalized or None
+
+    @staticmethod
+    def _filter_values(value: str | list[str] | None) -> list[str]:
+        if value is None:
+            return []
+        return [value] if isinstance(value, str) else list(dict.fromkeys(value))
 
     @staticmethod
     def _serialize_transaction_item_row(row: dict) -> dict:
@@ -62,7 +70,7 @@ class InventoryRepository:
         if fixture_id is not None:
             stmt = stmt.where(MaterialTransactionItem.fixture_id == fixture_id)
         if transaction_type:
-            stmt = stmt.where(MaterialTransaction.transaction_type == transaction_type)
+            stmt = stmt.where(MaterialTransaction.transaction_type.in_(self._filter_values(transaction_type)))
         if date_from is not None:
             stmt = stmt.where(MaterialTransaction.occurred_at >= date_from)
         if date_to is not None:
@@ -71,7 +79,7 @@ class InventoryRepository:
         if transaction_no:
             stmt = stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
         if ownership_type:
-            stmt = stmt.where(MaterialTransactionItem.ownership_type == ownership_type)
+            stmt = stmt.where(MaterialTransactionItem.ownership_type.in_(self._filter_values(ownership_type)))
         stmt = self._apply_identifier_filter(
             stmt,
             identifier_exact_matches=identifier_exact_matches,
@@ -81,7 +89,13 @@ class InventoryRepository:
             stmt = stmt.where(MaterialTransaction.created_by.ilike(f"%{created_by.strip()}%"))
         return stmt
 
-    def _list_transaction_items(self, transaction_ids: list[int], *, fixture_id: int | None = None) -> dict[int, list[dict]]:
+    def _list_transaction_items(
+        self,
+        transaction_ids: list[int],
+        *,
+        fixture_id: int | None = None,
+        ownership_type: str | None = None,
+    ) -> dict[int, list[dict]]:
         if not transaction_ids:
             return {}
         fixture_code_expr = func.coalesce(Fixture.code, MaterialTransactionItem.deleted_fixture_code)
@@ -103,13 +117,21 @@ class InventoryRepository:
         )
         if fixture_id is not None:
             item_stmt = item_stmt.where(MaterialTransactionItem.fixture_id == fixture_id)
+        if ownership_type:
+            item_stmt = item_stmt.where(MaterialTransactionItem.ownership_type.in_(self._filter_values(ownership_type)))
         item_rows = [dict(row._mapping) for row in self.db.execute(item_stmt).all()]
         item_map: dict[int, list[dict]] = {}
         for row in item_rows:
             item_map.setdefault(row["transaction_id"], []).append(self._serialize_transaction_item_row(row))
         return item_map
 
-    def _build_transaction_payloads(self, transaction_ids: list[int], *, fixture_id: int | None = None) -> list[dict]:
+    def _build_transaction_payloads(
+        self,
+        transaction_ids: list[int],
+        *,
+        fixture_id: int | None = None,
+        ownership_type: str | None = None,
+    ) -> list[dict]:
         if not transaction_ids:
             return []
         tx_stmt = select(MaterialTransaction).where(MaterialTransaction.id.in_(transaction_ids))
@@ -117,7 +139,11 @@ class InventoryRepository:
         if not transactions:
             return []
         transaction_map = {row.id: row for row in transactions}
-        item_map = self._list_transaction_items(transaction_ids, fixture_id=fixture_id)
+        item_map = self._list_transaction_items(
+            transaction_ids,
+            fixture_id=fixture_id,
+            ownership_type=ownership_type,
+        )
         result: list[dict] = []
         for transaction_id in transaction_ids:
             tx = transaction_map.get(transaction_id)
@@ -377,7 +403,7 @@ class InventoryRepository:
             stock_status_expr,
         )
 
-    def get_available_identifier_qty(self, *, fixture_id: int, identifier: str) -> int:
+    def get_available_identifier_qty(self, *, fixture_id: int, identifier: str, ownership_type: str) -> int:
         stmt = (
             select(
                 func.coalesce(
@@ -403,6 +429,7 @@ class InventoryRepository:
             .where(
                 MaterialTransactionItem.fixture_id == fixture_id,
                 MaterialTransactionItem.identifier == identifier,
+                MaterialTransactionItem.ownership_type == ownership_type,
             )
         )
         row = self.db.execute(stmt).one()
@@ -599,6 +626,7 @@ class InventoryRepository:
         *,
         fixture_id: int | None = None,
         transaction_type: str | None = None,
+        ownership_type: str | None = None,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
         fixture_code: str | None = None,
@@ -611,6 +639,7 @@ class InventoryRepository:
             customer_id=customer_id,
             fixture_id=fixture_id,
             transaction_type=transaction_type,
+            ownership_type=ownership_type,
             date_from=date_from,
             date_to=date_to,
             fixture_code=fixture_code,
@@ -621,7 +650,59 @@ class InventoryRepository:
         )
         tx_id_stmt = tx_id_stmt.order_by(MaterialTransaction.id.desc()).limit(limit)
         tx_ids = list(self.db.scalars(tx_id_stmt))
-        return self._build_transaction_payloads(tx_ids, fixture_id=fixture_id)
+        return self._build_transaction_payloads(
+            tx_ids,
+            fixture_id=fixture_id,
+            ownership_type=ownership_type,
+        )
+
+    def iter_transactions(
+        self,
+        customer_id: int | None = None,
+        *,
+        batch_size: int = 500,
+        fixture_id: int | None = None,
+        transaction_type: str | None = None,
+        ownership_type: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        fixture_code: str | None = None,
+        transaction_no: str | None = None,
+        identifier_exact_matches: list[str] | None = None,
+        identifier_contains: str | None = None,
+        created_by: str | None = None,
+    ) -> Iterator[dict]:
+        """Yield every matching transaction without retaining the full result set."""
+        last_transaction_id: int | None = None
+        while True:
+            tx_id_stmt = self._build_transaction_id_stmt(
+                customer_id=customer_id,
+                fixture_id=fixture_id,
+                transaction_type=transaction_type,
+                ownership_type=ownership_type,
+                date_from=date_from,
+                date_to=date_to,
+                fixture_code=fixture_code,
+                transaction_no=transaction_no,
+                identifier_exact_matches=identifier_exact_matches,
+                identifier_contains=identifier_contains,
+                created_by=created_by,
+            )
+            if last_transaction_id is not None:
+                tx_id_stmt = tx_id_stmt.where(MaterialTransaction.id < last_transaction_id)
+            tx_ids = list(
+                self.db.scalars(
+                    tx_id_stmt.order_by(MaterialTransaction.id.desc()).limit(batch_size)
+                )
+            )
+            if not tx_ids:
+                return
+            yield from self._build_transaction_payloads(
+                tx_ids,
+                fixture_id=fixture_id,
+                ownership_type=ownership_type,
+            )
+            last_transaction_id = tx_ids[-1]
 
     def list_transaction_page(
         self,
@@ -695,9 +776,9 @@ class InventoryRepository:
         if customer_id is not None:
             stmt = stmt.where(MaterialTransaction.customer_id == customer_id)
         if transaction_type:
-            stmt = stmt.where(MaterialTransaction.transaction_type == transaction_type)
+            stmt = stmt.where(MaterialTransaction.transaction_type.in_(self._filter_values(transaction_type)))
         if ownership_type:
-            stmt = stmt.where(MaterialTransactionItem.ownership_type == ownership_type)
+            stmt = stmt.where(MaterialTransactionItem.ownership_type.in_(self._filter_values(ownership_type)))
         if date_from is not None:
             stmt = stmt.where(MaterialTransaction.occurred_at >= date_from)
         if date_to is not None:
@@ -769,7 +850,7 @@ class InventoryRepository:
         if customer_id is not None:
             stmt = stmt.where(MaterialTransaction.customer_id == customer_id)
         if transaction_type:
-            stmt = stmt.where(MaterialTransaction.transaction_type == transaction_type)
+            stmt = stmt.where(MaterialTransaction.transaction_type.in_(self._filter_values(transaction_type)))
         if date_from is not None:
             stmt = stmt.where(MaterialTransaction.occurred_at >= date_from)
         if date_to is not None:
@@ -778,7 +859,7 @@ class InventoryRepository:
         if transaction_no:
             stmt = stmt.where(MaterialTransaction.transaction_no.ilike(f"%{transaction_no.strip()}%"))
         if ownership_type:
-            stmt = stmt.where(MaterialTransactionItem.ownership_type == ownership_type)
+            stmt = stmt.where(MaterialTransactionItem.ownership_type.in_(self._filter_values(ownership_type)))
         stmt = self._apply_identifier_filter(
             stmt,
             identifier_exact_matches=identifier_exact_matches,

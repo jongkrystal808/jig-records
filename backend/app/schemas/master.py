@@ -29,6 +29,13 @@ class CustomerRead(TimestampedResponse):
     assigned_user_ids: list[int] = Field(default_factory=list)
 
 
+class CustomerPageRead(BaseModel):
+    items: list[CustomerRead]
+    page: int
+    page_size: int
+    total: int
+
+
 class FixtureCreate(BaseModel):
     customer_id: int
     code: str = Field(min_length=1, max_length=60)
@@ -68,6 +75,13 @@ class FixtureRead(TimestampedResponse):
     description: str | None
     is_active: bool
     has_image: bool
+
+
+class FixturePageRead(BaseModel):
+    items: list[FixtureRead]
+    page: int
+    page_size: int
+    total: int
 
 
 class FixtureImageUploadRead(BaseModel):
@@ -148,6 +162,13 @@ class MachineModelRead(TimestampedResponse):
     is_active: bool
 
 
+class MachineModelPageRead(BaseModel):
+    items: list[MachineModelRead]
+    page: int
+    page_size: int
+    total: int
+
+
 class MachineModelDeleteRead(BaseModel):
     model_id: int
     model_code: str
@@ -175,6 +196,13 @@ class StationRead(TimestampedResponse):
     code: str
     name: str
     is_active: bool
+
+
+class StationPageRead(BaseModel):
+    items: list[StationRead]
+    page: int
+    page_size: int
+    total: int
 
 
 class StationDeleteRead(BaseModel):

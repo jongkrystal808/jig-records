@@ -56,7 +56,7 @@ function onModelChange(event: Event): void {
             </select>
           </label>
         </div>
-        <p class="filter-row-meta">站點請直接從下方總覽表點選。建立時間 {{ loadedAt || "-" }}　更新時間 {{ updatedAt || "-" }}</p>
+        <p class="filter-row-meta">站點請直接從下方總覽表點選。建立日期 {{ loadedAt || "-" }}　更新日期 {{ updatedAt || "-" }}</p>
       </div>
 
       <div v-if="isMainOverview" class="result-group">

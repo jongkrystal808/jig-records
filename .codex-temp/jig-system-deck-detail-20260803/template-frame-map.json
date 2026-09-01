@@ -1,0 +1,37 @@
+{
+  "outputSlides": [
+    {
+      "outputSlide": 1,
+      "sourceSlide": 1,
+      "narrativeRole": "expanded system functions",
+      "reuseMode": "duplicate-slide",
+      "editTargets": [
+        { "sourceElementId": "sh/z2p8n6hg", "action": "rewrite", "reason": "shorten the inherited one-line title after import reflow" },
+        { "sourceElementId": "sh/y1grel0v", "action": "rewrite", "reason": "add searchable fields and displayed context" },
+        { "sourceElementId": "sh/d07qlgza", "action": "rewrite", "reason": "add transaction and alert details" },
+        { "sourceElementId": "sh/czy9cbip", "action": "rewrite", "reason": "add requirement maintenance and capacity logic" }
+      ]
+    },
+    {
+      "outputSlide": 2,
+      "sourceSlide": 2,
+      "narrativeRole": "usage scenarios",
+      "reuseMode": "duplicate-slide",
+      "editTargets": [
+        { "sourceElementId": "sh/do3q9szq", "action": "rewrite-and-reposition", "reason": "keep the inherited timeline rule within the slide canvas" }
+      ]
+    },
+    {
+      "outputSlide": 3,
+      "sourceSlide": 3,
+      "narrativeRole": "expanded improvement benefits",
+      "reuseMode": "duplicate-slide",
+      "editTargets": [
+        { "sourceElementId": "sh/3yxojqxs", "action": "rewrite", "reason": "make the benefit claim more explicit" },
+        { "sourceElementId": "sh/2donalw7", "action": "rewrite", "reason": "connect system actions to measurable outcomes" },
+        { "sourceElementId": "sh/r2xonax4", "action": "rewrite", "reason": "expand waiting, risk, and planning benefits" }
+      ]
+    }
+  ],
+  "omittedSourceSlides": []
+}

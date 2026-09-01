@@ -1,7 +1,12 @@
 import { computed, ref, watch, type ComputedRef, type Ref } from "vue";
 
+import { requestConfirmation } from "@/confirmState";
 import { pushToast } from "@/toastState";
 import type { Fixture, MachineModel, Station } from "@/types";
+import {
+  productionMappingValidationMessage,
+  productionRequirementValidationMessage
+} from "@/utils/formOperations";
 
 type AutocompleteKey = null | "mapping-model" | "mapping-station" | "requirement-station" | "fixture";
 
@@ -50,6 +55,8 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
   const preferredRequirementStationCode = ref("");
   const fixtureId = ref<number | null>(null);
   const requiredQty = ref(1);
+  const designatedMode = ref(false);
+  const designatedIdentifiers = ref<string[]>([]);
   const mappingModelCodeInput = ref("");
   const mappingStationCodeInput = ref("");
   const requirementStationCodeInput = ref("");
@@ -68,11 +75,15 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
 
   const requirementEditorBaseline = ref({
     fixtureCode: "",
-    requiredQty: 1
+    requiredQty: 1,
+    designatedMode: false,
+    designatedIdentifiers: [] as string[]
   });
   const requirementEditorCurrent = computed(() => ({
     fixtureCode: normalizeEditorText(fixtureCodeInput.value),
-    requiredQty: requiredQty.value
+    requiredQty: requiredQty.value,
+    designatedMode: designatedMode.value,
+    designatedIdentifiers: [...designatedIdentifiers.value].sort()
   }));
   const hasUnsavedRequirementChanges = computed(() => JSON.stringify(requirementEditorCurrent.value) !== JSON.stringify(requirementEditorBaseline.value));
 
@@ -98,7 +109,10 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
 
   function syncFixtureSelection(): void {
     const match = findCodeMatch(options.fixtures.value, fixtureCodeInput.value);
-    if (match) fixtureId.value = match.id;
+    if (match) {
+      if (fixtureId.value !== match.id) designatedIdentifiers.value = [];
+      fixtureId.value = match.id;
+    }
   }
 
   function openAutocomplete(key: Exclude<AutocompleteKey, null>, rows: Array<{ code: string }>, value: string): void {
@@ -149,6 +163,15 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
 
   function updateRequiredQty(value: number): void {
     requiredQty.value = value;
+  }
+
+  function updateDesignatedMode(value: boolean): void {
+    designatedMode.value = value;
+    if (!value) designatedIdentifiers.value = [];
+  }
+
+  function updateDesignatedIdentifiers(value: string[]): void {
+    designatedIdentifiers.value = [...new Set(value)];
   }
 
   function openMappingModelAutocomplete(): void {
@@ -214,12 +237,9 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
   function ensureMappingSelections(): boolean {
     syncMappingModelSelection();
     syncMappingStationSelection();
-    if (!modelId.value) {
-      pushToast("請輸入有效的機種代碼。", "warning");
-      return false;
-    }
-    if (!mappingStationId.value) {
-      pushToast("請輸入有效的站點代碼。", "warning");
+    const message = productionMappingValidationMessage(modelId.value, mappingStationId.value);
+    if (message) {
+      pushToast(message, "warning");
       return false;
     }
     return true;
@@ -228,22 +248,34 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
   function ensureRequirementSelections(): boolean {
     syncRequirementStationInput();
     syncFixtureSelection();
-    if (!requirementStationId.value) {
-      pushToast("請輸入有效的站點代碼。", "warning");
+    const message = productionRequirementValidationMessage(
+      requirementStationId.value,
+      fixtureId.value,
+      requiredQty.value
+    );
+    if (message) {
+      pushToast(message, "warning");
       return false;
     }
-    if (!fixtureId.value) {
-      pushToast("請輸入有效的治具代碼。", "warning");
+    if (designatedMode.value && designatedIdentifiers.value.length === 0) {
+      pushToast("指定模式至少需要選擇一個有庫存的 identifier。", "warning");
       return false;
     }
     return true;
   }
 
-  function resetMappingEditor(): void {
-    if (hasUnsavedMappingChanges.value && !window.confirm("目前站點設定表單有未儲存的修改，重載後將會捨棄。要繼續嗎？")) {
-      return;
+  async function resetMappingEditor(): Promise<boolean> {
+    if (
+      hasUnsavedMappingChanges.value &&
+      !(await requestConfirmation(
+        "目前站點設定表單有未儲存的修改，重載後將會捨棄。要繼續嗎？",
+        { title: "捨棄站點修改？", confirmLabel: "捨棄並重載", tone: "danger" }
+      ))
+    ) {
+      return false;
     }
     resetMappingEditorWithoutPrompt();
+    return true;
   }
 
   function resetMappingEditorWithoutPrompt(): void {
@@ -256,11 +288,18 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
     };
   }
 
-  function resetRequirementEditor(): void {
-    if (hasUnsavedRequirementChanges.value && !window.confirm("目前治具需求表單有未儲存的修改，重載後將會捨棄。要繼續嗎？")) {
-      return;
+  async function resetRequirementEditor(): Promise<boolean> {
+    if (
+      hasUnsavedRequirementChanges.value &&
+      !(await requestConfirmation(
+        "目前治具需求表單有未儲存的修改，重載後將會捨棄。要繼續嗎？",
+        { title: "捨棄治具需求修改？", confirmLabel: "捨棄並重載", tone: "danger" }
+      ))
+    ) {
+      return false;
     }
     resetRequirementEditorWithoutPrompt();
+    return true;
   }
 
   function resetRequirementEditorWithoutPrompt(): void {
@@ -269,15 +308,26 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
     fixtureId.value = null;
     fixtureCodeInput.value = "";
     requiredQty.value = 1;
+    designatedMode.value = false;
+    designatedIdentifiers.value = [];
     requirementEditorBaseline.value = {
       fixtureCode: "",
-      requiredQty: 1
+      requiredQty: 1,
+      designatedMode: false,
+      designatedIdentifiers: []
     };
   }
 
-  function startEditMapping(row: { id: number; model_id: number; station_id: number }): void {
-    if (editingMappingId.value !== row.id && hasUnsavedMappingChanges.value && !window.confirm("目前站點設定表單有未儲存的修改，切換編輯對象後將會捨棄。要繼續嗎？")) {
-      return;
+  async function startEditMapping(row: { id: number; model_id: number; station_id: number }): Promise<boolean> {
+    if (
+      editingMappingId.value !== row.id &&
+      hasUnsavedMappingChanges.value &&
+      !(await requestConfirmation(
+        "目前站點設定表單有未儲存的修改，切換編輯對象後將會捨棄。要繼續嗎？",
+        { title: "切換站點編輯？", confirmLabel: "切換並捨棄", tone: "danger" }
+      ))
+    ) {
+      return false;
     }
     modelId.value = row.model_id;
     mappingStationId.value = row.station_id;
@@ -287,15 +337,25 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
     mappingEditorBaseline.value = {
       stationCode: normalizeEditorText(mappingStationCodeInput.value)
     };
+    return true;
   }
 
-  function startEditRequirement(row: { id: number; station_id: number; fixture_id: number; required_qty: number }): void {
-    if (editingRequirementId.value !== row.id && hasUnsavedRequirementChanges.value && !window.confirm("目前治具需求表單有未儲存的修改，切換編輯對象後將會捨棄。要繼續嗎？")) {
-      return;
+  async function startEditRequirement(row: { id: number; station_id: number; fixture_id: number; required_qty: number; designated_mode?: boolean; designated_identifiers?: string[] }): Promise<boolean> {
+    if (
+      editingRequirementId.value !== row.id &&
+      hasUnsavedRequirementChanges.value &&
+      !(await requestConfirmation(
+        "目前治具需求表單有未儲存的修改，切換編輯對象後將會捨棄。要繼續嗎？",
+        { title: "切換治具需求編輯？", confirmLabel: "切換並捨棄", tone: "danger" }
+      ))
+    ) {
+      return false;
     }
     requirementStationId.value = row.station_id;
     fixtureId.value = row.fixture_id;
     requiredQty.value = row.required_qty;
+    designatedMode.value = row.designated_mode ?? false;
+    designatedIdentifiers.value = [...(row.designated_identifiers ?? [])];
     requirementStationCodeInput.value =
       options.availableRequirementStations.value.find((item) => item.id === row.station_id)?.code ??
       options.stations.value.find((item) => item.id === row.station_id)?.code ??
@@ -304,8 +364,11 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
     editingRequirementId.value = row.id;
     requirementEditorBaseline.value = {
       fixtureCode: normalizeEditorText(fixtureCodeInput.value),
-      requiredQty: row.required_qty
+      requiredQty: row.required_qty,
+      designatedMode: row.designated_mode ?? false,
+      designatedIdentifiers: [...(row.designated_identifiers ?? [])].sort()
     };
+    return true;
   }
 
   function syncRequirementStationSelection(): void {
@@ -369,6 +432,8 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
     preferredRequirementStationCode,
     fixtureId,
     requiredQty,
+    designatedMode,
+    designatedIdentifiers,
     mappingModelCodeInput,
     mappingStationCodeInput,
     requirementStationCodeInput,
@@ -385,6 +450,8 @@ export function useProductionEditorState(options: UseProductionEditorStateOption
     updateModelId,
     updateSelectedStationId,
     updateRequiredQty,
+    updateDesignatedMode,
+    updateDesignatedIdentifiers,
     openMappingModelAutocomplete,
     handleMappingModelInput,
     blurMappingModelAutocomplete,

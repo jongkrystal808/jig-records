@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { extractErrorMessage } from "@/utils/apiError";
-import { formatLocalDateKey } from "@/utils/date";
+import { formatLocalDate, formatLocalDateKey } from "@/utils/date";
 import { fixtureImageUrlByCode } from "@/api";
 import { fallbackText, ownershipLabel, stockStatusLabel, capacityStateLabel } from "@/utils/display";
 
@@ -9,6 +9,12 @@ describe("frontend utils", () => {
   it("formats a local date key", () => {
     const value = formatLocalDateKey(new Date(2026, 5, 10));
     expect(value).toBe("2026-06-10");
+  });
+
+  it("formats all user-facing date values without time", () => {
+    expect(formatLocalDate("2026-08-04T15:37:29+08:00")).toBe("2026-08-04");
+    expect(formatLocalDate("2026-08-04")).toBe("2026-08-04");
+    expect(formatLocalDate(new Date(2026, 7, 4, 15, 37, 29))).toBe("2026-08-04");
   });
 
   it("extracts API detail messages", () => {
@@ -29,7 +35,9 @@ describe("frontend utils", () => {
   });
 
   it("builds fixture image urls", () => {
-    expect(fixtureImageUrlByCode("C-00003")).toBe("/api/v2/master/fixtures/C-00003/image");
+    expect(fixtureImageUrlByCode("C-00003", 7)).toBe(
+      "/api/v2/master/fixtures/C-00003/image?customer_id=7"
+    );
   });
 
   it("formats shared display helpers", () => {

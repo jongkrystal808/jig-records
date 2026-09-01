@@ -9,7 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from alembic import command
+from sqlalchemy import create_engine, inspect, text
 
 from backend.app.core.audit_logging import register_audit_middleware
 from backend.app.core.migrations import (
@@ -277,13 +278,39 @@ class BootstrapFlowTests(unittest.TestCase):
             engine = create_engine(f"sqlite:///{db_path}")
             with engine.begin() as connection:
                 revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-                admin_count = connection.execute(
-                    text("SELECT COUNT(*) FROM users WHERE username = 'admin'")
-                ).scalar_one()
+                admin_count = connection.execute(text("SELECT COUNT(*) FROM users WHERE username = 'admin'")).scalar_one()
+                admin_role = connection.execute(text("SELECT role FROM users WHERE username = 'admin'")).scalar_one()
+                shortcut_columns = {
+                    column["name"] for column in inspect(connection).get_columns("user_model_shortcuts")
+                }
+                fixture_requirement_columns = {
+                    column["name"] for column in inspect(connection).get_columns("fixture_requirements")
+                }
+                table_names = set(inspect(connection).get_table_names())
             engine.dispose()
 
-            self.assertEqual(revision, "0014_fixture_deletion")
+            self.assertEqual(revision, "0019_fixture_storage")
             self.assertEqual(admin_count, 1)
+            self.assertEqual(admin_role, "super_admin")
+            self.assertIn("designated_mode", fixture_requirement_columns)
+            self.assertIn("fixture_requirement_identifiers", table_names)
+            self.assertIn("storage_containers", table_names)
+            self.assertIn("storage_codes", table_names)
+            self.assertIn("fixture_placements", table_names)
+            self.assertEqual(
+                shortcut_columns,
+                {
+                    "id",
+                    "user_id",
+                    "customer_id",
+                    "model_id",
+                    "query_count",
+                    "last_queried_at",
+                    "is_pinned",
+                    "created_at",
+                    "updated_at",
+                },
+            )
             self.assertTrue(
                 any('"event": "migration_runtime_gate"' in message and '"outcome": "passed"' in message for message in captured.output)
             )
@@ -293,6 +320,53 @@ class BootstrapFlowTests(unittest.TestCase):
                 database_module.engine.dispose()
             os.environ.clear()
             os.environ.update(original)
+            db_path.unlink(missing_ok=True)
+
+    def test_storage_migration_backfills_legacy_comma_locations_and_station_context(self) -> None:
+        temp_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        temp_file.close()
+        db_path = Path(temp_file.name)
+        original_database_url = settings.database_url
+        engine = None
+        try:
+            object.__setattr__(settings, "database_url", f"sqlite:///{db_path.as_posix()}")
+            command.upgrade(_alembic_config(), "0018_designated_ids")
+            engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+            with engine.begin() as connection:
+                connection.execute(text("DROP TABLE fixture_placements"))
+                connection.execute(text("DROP TABLE storage_codes"))
+                connection.execute(text("DROP TABLE storage_containers"))
+                connection.execute(text("INSERT INTO customers (id, code, name) VALUES (99, 'C99', 'Customer 99')"))
+                connection.execute(text("INSERT INTO machine_models (id, customer_id, code, name, is_active) VALUES (99, 99, 'E1210', 'ioLogik E1210', 1)"))
+                connection.execute(text("INSERT INTO stations (id, customer_id, code, name, is_active) VALUES (99, 99, 'T2', 'Test 2', 1)"))
+                connection.execute(
+                    text("INSERT INTO fixtures (id, customer_id, code, name, line_storage_location, department_storage_location, is_active) VALUES (99, 99, 'L-00091', 'Fixture', :location, NULL, 1)"),
+                    {"location": "T2, AXG001\uFF0CMOXA001"},
+                )
+                connection.execute(text("INSERT INTO fixture_requirements (id, model_id, station_id, fixture_id, required_qty, designated_mode) VALUES (99, 99, 99, 99, 1, 0)"))
+            engine.dispose()
+
+            command.upgrade(_alembic_config(), "head")
+
+            engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+            with engine.begin() as connection:
+                revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                codes = connection.execute(text("SELECT code FROM storage_codes ORDER BY code")).scalars().all()
+                placements = connection.execute(
+                    text("SELECT target_type, model_id, station_id FROM fixture_placements ORDER BY target_type")
+                ).mappings().all()
+            engine.dispose()
+            self.assertEqual(revision, "0019_fixture_storage")
+            self.assertEqual(codes, ["AXG001", "MOXA001"])
+            self.assertEqual(len(placements), 3)
+            self.assertEqual(
+                [row for row in placements if row["target_type"] == "model_station"],
+                [{"target_type": "model_station", "model_id": 99, "station_id": 99}],
+            )
+        finally:
+            if engine is not None:
+                engine.dispose()
+            object.__setattr__(settings, "database_url", original_database_url)
             db_path.unlink(missing_ok=True)
 
     def test_blocked_runtime_gate_report_is_logged(self) -> None:

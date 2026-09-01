@@ -1,0 +1,55 @@
+{"kind":"deck","id":"pr/pa89v9","name":"Deck"}
+{"kind":"layout","layoutId":"5c6614aa-0d75-4ca4-a878-ebc40026e02c","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"2dae21e6-8edc-4c47-90f1-75651deddfe0","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/nor60g","slide":1,"title":"01 / 03","textShapes":5}
+{"kind":"textbox","id":"sh/03y9gbi1","slide":1,"name":"Google-Shape-532-p58-2","text":"01 / 03","textPreview":"01 / 03","textChars":7,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"textbox","id":"sh/z2p8n6hg","slide":1,"name":"Google-Shape-533-p58-3","text":"治具系統，把查找、庫存與產能串在一起","textPreview":"治具系統，把查找、庫存與產能串在一起","textChars":18,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"textbox","id":"sh/y1grel0v","slide":1,"name":"Google-Shape-558-p61-4","text":"快速查找\n治具、機種、工站與庫位一站定位","textPreview":"快速查找 | 治具、機種、工站與庫位一站定位","textChars":20,"textLines":2,"bbox":[41.33,421.33,374.67,208]}
+{"kind":"textbox","id":"sh/d07qlgza","slide":1,"name":"Google-Shape-559-p61-5","text":"庫存管理\n收料／退料、批次匯入與低庫存警示","textPreview":"庫存管理 | 收料／退料、批次匯入與低庫存警示","textChars":21,"textLines":2,"bbox":[453.33,421.33,374.67,208]}
+{"kind":"textbox","id":"sh/czy9cbip","slide":1,"name":"Google-Shape-560-p61-6","text":"產能規劃\n依機種＋工站換算最大可開站數","textPreview":"產能規劃 | 依機種＋工站換算最大可開站數","textChars":19,"textLines":2,"bbox":[864.28,421.33,374.67,208]}
+{"kind":"shape","id":"sh/bep8j6h4","slide":1,"name":"Google-Shape-561-p61-7","bbox":[449.33,355.1,33.13,37.15]}
+{"kind":"shape","id":"sh/qdgra10j","slide":1,"name":"Google-Shape-562-p61-8","bbox":[42.14,354.67,34.34,38.01]}
+{"kind":"shape","id":"sh/hwbah0ze","slide":1,"name":"Google-Shape-563-p61-9","bbox":[864.21,357.67,35.55,28.44]}
+{"kind":"shape","id":"sh/wv29ovi9","slide":1,"name":"accent-rule","bbox":[41.33,136,176,5]}
+{"kind":"shape","id":"sh/a5o3qlcb","slide":1,"name":"fixture-photo-search-frame","bbox":[37.33,170,382.67,156]}
+{"kind":"shape","id":"sh/w76lsvuh","slide":1,"name":"fixture-photo-inventory-frame","bbox":[449.33,170,382.67,156]}
+{"kind":"shape","id":"sh/mh43mlcz","slide":1,"name":"fixture-photo-capacity-frame","bbox":[860.28,170,382.67,156]}
+{"kind":"image","id":"im/sbad8f6h","slide":1,"name":"","alt":"治具實物與識別標籤範例","bbox":[41.33,174,374.67,148]}
+{"kind":"image","id":"im/q9sv65ob","slide":1,"name":"","alt":"治具實物照片範例","bbox":[453.33,174,374.67,148]}
+{"kind":"image","id":"im/47qd4v65","slide":1,"name":"","alt":"附識別碼的治具實物範例","bbox":[864.28,174,374.67,148]}
+{"kind":"notes","id":"nt/nor60g","slide":1,"text":"主旨：系統把原本分散的治具資料、庫存狀態與生產需求放進同一個操作流程。\n[Sources]\n- C:/Users/user/PycharmProjects/jig-record/AGENT.md（系統定位、搜尋、庫存與產能計算）\n- C:/Users/user/PycharmProjects/jig-record/ARCHITECTURE_LANDING.md（目前已實作功能）\n- C:/Users/user/PycharmProjects/jig-record/uploads/fixtures/O-78-5.jpg\n- C:/Users/user/PycharmProjects/jig-record/uploads/fixtures/F-00629.jpg\n- C:/Users/user/PycharmProjects/jig-record/uploads/fixtures/D-00002.jpg"}
+{"kind":"slide","id":"sl/8t96hm","slide":2,"title":"02 / 03","textShapes":8}
+{"kind":"textbox","id":"sh/2t4n6tgj","slide":2,"name":"Slide-Number-Placeholder-3-2","text":"02 / 03","textPreview":"02 / 03","textChars":7,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"textbox","id":"sh/pwfm1oza","slide":2,"name":"Title-10-3","text":"三個現場節點，快速完成日常決策","textPreview":"三個現場節點，快速完成日常決策","textChars":15,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"shape","id":"sh/4vm58jyp","slide":2,"name":"Google-Shape-2259-p159-4","bbox":[35.46,560.8,1285.61,0.03]}
+{"kind":"shape","id":"sh/vqd4vehs","slide":2,"name":"Google-Shape-2260-p159-5","bbox":[35.46,555.18,11.24,11.24]}
+{"kind":"shape","id":"sh/up4329gn","slide":2,"name":"Google-Shape-2261-p159-6","bbox":[446.38,555.18,11.24,11.24]}
+{"kind":"shape","id":"sh/hsvmxozy","slide":2,"name":"Google-Shape-2262-p159-7","bbox":[858.38,555.18,11.24,11.24]}
+{"kind":"shape","id":"sh/grml4jyd","slide":2,"name":"Rounded-Rectangle-19-8","bbox":[41.33,147.17,374.67,380]}
+{"kind":"textbox","id":"sh/7mt47ehw","slide":2,"name":"Content-Placeholder-8-9","text":"開工前備料\n搜尋治具與庫位，確認庫存與責任人，快速備齊現場需求。","textPreview":"開工前備料 | 搜尋治具與庫位，確認庫存與責任人，快速備齊現場需求。","textChars":32,"textLines":2,"bbox":[73.85,189.69,309.64,269.48]}
+{"kind":"shape","id":"sh/6lk3y9gb","slide":2,"name":"Rounded-Rectangle-21-10","bbox":[452.33,147.17,374.67,380]}
+{"kind":"textbox","id":"sh/8juxgjml","slide":2,"name":"Content-Placeholder-8-11","text":"缺料異常處理\n遇到低庫存或缺料，追溯收退料明細，補料與責任歸屬更清楚。","textPreview":"缺料異常處理 | 遇到低庫存或缺料，追溯收退料明細，補料與責任歸屬更清楚。","textChars":35,"textLines":2,"bbox":[484.85,189.69,309.64,269.48]}
+{"kind":"shape","id":"sh/9k3y9on6","slide":2,"name":"Rounded-Rectangle-23-12","bbox":[864.83,147.17,374.67,380]}
+{"kind":"textbox","id":"sh/mhcfe9of","slide":2,"name":"Content-Placeholder-8-13","text":"生產排程確認\n選定機種與工站，依需求量與現有庫存估算最大可開站數。","textPreview":"生產排程確認 | 選定機種與工站，依需求量與現有庫存估算最大可開站數。","textChars":33,"textLines":2,"bbox":[897.35,189.69,309.64,269.48]}
+{"kind":"textbox","id":"sh/nilg7e50","slide":2,"name":"Text-Placeholder-16-14","text":"02｜缺料應變","textPreview":"02｜缺料應變","textChars":7,"textLines":1,"bbox":[446.38,588.18,272.54,41.15]}
+{"kind":"textbox","id":"sh/0faxcz69","slide":2,"name":"Text-Placeholder-16-15","text":"01｜班前準備","textPreview":"01｜班前準備","textChars":7,"textLines":1,"bbox":[41.04,588.18,272.54,41.15]}
+{"kind":"textbox","id":"sh/lgjy54nu","slide":2,"name":"Text-Placeholder-16-16","text":"03｜排程確認","textPreview":"03｜排程確認","textChars":7,"textLines":1,"bbox":[863.56,588.18,272.54,41.15]}
+{"kind":"shape","id":"sh/ydsfapoj","slide":2,"name":"accent-rule","bbox":[41.33,136,176,5]}
+{"kind":"notes","id":"nt/8t96hm","slide":2,"text":"使用方式可依現場節奏說明：班前確認、異常應變、排程決策。\n最大可開站數的核心邏輯為各必要治具可支援數量的最小值；查詢範圍必須包含機種與工站。\n[Sources]\n- C:/Users/user/PycharmProjects/jig-record/AGENT.md（搜尋規則、庫存警示、產能計算）\n- C:/Users/user/PycharmProjects/jig-record/ARCHITECTURE_LANDING.md（搜尋、收退料、批次與產能功能）"}
+{"kind":"slide","id":"sl/wbyisf","slide":3,"title":"03 / 03","textShapes":9}
+{"kind":"textbox","id":"sh/4z65cved","slide":3,"name":"Google-Shape-532-p58-2","text":"03 / 03","textPreview":"03 / 03","textChars":7,"textLines":1,"bbox":[1184.18,659.24,54.48,25.33]}
+{"kind":"textbox","id":"sh/3yxojqxs","slide":3,"name":"Google-Shape-533-p58-3","text":"治具系統，少掉三種現場浪費","textPreview":"治具系統，少掉三種現場浪費","textChars":13,"textLines":1,"bbox":[41.33,36.12,1197.33,109.97]}
+{"kind":"textbox","id":"sh/2donalw7","slide":3,"name":"Google-Shape-534-p58-4","text":"把分散的現場資訊，變成一致的作業依據","textPreview":"把分散的現場資訊，變成一致的作業依據","textChars":18,"textLines":1,"bbox":[41.33,180.83,581.33,90.83]}
+{"kind":"textbox","id":"sh/d4z6pkfu","slide":3,"name":"Content-Placeholder-10-5","text":"查找｜圖片與庫位","textPreview":"查找｜圖片與庫位","textChars":8,"textLines":1,"bbox":[828,313.94,410.67,57.61]}
+{"kind":"shape","id":"sh/c3qpgfep","slide":3,"name":"Google-Shape-340-p61-6","bbox":[788.21,316.55,22.32,22.31]}
+{"kind":"textbox","id":"sh/r2xonax4","slide":3,"name":"TextBox-11-7","text":"減少等待｜不用反覆找治具、問庫位、核對庫存。\n\n降低重工｜收退料、責任與權限都有一致紀錄。\n\n提升判斷｜用實際庫存與需求量支援備料與排程。\n\n建議追蹤：平均查找時間、缺料事件、排程調整次數","textPreview":"減少等待｜不用反覆找治具、問庫位、核對庫存。 |  | 降低重工｜收退料、責任與權限都有一致紀錄。 |  | 提升判斷｜用實際庫存與需求量支援備料與排程。 |  | 建議追蹤：平均查找時間、缺料事件、排程調整次數","textChars":94,"textLines":7,"bbox":[41.33,313.94,581.33,302.85]}
+{"kind":"textbox","id":"sh/q1o7e5wj","slide":3,"name":"Content-Placeholder-10-8","text":"預警｜低庫存提示","textPreview":"預警｜低庫存提示","textChars":8,"textLines":1,"bbox":[828,377.94,410.67,57.61]}
+{"kind":"shape","id":"sh/18z6tkf6","slide":3,"name":"Google-Shape-340-p61-9","bbox":[788.21,380.55,22.32,22.31]}
+{"kind":"textbox","id":"sh/07qpkfel","slide":3,"name":"Content-Placeholder-10-10","text":"規劃｜可開站試算","textPreview":"規劃｜可開站試算","textChars":8,"textLines":1,"bbox":[828,442.5,410.67,57.61]}
+{"kind":"shape","id":"sh/ahkzu9gb","slide":3,"name":"Google-Shape-340-p61-11","bbox":[788.21,445.1,22.32,22.31]}
+{"kind":"textbox","id":"sh/bitgnexw","slide":3,"name":"Content-Placeholder-10-12","text":"權責｜角色與稽核","textPreview":"權責｜角色與稽核","textChars":8,"textLines":1,"bbox":[828,506.49,410.67,57.61]}
+{"kind":"shape","id":"sh/cj2hwjyh","slide":3,"name":"Google-Shape-340-p61-13","bbox":[788.21,509.1,22.32,22.31]}
+{"kind":"textbox","id":"sh/x4bypofm","slide":3,"name":"Content-Placeholder-10-14","text":"資料｜批次匯入匯出","textPreview":"資料｜批次匯入匯出","textChars":9,"textLines":1,"bbox":[828,571.83,410.67,57.61]}
+{"kind":"shape","id":"sh/y5kzytg7","slide":3,"name":"Google-Shape-340-p61-15","bbox":[788.21,574.44,22.32,22.31]}
+{"kind":"shape","id":"sh/z6tgryxs","slide":3,"name":"accent-rule","bbox":[41.33,136,176,5]}
+{"kind":"notes","id":"nt/wbyisf","slide":3,"text":"效益以可驗證的改善方向呈現，避免在尚未建立基準值前宣稱百分比成果。\n建議導入前後用相同口徑追蹤：平均查找時間、缺料事件數、排程調整次數。\n[Sources]\n- C:/Users/user/PycharmProjects/jig-record/AGENT.md（系統目標、權限、庫存警示、產能規劃）\n- C:/Users/user/PycharmProjects/jig-record/ARCHITECTURE_LANDING.md（現有功能與使用範圍）"}

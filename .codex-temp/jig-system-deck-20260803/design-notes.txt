@@ -1,0 +1,8 @@
+Communication job: By the end, manufacturing and operations stakeholders should understand how the fixture system supports daily work and why it improves execution, because search, inventory, and production capacity are connected in one workflow.
+
+Narrative:
+1. 使用功能：系統能做什麼。
+2. 使用場景：現場何時、如何使用。
+3. 改善效益：導入後減少哪些浪費，並提出量測方式。
+
+Visual route: Codex Grid exact layouts 07, 18, and 10; neutral white canvas with blue accent. Slide 1 uses three internal fixture photos in the existing three-column hierarchy. Slides 2 and 3 remain presentation-native and fully editable.

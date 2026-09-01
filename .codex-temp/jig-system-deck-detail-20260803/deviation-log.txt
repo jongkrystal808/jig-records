@@ -1,0 +1,3 @@
+- Slide 1: title is shortened to preserve the inherited one-line treatment after import reflow; feature body copy is expanded within the inherited three text frames. No geometry, image, or styling changes.
+- Slide 2: visible content is preserved; the inherited timeline rule is shortened to remain inside the slide canvas.
+- Slide 3: title, subheading, and left benefit explanation are rewritten within inherited frames; right-side system-action list is preserved.

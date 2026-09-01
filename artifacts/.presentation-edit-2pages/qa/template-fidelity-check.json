@@ -1,0 +1,13 @@
+{
+  "status": "pass",
+  "checkedAt": "2026-08-28T11:58:46.373Z",
+  "workspace": "C:\\Users\\user\\PycharmProjects\\jig-record\\artifacts\\.presentation-edit-2pages",
+  "finalPptx": "C:\\Users\\user\\PycharmProjects\\jig-record\\artifacts\\Fixture-M_Lite_治具系統改善簡報_2頁版.pptx",
+  "starterPptx": "C:\\Users\\user\\PycharmProjects\\jig-record\\artifacts\\.presentation-edit-2pages\\template-starter.pptx",
+  "mapPath": "C:\\Users\\user\\PycharmProjects\\jig-record\\artifacts\\.presentation-edit-2pages\\template-frame-map.json",
+  "starterLayoutDir": "C:\\Users\\user\\PycharmProjects\\jig-record\\artifacts\\.presentation-edit-2pages\\template-starter-layout",
+  "finalLayoutDir": "C:\\Users\\user\\PycharmProjects\\jig-record\\artifacts\\.presentation-edit-2pages\\final-layout\\final",
+  "editDir": "C:\\Users\\user\\PycharmProjects\\jig-record\\artifacts\\.presentation-edit-2pages",
+  "issueCount": 0,
+  "issues": []
+}

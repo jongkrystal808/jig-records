@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from sqlalchemy.exc import IntegrityError
@@ -21,8 +22,21 @@ from backend.app.schemas.master import (
     StationDeleteRead,
     StationUpdate,
 )
-from backend.app.utils.csv_tools import parse_csv_bytes, render_csv_text
-from backend.app.utils.fixture_images import rename_fixture_image, resolve_fixture_image_path, save_fixture_image
+from backend.app.utils.csv_tools import parse_csv_bytes, render_csv_text, stream_csv_text
+from backend.app.utils.fixture_images import (
+    delete_fixture_image,
+    delete_legacy_fixture_image,
+    list_fixture_image_codes,
+    list_legacy_fixture_image_codes,
+    rename_fixture_image,
+    resolve_fixture_image_path,
+    resolve_legacy_fixture_image_path,
+    rollback_fixture_image_rename,
+    save_fixture_image,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_bool(value: str, *, default: bool = True) -> bool:
@@ -42,6 +56,17 @@ class MasterService:
     def _sync_fixture_stock_status(self, fixture_id: int, min_stock_qty: int) -> None:
         summary = self.inventory_repo.get_or_create_stock_summary(fixture_id)
         self.inventory_repo.set_stock_status(summary, min_stock_qty, touch_last_transaction=False)
+
+    def _resolve_fixture_image(self, fixture, *, legacy_unique_codes: set[str] | None = None) -> Path | None:
+        image_path = resolve_fixture_image_path(fixture.customer_id, fixture.code)
+        if image_path is not None:
+            return image_path
+        legacy_is_safe = (
+            fixture.code in legacy_unique_codes
+            if legacy_unique_codes is not None
+            else self.repo.is_fixture_code_globally_unique(fixture.code)
+        )
+        return resolve_legacy_fixture_image_path(fixture.code) if legacy_is_safe else None
 
     @staticmethod
     def _normalize_storage_location(value: str | None) -> str | None:
@@ -170,6 +195,11 @@ class MasterService:
                 department_storage_location=department_storage_location,
                 description=payload.description,
             )
+            from backend.app.services.storage_service import StorageService
+
+            StorageService(self.db).sync_fixture_storage_fields(
+                fixture, line_storage_location, department_storage_location
+            )
             level = self.repo.get_or_create_stock_level(fixture.id)
             if payload.min_stock_qty is not None:
                 level.min_stock_qty = payload.min_stock_qty
@@ -192,13 +222,61 @@ class MasterService:
     def list_fixtures(self, customer_id: int | None = None):
         fixtures = self.repo.list_fixtures(customer_id=customer_id)
         stock_levels = self.repo.list_stock_levels([fixture.id for fixture in fixtures])
+        legacy_unique_codes = self.repo.list_globally_unique_fixture_codes([fixture.code for fixture in fixtures])
         return [
             self._serialize_fixture(
                 fixture,
                 0 if (level := stock_levels.get(fixture.id)) is None else level.min_stock_qty,
+                legacy_unique_codes=legacy_unique_codes,
             )
             for fixture in fixtures
         ]
+
+    def _fixture_image_codes(self, customer_id: int) -> set[str]:
+        scoped_codes = list_fixture_image_codes(customer_id)
+        legacy_codes = list_legacy_fixture_image_codes()
+        safe_legacy_codes = self.repo.list_globally_unique_fixture_codes(list(legacy_codes))
+        return scoped_codes | safe_legacy_codes
+
+    def list_fixtures_page(
+        self,
+        *,
+        customer_id: int,
+        page: int,
+        page_size: int,
+        keyword: str = "",
+        is_active: bool | None = None,
+        image_status: str = "all",
+    ) -> dict:
+        image_codes = None
+        has_image = None
+        if image_status != "all":
+            image_codes = self._fixture_image_codes(customer_id)
+            has_image = image_status == "with-image"
+        fixtures, total = self.repo.list_fixtures_page(
+            customer_id=customer_id,
+            page=page,
+            page_size=page_size,
+            keyword=keyword,
+            is_active=is_active,
+            image_codes=image_codes,
+            has_image=has_image,
+        )
+        levels = self.repo.list_stock_levels([fixture.id for fixture in fixtures])
+        unique_codes = self.repo.list_globally_unique_fixture_codes([fixture.code for fixture in fixtures])
+        return {
+            "items": [
+                self._serialize_fixture(
+                    fixture,
+                    0 if (level := levels.get(fixture.id)) is None else level.min_stock_qty,
+                    legacy_unique_codes=unique_codes,
+                )
+                for fixture in fixtures
+            ],
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+        }
 
     def build_fixture_quality_report(self, customer_id: int) -> FixtureQualityReportRead:
         fixtures = [fixture for fixture in self.repo.list_fixtures(customer_id=customer_id) if fixture.is_active]
@@ -207,6 +285,7 @@ class MasterService:
         stock_summary_by_fixture = self.inventory_repo.list_stock_summary_rows(customer_id=customer_id)
         identifier_stock_rows = self.inventory_repo.list_identifier_stock_summary_rows(customer_id=customer_id)
         related_model_count_by_fixture = self.repo.count_related_models_by_fixture(fixture_ids)
+        legacy_unique_codes = self.repo.list_globally_unique_fixture_codes([fixture.code for fixture in fixtures])
 
         stock_qty_by_fixture = {int(row["fixture_id"]): int(row["stock_qty"] or 0) for row in stock_summary_by_fixture}
         identifier_stock_qty_by_fixture: dict[int, int] = {}
@@ -230,7 +309,7 @@ class MasterService:
             stock_qty = stock_qty_by_fixture.get(fixture.id, 0)
             identifier_stock_qty = identifier_stock_qty_by_fixture.get(fixture.id, 0)
             related_model_count = related_model_count_by_fixture.get(fixture.id, 0)
-            has_image = resolve_fixture_image_path(fixture.code) is not None
+            has_image = self._resolve_fixture_image(fixture, legacy_unique_codes=legacy_unique_codes) is not None
 
             issue_codes: list[str] = []
             if not fixture_name:
@@ -287,6 +366,18 @@ class MasterService:
         level = self.repo.get_stock_level(fixture.id)
         return self._serialize_fixture(fixture, 0 if level is None else level.min_stock_qty)
 
+    def get_fixture_customer_id(self, fixture_id: int) -> int:
+        fixture = self.repo.get_fixture(fixture_id)
+        if fixture is None:
+            raise ValueError(f"fixture {fixture_id} not found")
+        return fixture.customer_id
+
+    def get_fixture_image_path(self, fixture_code: str, *, customer_id: int) -> Path | None:
+        fixture = self.repo.get_fixture_by_code(fixture_code, customer_id=customer_id)
+        if fixture is None:
+            return None
+        return self._resolve_fixture_image(fixture)
+
     def update_fixture(self, fixture_id: int, payload: FixtureUpdate, actor: SessionContext | None = None):
         fixture = self.repo.get_fixture(fixture_id)
         if fixture is None:
@@ -304,7 +395,10 @@ class MasterService:
             payload.line_storage_location,
             payload.department_storage_location,
         )
+        before_customer_id = fixture.customer_id
         before_code = fixture.code
+        legacy_source_is_safe = self.repo.is_fixture_code_globally_unique(before_code)
+        image_rename = None
         try:
             fixture = self.repo.update_fixture(
                 fixture,
@@ -317,7 +411,21 @@ class MasterService:
                 description=payload.description,
                 is_active=payload.is_active,
             )
-            rename_fixture_image(before_code, fixture.code)
+            from backend.app.repositories.storage_repository import StorageRepository
+            from backend.app.services.storage_service import StorageService
+
+            if before_customer_id != fixture.customer_id:
+                StorageRepository(self.db).clear_placements(fixture.id)
+            StorageService(self.db).sync_fixture_storage_fields(
+                fixture, line_storage_location, department_storage_location
+            )
+            image_rename = rename_fixture_image(
+                before_customer_id,
+                before_code,
+                fixture.customer_id,
+                fixture.code,
+                allow_legacy_source=legacy_source_is_safe,
+            )
             level = self.repo.get_or_create_stock_level(fixture.id)
             if payload.min_stock_qty is not None:
                 level.min_stock_qty = payload.min_stock_qty
@@ -331,11 +439,17 @@ class MasterService:
                 actor=actor,
             )
             self.db.commit()
+            image_rename = None
             self.db.refresh(fixture)
             return self._serialize_fixture(fixture, level.min_stock_qty)
         except IntegrityError as exc:
             self.db.rollback()
+            rollback_fixture_image_rename(image_rename)
             raise ValueError("fixture code already exists within customer") from exc
+        except Exception:
+            self.db.rollback()
+            rollback_fixture_image_rename(image_rename)
+            raise
 
     def upload_fixture_image(
         self,
@@ -355,7 +469,9 @@ class MasterService:
         if len(content) > 5 * 1024 * 1024:
             raise ValueError("fixture image exceeds 5 MB limit")
         try:
-            save_fixture_image(fixture.code, content, content_type=content_type, filename=filename)
+            save_fixture_image(customer_id, fixture.code, content, content_type=content_type, filename=filename)
+            if self.repo.is_fixture_code_globally_unique(fixture.code):
+                delete_legacy_fixture_image(fixture.code)
             self.audit.record(
                 customer_id=customer_id,
                 entity_type="fixture",
@@ -416,7 +532,9 @@ class MasterService:
                 continue
 
             try:
-                save_fixture_image(fixture.code, content, content_type=content_type, filename=filename)
+                save_fixture_image(customer_id, fixture.code, content, content_type=content_type, filename=filename)
+                if self.repo.is_fixture_code_globally_unique(fixture.code):
+                    delete_legacy_fixture_image(fixture.code)
             except ValueError as exc:
                 results.append({"file_name": filename, "fixture_code": fixture.code, "fixture_id": fixture.id, "success": False, "message": str(exc)})
                 continue
@@ -473,6 +591,19 @@ class MasterService:
                 actor=actor,
             )
             self.db.commit()
+            try:
+                delete_fixture_image(customer_id, fixture_code)
+                # A flat legacy file is either this unique fixture's old image or ambiguous
+                # shared state. Removing it prevents a duplicate code from becoming a false
+                # match after one of the fixtures is deleted.
+                delete_legacy_fixture_image(fixture_code)
+            except OSError:
+                logger.warning(
+                    "Failed to clean up fixture image after deleting fixture %s for customer %s",
+                    fixture_code,
+                    customer_id,
+                    exc_info=True,
+                )
             return {
                 "fixture_id": fixture_id,
                 "fixture_code": fixture_code,
@@ -510,6 +641,10 @@ class MasterService:
 
     def list_models(self, customer_id: int | None = None):
         return self.repo.list_models(customer_id=customer_id)
+
+    def list_models_page(self, *, customer_id: int, page: int, page_size: int, keyword: str = "", is_active: bool | None = None) -> dict:
+        items, total = self.repo.list_models_page(customer_id=customer_id, page=page, page_size=page_size, keyword=keyword, is_active=is_active)
+        return {"items": items, "page": page, "page_size": page_size, "total": total}
 
     def get_model_detail(self, model_id: int, customer_id: int | None = None):
         model = self.repo.get_model(model_id, customer_id=customer_id)
@@ -612,6 +747,10 @@ class MasterService:
     def list_stations(self, customer_id: int | None = None):
         return self.repo.list_stations(customer_id=customer_id)
 
+    def list_stations_page(self, *, customer_id: int, page: int, page_size: int, keyword: str = "", is_active: bool | None = None) -> dict:
+        items, total = self.repo.list_stations_page(customer_id=customer_id, page=page, page_size=page_size, keyword=keyword, is_active=is_active)
+        return {"items": items, "page": page, "page_size": page_size, "total": total}
+
     def update_station(self, station_id: int, payload: StationUpdate, actor: SessionContext | None = None):
         customer = self.repo.get_customer(payload.customer_id)
         if customer is None:
@@ -699,6 +838,84 @@ class MasterService:
             rows,
         )
 
+    def stream_form_export_csv(
+        self,
+        *,
+        entity: str,
+        customer_id: int | None = None,
+        keyword: str = "",
+        is_active: bool | None = None,
+        image_status: str = "all",
+        accessible_customer_ids: list[int] | None = None,
+    ):
+        if entity in {"fixture", "fixture-images"}:
+            if customer_id is None:
+                raise ValueError("customer_id is required")
+            image_codes = self._fixture_image_codes(customer_id) if entity == "fixture-images" else None
+            has_image = None if image_status == "all" else image_status == "with-image"
+            source = self.repo.iter_fixture_export_rows(
+                customer_id=customer_id,
+                keyword=keyword,
+                is_active=is_active if entity == "fixture" else None,
+                image_codes=image_codes,
+                has_image=has_image,
+            )
+            if entity == "fixture-images":
+                normalized_image_codes = {code.lower() for code in image_codes or set()}
+                rows = (
+                    {
+                        "治具編號": row["code"],
+                        "治具名稱": row["name"],
+                        "圖片狀態": "已有圖片" if row["code"].lower() in normalized_image_codes else "尚無圖片",
+                    }
+                    for row in source
+                )
+                return stream_csv_text(["治具編號", "治具名稱", "圖片狀態"], rows)
+            rows = (
+                {
+                    "治具編號": row["code"],
+                    "治具名稱": row["name"],
+                    "產線儲位": row["line_storage_location"] or "",
+                    "部門儲位": row["department_storage_location"] or "",
+                    "最低水位": row["min_stock_qty"],
+                    "狀態": "啟用" if row["is_active"] else "停用",
+                }
+                for row in source
+            )
+            return stream_csv_text(
+                ["治具編號", "治具名稱", "產線儲位", "部門儲位", "最低水位", "狀態"],
+                rows,
+            )
+        if entity == "model":
+            if customer_id is None:
+                raise ValueError("customer_id is required")
+            source = self.repo.iter_models(
+                customer_id=customer_id,
+                keyword=keyword,
+                is_active=is_active,
+            )
+        elif entity == "station":
+            if customer_id is None:
+                raise ValueError("customer_id is required")
+            source = self.repo.iter_stations(
+                customer_id=customer_id,
+                keyword=keyword,
+                is_active=is_active,
+            )
+        elif entity == "customer":
+            source = self.repo.iter_customers(keyword=keyword, customer_ids=accessible_customer_ids)
+        else:
+            raise ValueError(f"unsupported form export entity: {entity}")
+        rows = (
+            {
+                "編號": row.code,
+                "名稱": row.name,
+                "狀態": "啟用" if getattr(row, "is_active", None) else ("停用" if hasattr(row, "is_active") else "—"),
+            }
+            for row in source
+        )
+        return stream_csv_text(["編號", "名稱", "狀態"], rows)
+
     def fixture_template_csv(self) -> str:
         return render_csv_text(
             ["code", "name", "line_storage_location", "department_storage_location", "min_stock_qty", "description", "is_active"],
@@ -760,6 +977,11 @@ class MasterService:
                     description=description,
                     is_active=is_active,
                 )
+            from backend.app.services.storage_service import StorageService
+
+            StorageService(self.db).sync_fixture_storage_fields(
+                fixture, line_storage_location, department_storage_location
+            )
             level = self.repo.get_or_create_stock_level(fixture.id)
             level.min_stock_qty = min_stock_qty
             fixture.is_active = is_active
@@ -866,7 +1088,13 @@ class MasterService:
         self.db.commit()
         return imported_count
 
-    def _serialize_fixture(self, fixture, min_stock_qty: int) -> dict:
+    def _serialize_fixture(
+        self,
+        fixture,
+        min_stock_qty: int,
+        *,
+        legacy_unique_codes: set[str] | None = None,
+    ) -> dict:
         line_storage_location, department_storage_location, _ = self._read_storage_fields(fixture)
         return {
             "id": fixture.id,
@@ -879,7 +1107,7 @@ class MasterService:
             "min_stock_qty": min_stock_qty,
             "description": fixture.description,
             "is_active": fixture.is_active,
-            "has_image": resolve_fixture_image_path(fixture.code) is not None,
+            "has_image": self._resolve_fixture_image(fixture, legacy_unique_codes=legacy_unique_codes) is not None,
             "created_at": fixture.created_at,
             "updated_at": fixture.updated_at,
         }

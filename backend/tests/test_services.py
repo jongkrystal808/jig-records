@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -29,6 +30,8 @@ from backend.app.services.auth_service import AuthService
 from backend.app.services.inventory_service import DuplicateTransactionError, InventoryService
 from backend.app.services.master_service import MasterService
 from backend.app.services.production_service import ProductionService
+from backend.app.services.search_service import SearchService
+from backend.app.utils.fixture_images import resolve_fixture_image_path, save_fixture_image
 
 
 class ServiceTestCase(unittest.TestCase):
@@ -102,7 +105,7 @@ class AuthServiceTests(ServiceTestCase):
                 email="alice@example.com",
                 password="secret123",
                 display_name="Alice",
-                role="manager",
+                role="user",
                 is_active=True,
                 allowed_customer_ids=[customer.id],
             )
@@ -113,6 +116,10 @@ class AuthServiceTests(ServiceTestCase):
         self.assertEqual(logged_in.display_name, "Alice")
         self.assertEqual(created["email"], "alice@example.com")
         self.assertEqual(created["allowed_customer_ids"], [customer.id])
+        self.assertEqual(
+            created["allowed_customers"],
+            [{"id": customer.id, "code": "C-001", "name": "Customer 1"}],
+        )
 
         audit_log = self.db.scalar(select(AuditLog).where(AuditLog.entity_type == "user"))
         self.assertIsNotNone(audit_log)
@@ -136,6 +143,8 @@ class AuthServiceTests(ServiceTestCase):
         self.assertEqual(created["allowed_customer_ids"], [])
 
     def test_update_user_email(self) -> None:
+        customer = self.repo.create_customer(code="C-002", name="Customer 2")
+        self.db.commit()
         created = self.auth_service.create_user(
             UserCreate(
                 username="carol",
@@ -144,7 +153,7 @@ class AuthServiceTests(ServiceTestCase):
                 display_name="Carol",
                 role="user",
                 is_active=True,
-                allowed_customer_ids=[],
+                allowed_customer_ids=[customer.id],
             )
         )
 
@@ -155,16 +164,68 @@ class AuthServiceTests(ServiceTestCase):
                 display_name="Carol Chen",
                 role="user",
                 is_active=True,
-                allowed_customer_ids=[],
             ),
         )
 
         self.assertEqual(updated["email"], "carol@example.com")
         self.assertEqual(updated["display_name"], "Carol Chen")
+        self.assertEqual(updated["allowed_customer_ids"], [customer.id])
 
-    def test_guest_cannot_write_and_admin_can_manage(self) -> None:
+    def test_admin_customer_assignment_is_not_discarded(self) -> None:
+        customer = self.repo.create_customer(code="C-003", name="Customer 3")
+        self.db.commit()
+
+        created = self.auth_service.create_user(
+            UserCreate(
+                username="scoped-admin",
+                email=None,
+                password="secret123",
+                display_name="Scoped Admin",
+                role="admin",
+                is_active=True,
+                allowed_customer_ids=[customer.id],
+            )
+        )
+
+        self.assertEqual(created["allowed_customer_ids"], [customer.id])
+
+    def test_last_active_super_admin_cannot_be_demoted(self) -> None:
+        first = self.auth_service.create_user(
+            UserCreate(
+                username="root-one",
+                password="secret123",
+                display_name="Root One",
+                role="super_admin",
+                is_active=True,
+                allowed_customer_ids=[],
+            )
+        )
+        with self.assertRaisesRegex(ValueError, "至少必須保留一位"):
+            self.auth_service.update_user(
+                first["id"],
+                UserUpdate(display_name="Root One", role="admin", is_active=True),
+            )
+
+        self.auth_service.create_user(
+            UserCreate(
+                username="root-two",
+                password="secret123",
+                display_name="Root Two",
+                role="super_admin",
+                is_active=True,
+                allowed_customer_ids=[],
+            )
+        )
+        updated = self.auth_service.update_user(
+            first["id"],
+            UserUpdate(display_name="Root One", role="admin", is_active=True),
+        )
+        self.assertEqual(updated["role"], "admin")
+
+    def test_role_permissions_distinguish_admin_and_super_admin_management(self) -> None:
         write_guard = require_permission("write")
         manage_guard = require_permission("manage")
+        super_manage_guard = require_permission("super_manage")
 
         with self.assertRaises(HTTPException) as write_exc:
             write_guard(
@@ -179,6 +240,21 @@ class AuthServiceTests(ServiceTestCase):
                 )
             )
         self.assertEqual(write_exc.exception.status_code, 403)
+
+        for illegal_role in ("guest", "manager"):
+            with self.subTest(illegal_role=illegal_role), self.assertRaises(HTTPException) as illegal_role_exc:
+                write_guard(
+                    session=SessionContext(
+                        mode="user",
+                        user_id=2,
+                        username="invalid-role-user",
+                        display_name="Invalid Role User",
+                        role=illegal_role,
+                        issued_at=0,
+                        expires_at=9999999999,
+                    )
+                )
+            self.assertEqual(illegal_role_exc.exception.status_code, 403)
 
         with self.assertRaises(HTTPException) as manage_exc:
             manage_guard(
@@ -207,8 +283,193 @@ class AuthServiceTests(ServiceTestCase):
         )
         self.assertEqual(allowed.role, "admin")
 
+        with self.assertRaises(HTTPException) as super_manage_exc:
+            super_manage_guard(session=allowed)
+        self.assertEqual(super_manage_exc.exception.status_code, 403)
+
+        super_admin = SessionContext(
+            mode="user",
+            user_id=3,
+            username="root-admin",
+            display_name="Root Admin",
+            role="super_admin",
+            issued_at=0,
+            expires_at=9999999999,
+        )
+        self.assertEqual(write_guard(session=super_admin).role, "super_admin")
+        self.assertEqual(manage_guard(session=super_admin).role, "super_admin")
+        self.assertEqual(super_manage_guard(session=super_admin).role, "super_admin")
+
+
+class SearchServiceTests(ServiceTestCase):
+    def test_fixture_and_identifier_search_modes_do_not_override_each_other(self) -> None:
+        bundle = self.seed_customer_bundle()
+        direct_fixture = self.repo.create_fixture(
+            customer_id=bundle["customer"].id,
+            responsible_user_id=None,
+            code="2204",
+            name="Fixture code 2204",
+            line_storage_location=None,
+            department_storage_location=None,
+            description=None,
+        )
+        self.db.add(
+            FixtureStockSummary(
+                fixture_id=direct_fixture.id,
+                stock_qty=3,
+                returned_qty=0,
+                stock_status="normal",
+            )
+        )
+        transaction = MaterialTransaction(
+            customer_id=bundle["customer"].id,
+            transaction_type="receipt",
+            transaction_no="SEARCH-IDENTIFIER-001",
+            occurred_at=datetime.now(timezone.utc),
+            created_by="Search Test",
+            note=None,
+        )
+        transaction.items.append(
+            MaterialTransactionItem(
+                fixture_id=bundle["fixture_b"].id,
+                ownership_type="customer_supplied",
+                identifier="2204",
+                quantity=1,
+                note=None,
+            )
+        )
+        self.db.add(transaction)
+        self.db.commit()
+
+        service = SearchService(self.db)
+        fixture_result = service.global_search(
+            "2204",
+            customer_id=bundle["customer"].id,
+            entity_type="fixture",
+            fixture_search_mode="fixture",
+        )
+        identifier_result = service.global_search(
+            "2204",
+            customer_id=bundle["customer"].id,
+            entity_type="fixture",
+            fixture_search_mode="identifier",
+        )
+
+        self.assertEqual([row["reference_id"] for row in fixture_result["items"]], [direct_fixture.id])
+        self.assertEqual(fixture_result["items"][0]["matched_identifier"], None)
+        self.assertEqual([row["reference_id"] for row in identifier_result["items"]], [bundle["fixture_b"].id])
+        self.assertEqual(identifier_result["items"][0]["matched_identifier"], "2204")
+
 
 class MasterServiceTests(ServiceTestCase):
+    def test_fixture_code_uniqueness_lookup_is_case_insensitive(self) -> None:
+        customer_a = self.repo.create_customer(code="C-UNIQUE-A", name="Unique Customer A")
+        customer_b = self.repo.create_customer(code="C-UNIQUE-B", name="Unique Customer B")
+        self.repo.create_fixture(
+            customer_id=customer_a.id,
+            responsible_user_id=None,
+            code="ONLY-ONE",
+            name="Unique Fixture",
+            description=None,
+        )
+        self.repo.create_fixture(
+            customer_id=customer_a.id,
+            responsible_user_id=None,
+            code="SHARED",
+            name="Shared Fixture A",
+            description=None,
+        )
+        self.repo.create_fixture(
+            customer_id=customer_b.id,
+            responsible_user_id=None,
+            code="shared",
+            name="Shared Fixture B",
+            description=None,
+        )
+        self.db.commit()
+
+        result = self.master_service.repo.list_globally_unique_fixture_codes(
+            ["ONLY-ONE", "SHARED"]
+        )
+
+        self.assertEqual(result, {"ONLY-ONE"})
+
+    def test_legacy_flat_image_is_not_shared_when_fixture_code_is_duplicated(self) -> None:
+        original_image_dir = settings.fixture_image_dir
+        with tempfile.TemporaryDirectory() as image_dir:
+            object.__setattr__(settings, "fixture_image_dir", image_dir)
+            try:
+                customer_a = self.repo.create_customer(code="C-IMG-A", name="Image Customer A")
+                customer_b = self.repo.create_customer(code="C-IMG-B", name="Image Customer B")
+                fixture_a = self.repo.create_fixture(
+                    customer_id=customer_a.id,
+                    responsible_user_id=None,
+                    code="SHARED",
+                    name="Fixture A",
+                    description=None,
+                )
+                self.repo.create_fixture(
+                    customer_id=customer_b.id,
+                    responsible_user_id=None,
+                    code="SHARED",
+                    name="Fixture B",
+                    description=None,
+                )
+                self.db.commit()
+                Path(image_dir, "SHARED.png").write_bytes(b"legacy")
+
+                self.assertIsNone(
+                    self.master_service.get_fixture_image_path("SHARED", customer_id=customer_a.id)
+                )
+                self.assertIsNone(
+                    self.master_service.get_fixture_image_path("SHARED", customer_id=customer_b.id)
+                )
+                self.master_service.delete_fixture(
+                    fixture_a.id,
+                    customer_id=customer_a.id,
+                    delete_transactions=False,
+                )
+                self.assertFalse(Path(image_dir, "SHARED.png").exists())
+                self.assertIsNone(
+                    self.master_service.get_fixture_image_path("SHARED", customer_id=customer_b.id)
+                )
+            finally:
+                object.__setattr__(settings, "fixture_image_dir", original_image_dir)
+
+    def test_fixture_image_rename_is_rolled_back_when_database_commit_fails(self) -> None:
+        original_image_dir = settings.fixture_image_dir
+        with tempfile.TemporaryDirectory() as image_dir:
+            object.__setattr__(settings, "fixture_image_dir", image_dir)
+            try:
+                customer = self.repo.create_customer(code="C-IMG", name="Image Customer")
+                fixture = self.repo.create_fixture(
+                    customer_id=customer.id,
+                    responsible_user_id=None,
+                    code="FX-OLD",
+                    name="Fixture Image",
+                    description=None,
+                )
+                self.db.commit()
+                save_fixture_image(customer.id, fixture.code, b"image", content_type="image/png")
+
+                with patch.object(self.db, "commit", side_effect=RuntimeError("commit failed")):
+                    with self.assertRaisesRegex(RuntimeError, "commit failed"):
+                        self.master_service.update_fixture(
+                            fixture.id,
+                            FixtureUpdate(
+                                customer_id=customer.id,
+                                code="FX-NEW",
+                                name="Fixture Image",
+                                is_active=True,
+                            ),
+                        )
+
+                self.assertIsNotNone(resolve_fixture_image_path(customer.id, "FX-OLD"))
+                self.assertIsNone(resolve_fixture_image_path(customer.id, "FX-NEW"))
+                self.assertEqual(self.repo.get_fixture(fixture.id).code, "FX-OLD")
+            finally:
+                object.__setattr__(settings, "fixture_image_dir", original_image_dir)
+
     def test_fixture_department_storage_location_is_preserved_when_line_is_empty(self) -> None:
         customer = self.repo.create_customer(code="C-DEP", name="Department Storage Customer")
         self.db.commit()
@@ -617,6 +878,89 @@ class ApiErrorFormatTests(unittest.TestCase):
 
 
 class ProductionServiceTests(ServiceTestCase):
+    def test_designated_requirement_uses_only_selected_identifier_stock(self) -> None:
+        bundle = self.seed_customer_bundle()
+        self.inventory_service.receipt(
+            StockTransactionCreate(
+                customer_id=bundle["customer"].id,
+                created_by="Admin",
+                transaction_no="DESIGNATED-001",
+                items=[
+                    {
+                        "fixture_id": bundle["fixture_a"].id,
+                        "ownership_type": "self_purchased",
+                        "identifier": "1",
+                        "quantity": 3,
+                    },
+                    {
+                        "fixture_id": bundle["fixture_a"].id,
+                        "ownership_type": "self_purchased",
+                        "identifier": "2",
+                        "quantity": 8,
+                    },
+                ],
+            )
+        )
+
+        requirement = self.production_service.create_fixture_requirement(
+            FixtureRequirementCreate(
+                customer_id=bundle["customer"].id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+                fixture_id=bundle["fixture_a"].id,
+                required_qty=2,
+                designated_mode=True,
+                designated_identifiers=["1"],
+            )
+        )
+
+        self.assertTrue(requirement.designated_mode)
+        self.assertEqual(requirement.designated_identifiers, ["0001"])
+        capacity = self.production_service.get_station_capacity(
+            bundle["station"].id,
+            bundle["model"].id,
+            bundle["customer"].id,
+        )
+        self.assertEqual(capacity["max_open_station_count"], 1)
+        listed = self.production_service.list_fixture_requirements(bundle["customer"].id)
+        self.assertEqual(listed[0]["designated_identifiers"], ["0001"])
+        model_query = self.production_service.get_model_query(
+            bundle["model"].id,
+            customer_id=bundle["customer"].id,
+        )
+        query_requirement = model_query["station_requirements"][0]
+        self.assertTrue(query_requirement["designated_mode"])
+        self.assertEqual(query_requirement["designated_identifiers"], ["0001"])
+        self.assertEqual(query_requirement["stock_qty"], 3)
+        self.assertEqual(query_requirement["max_open_station_count"], 1)
+
+        preserved = self.production_service.update_fixture_requirement(
+            requirement.id,
+            FixtureRequirementCreate(
+                customer_id=bundle["customer"].id,
+                model_id=bundle["model"].id,
+                station_id=bundle["station"].id,
+                fixture_id=bundle["fixture_a"].id,
+                required_qty=3,
+            ),
+        )
+        self.assertTrue(preserved.designated_mode)
+        self.assertEqual(preserved.designated_identifiers, ["0001"])
+
+        with self.assertRaisesRegex(ValueError, "無可用庫存"):
+            self.production_service.update_fixture_requirement(
+                requirement.id,
+                FixtureRequirementCreate(
+                    customer_id=bundle["customer"].id,
+                    model_id=bundle["model"].id,
+                    station_id=bundle["station"].id,
+                    fixture_id=bundle["fixture_a"].id,
+                    required_qty=2,
+                    designated_mode=True,
+                    designated_identifiers=["9999"],
+                ),
+            )
+
     def test_fixture_code_is_unique_per_customer(self) -> None:
         customer_a = self.repo.create_customer(code="C-001", name="Customer 1")
         customer_b = self.repo.create_customer(code="C-002", name="Customer 2")
@@ -1117,6 +1461,73 @@ class InventoryServiceTests(ServiceTestCase):
         self.assertEqual(identifier_row["stock_qty"], 9)
         self.assertEqual(identifier_row["customer_supplied_qty"], 3)
         self.assertEqual(identifier_row["self_purchased_qty"], 6)
+
+    def test_return_rejects_quantity_from_a_different_ownership_type(self) -> None:
+        bundle = self.seed_customer_bundle()
+        fixture_id = bundle["fixture_a"].id
+        summary = self.db.get(FixtureStockSummary, fixture_id)
+        self.assertIsNotNone(summary)
+        summary.stock_qty = 0
+        self.db.commit()
+
+        self.inventory_service.receipt(
+            StockTransactionCreate(
+                customer_id=bundle["customer"].id,
+                created_by="Tester",
+                transaction_no="OWNERSHIP-CUSTOMER-RECEIPT-001",
+                items=[
+                    {
+                        "fixture_id": fixture_id,
+                        "ownership_type": "customer_supplied",
+                        "identifier": "2606",
+                        "quantity": 5,
+                    }
+                ],
+            )
+        )
+
+        with self.assertRaises(ValueError) as exc:
+            self.inventory_service.return_material(
+                StockTransactionCreate(
+                    customer_id=bundle["customer"].id,
+                    created_by="Tester",
+                    transaction_no="OWNERSHIP-SELF-RETURN-001",
+                    items=[
+                        {
+                            "fixture_id": fixture_id,
+                            "ownership_type": "self_purchased",
+                            "identifier": "2606",
+                            "quantity": 3,
+                        }
+                    ],
+                )
+            )
+
+        self.assertEqual(str(exc.exception), "第 1 筆：治具 FX-A 的識別碼 2606 不在目前庫存中")
+        return_count = self.db.scalar(
+            select(func.count())
+            .select_from(MaterialTransaction)
+            .where(MaterialTransaction.transaction_type == "return")
+        )
+        self.assertEqual(return_count, 0)
+
+        stock_row = next(
+            row
+            for row in self.inventory_service.list_stock_summary(bundle["customer"].id)
+            if row["fixture_id"] == fixture_id
+        )
+        self.assertEqual(stock_row["customer_supplied_qty"], 5)
+        self.assertEqual(stock_row["self_purchased_qty"], 0)
+        self.assertEqual(stock_row["stock_qty"], 5)
+
+        identifier_row = next(
+            row
+            for row in self.inventory_service.list_identifier_stock_summary(bundle["customer"].id)
+            if row["fixture_id"] == fixture_id and row["identifier"] == "2606"
+        )
+        self.assertEqual(identifier_row["customer_supplied_qty"], 5)
+        self.assertEqual(identifier_row["self_purchased_qty"], 0)
+        self.assertEqual(identifier_row["stock_qty"], 5)
 
     def test_duplicate_transaction_guard_blocks_recent_identical_submission(self) -> None:
         bundle = self.seed_customer_bundle()

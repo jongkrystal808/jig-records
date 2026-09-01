@@ -1,7 +1,10 @@
+// @vitest-environment jsdom
+
 import { computed, nextTick, ref } from "vue";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { useProductionEditorState } from "@/composables/useProductionEditorState";
+import { toasts } from "@/toastState";
 import type { Fixture, MachineModel, Station } from "@/types";
 
 function createEditorState() {
@@ -49,6 +52,10 @@ function createEditorState() {
 }
 
 describe("useProductionEditorState dirty tracking", () => {
+  afterEach(() => {
+    toasts.value = [];
+  });
+
   it("does not treat inherited model or station context as a user edit", async () => {
     const { state, selectedModelId, selectedStationId } = createEditorState();
     state.updateModelId(1);
@@ -79,5 +86,29 @@ describe("useProductionEditorState dirty tracking", () => {
     state.resetMappingEditorWithoutPrompt();
     state.handleFixtureInput("FX-01");
     expect(state.hasUnsavedRequirementChanges.value).toBe(true);
+  });
+
+  it("uses the shared production validation before saving a requirement", () => {
+    const { state } = createEditorState();
+    state.handleRequirementStationInput("ST-01");
+    state.handleFixtureInput("FX-01");
+    state.updateRequiredQty(0);
+
+    expect(state.ensureRequirementSelections()).toBe(false);
+    expect(toasts.value.at(-1)).toMatchObject({ message: "需求數量必須大於 0。", tone: "warning" });
+  });
+
+  it("requires at least one identifier when designated mode is enabled", () => {
+    const { state } = createEditorState();
+    state.handleRequirementStationInput("ST-01");
+    state.handleFixtureInput("FX-01");
+    state.updateRequiredQty(1);
+    state.updateDesignatedMode(true);
+
+    expect(state.ensureRequirementSelections()).toBe(false);
+    expect(toasts.value.at(-1)).toMatchObject({
+      message: "指定模式至少需要選擇一個有庫存的 identifier。",
+      tone: "warning"
+    });
   });
 });

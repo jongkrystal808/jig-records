@@ -3,11 +3,13 @@ from typing import Literal
 from sqlalchemy import and_, case, func, literal, or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.models.inventory import FixtureStockSummary
+from backend.app.models.inventory import FixtureStockSummary, MaterialTransaction, MaterialTransactionItem
 from backend.app.models.master import Fixture, MachineModel, Station
+from backend.app.utils.identifier_rules import resolve_identifier_query
 
 
 SearchEntityType = Literal["fixture", "model", "station"]
+FixtureSearchMode = Literal["fixture", "identifier"]
 
 
 class SearchRepository:
@@ -46,8 +48,37 @@ class SearchRepository:
             else_=None,
         )
 
-    def search_fixtures(self, q: str, *, customer_id: int | None = None, limit: int = 20, offset: int = 0) -> tuple[list[dict], int]:
+    def search_fixtures(
+        self,
+        q: str,
+        *,
+        customer_id: int | None = None,
+        limit: int = 20,
+        offset: int = 0,
+        fixture_search_mode: FixtureSearchMode = "fixture",
+    ) -> tuple[list[dict], int]:
         normalized, prefix_pattern, contains_pattern = self._normalized_query(q)
+        identifier_candidates, _ = resolve_identifier_query(q)
+        identifier_fixture_ids = None
+        if identifier_candidates:
+            normalized_identifiers = [candidate.lower() for candidate in identifier_candidates]
+            identifier_fixture_ids = (
+                select(MaterialTransactionItem.fixture_id)
+                .join(
+                    MaterialTransaction,
+                    MaterialTransaction.id == MaterialTransactionItem.transaction_id,
+                )
+                .where(
+                    MaterialTransactionItem.fixture_id.is_not(None),
+                    func.lower(func.trim(MaterialTransactionItem.identifier)).in_(normalized_identifiers),
+                )
+                .distinct()
+            )
+            if customer_id is not None:
+                identifier_fixture_ids = identifier_fixture_ids.where(
+                    MaterialTransaction.customer_id == customer_id
+                )
+
         compact_query = self._compact_code_token(q)
         compact_prefix_pattern = f"{compact_query}%"
         compact_contains_pattern = f"%{compact_query}%"
@@ -81,7 +112,14 @@ class SearchRepository:
         ]
         if compact_query:
             conditions.insert(0, compact_code_expr.like(compact_contains_pattern))
-        where_clause = or_(*conditions)
+        # Fixture and identifier lookup are intentionally separate. A fixture-code
+        # query must never be overridden merely because the same text exists as a
+        # transaction identifier.
+        where_clause = (
+            Fixture.id.in_(identifier_fixture_ids)
+            if fixture_search_mode == "identifier" and identifier_fixture_ids is not None
+            else or_(*conditions)
+        )
         stock_status_expr = case(
             (Fixture.is_active.is_(False), "normal"),
             (FixtureStockSummary.stock_status.is_not(None), FixtureStockSummary.stock_status),
@@ -109,7 +147,34 @@ class SearchRepository:
             stmt = stmt.where(Fixture.customer_id == customer_id)
         stmt = stmt.order_by(active_rank_expr, score_expr, Fixture.code.asc()).offset(offset).limit(limit)
         total = int(self.db.scalar(count_stmt) or 0)
-        return [dict(row._mapping) for row in self.db.execute(stmt).all()], total
+        rows = [dict(row._mapping) for row in self.db.execute(stmt).all()]
+        for row in rows:
+            row["matched_identifier"] = None
+        if fixture_search_mode == "identifier" and rows and identifier_candidates:
+            matched_identifier_stmt = (
+                select(MaterialTransactionItem.fixture_id, MaterialTransactionItem.identifier)
+                .join(
+                    MaterialTransaction,
+                    MaterialTransaction.id == MaterialTransactionItem.transaction_id,
+                )
+                .where(
+                    MaterialTransactionItem.fixture_id.in_([row["id"] for row in rows]),
+                    func.lower(func.trim(MaterialTransactionItem.identifier)).in_(
+                        [candidate.lower() for candidate in identifier_candidates]
+                    ),
+                )
+                .order_by(MaterialTransactionItem.id.desc())
+            )
+            if customer_id is not None:
+                matched_identifier_stmt = matched_identifier_stmt.where(
+                    MaterialTransaction.customer_id == customer_id
+                )
+            matched_identifiers = {}
+            for fixture_id, identifier in self.db.execute(matched_identifier_stmt).all():
+                matched_identifiers.setdefault(fixture_id, identifier)
+            for row in rows:
+                row["matched_identifier"] = matched_identifiers.get(row["id"])
+        return rows, total
 
     def search_models(self, q: str, *, customer_id: int | None = None, limit: int = 20, offset: int = 0) -> tuple[list[dict], int]:
         normalized, prefix_pattern, contains_pattern = self._normalized_query(q)
@@ -206,9 +271,16 @@ class SearchRepository:
         customer_id: int | None = None,
         limit: int = 20,
         offset: int = 0,
+        fixture_search_mode: FixtureSearchMode = "fixture",
     ) -> tuple[list[dict], int]:
         if entity_type == "fixture":
-            return self.search_fixtures(q, customer_id=customer_id, limit=limit, offset=offset)
+            return self.search_fixtures(
+                q,
+                customer_id=customer_id,
+                limit=limit,
+                offset=offset,
+                fixture_search_mode=fixture_search_mode,
+            )
         if entity_type == "model":
             return self.search_models(q, customer_id=customer_id, limit=limit, offset=offset)
         return self.search_stations(q, customer_id=customer_id, limit=limit, offset=offset)

@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from "vue";
 import { currentReleaseNotice } from "@/releaseNotice";
 
 type SearchMode = "fixture" | "model";
+type FixtureSearchMode = "fixture" | "identifier";
 
 type SearchChip = {
   key: string;
@@ -19,6 +20,7 @@ const RECENT_SHORTCUT_PREVIEW_COUNT = 5;
 
 const props = defineProps<{
   mode: SearchMode;
+  fixtureSearchMode: FixtureSearchMode;
   queryDraft: string;
   hasActiveQuery: boolean;
   recentFixtureShortcuts: RecentFixtureShortcut[];
@@ -28,6 +30,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   "update:mode": [value: SearchMode];
+  "update:fixtureSearchMode": [value: FixtureSearchMode];
   "update:queryDraft": [value: string];
   submit: [];
   clear: [];
@@ -38,13 +41,13 @@ const emit = defineEmits<{
 // Keep the search landing shell in one component so the page only owns query state and result data.
 // Shortcut expansion stays local here because it is presentational state, not search state.
 const recentShortcutExpanded = ref(false);
+const releaseNoticeOpen = ref(false);
 const queryInput = ref<HTMLInputElement | null>(null);
 const visibleRecentFixtureShortcuts = computed(() =>
   recentShortcutExpanded.value ? props.recentFixtureShortcuts : props.recentFixtureShortcuts.slice(0, RECENT_SHORTCUT_PREVIEW_COUNT)
 );
 const hiddenRecentShortcutCount = computed(() => Math.max(props.recentFixtureShortcuts.length - RECENT_SHORTCUT_PREVIEW_COUNT, 0));
 const hasReleaseNotice = computed(() => currentReleaseNotice.highlights.length > 0);
-const showRecentShortcutContent = computed(() => !props.hasActiveQuery || recentShortcutExpanded.value);
 
 function focusQueryInput(): void {
   queryInput.value?.focus();
@@ -79,7 +82,7 @@ watch(
     <div class="hero-head">
       <div class="hero-copy">
         <span class="eyebrow">Search Workspace</span>
-        <h1>治具 / 機種查詢</h1>
+        <h1>治具 / 機種查詢與總覽</h1>
       </div>
       <div v-if="hasReleaseNotice" class="release-notice-anchor">
         <button
@@ -87,10 +90,14 @@ watch(
           type="button"
           aria-label="查看更新內容"
           title="查看更新內容"
+          aria-controls="search-release-notice"
+          :aria-expanded="releaseNoticeOpen"
+          @click="releaseNoticeOpen = !releaseNoticeOpen"
+          @keydown.esc.stop.prevent="releaseNoticeOpen = false"
         >
           i
         </button>
-        <div class="release-notice-popover" role="note">
+        <div v-if="releaseNoticeOpen" id="search-release-notice" class="release-notice-popover open" role="note">
           <div class="release-notice-head">
             <span class="release-notice-version">{{ currentReleaseNotice.versionLabel }}</span>
             <strong>{{ currentReleaseNotice.title }}</strong>
@@ -111,12 +118,26 @@ watch(
         <button class="mode-btn" :class="{ active: mode === 'model' }" type="button" :aria-pressed="mode === 'model'" @click="emit('update:mode', 'model')">機種</button>
       </div>
       <label class="query-field" data-tour="search-query-field">
+        <div v-if="mode === 'fixture'" class="fixture-search-switch" aria-label="治具搜尋類型">
+          <button
+            type="button"
+            :class="{ active: fixtureSearchMode === 'fixture' }"
+            :aria-pressed="fixtureSearchMode === 'fixture'"
+            @click="emit('update:fixtureSearchMode', 'fixture')"
+          >治具資料</button>
+          <button
+            type="button"
+            :class="{ active: fixtureSearchMode === 'identifier' }"
+            :aria-pressed="fixtureSearchMode === 'identifier'"
+            @click="emit('update:fixtureSearchMode', 'identifier')"
+          >Datecode／序號</button>
+        </div>
         <div class="query-input-shell">
           <input
             ref="queryInput"
             :value="queryDraft"
-            :aria-label="mode === 'fixture' ? '搜尋治具編號或名稱' : '搜尋機種編號或名稱'"
-            :placeholder="mode === 'fixture' ? '請輸入治具編號 / 名稱,例如 C-00003' : '請輸入機種編號 / 名稱,例如 VPort-254'"
+            :aria-label="mode === 'fixture' ? fixtureSearchMode === 'identifier' ? '搜尋 Datecode 或序號' : '搜尋治具編號、名稱或儲位' : '搜尋機種編號或名稱'"
+            :placeholder="mode === 'fixture' ? fixtureSearchMode === 'identifier' ? '只輸入 Datecode／序號，例如 2204' : '請輸入治具編號／名稱，例如 L-00143' : '請輸入機種編號 / 名稱，例如 VPort-254'"
             autocomplete="off"
             spellcheck="false"
             @input="emit('update:queryDraft', ($event.target as HTMLInputElement).value)"
@@ -143,12 +164,18 @@ watch(
         <strong>最近收 / 退料治具</strong>
         <div class="shortcut-head-actions">
           <span>{{ recentFixtureShortcuts.length }} 筆</span>
-          <button class="shortcut-toggle-btn" type="button" @click="recentShortcutExpanded = !recentShortcutExpanded">
-            {{ showRecentShortcutContent ? "收合" : `展開近期治具（${recentFixtureShortcuts.length}）` }}
+          <button
+            v-if="hiddenRecentShortcutCount > 0"
+            class="shortcut-toggle-btn"
+            type="button"
+            :aria-expanded="recentShortcutExpanded"
+            @click="recentShortcutExpanded = !recentShortcutExpanded"
+          >
+            {{ recentShortcutExpanded ? `收合為 ${RECENT_SHORTCUT_PREVIEW_COUNT} 筆` : `展開全部（${recentFixtureShortcuts.length}）` }}
           </button>
         </div>
       </div>
-      <div v-if="showRecentShortcutContent" class="shortcut-row">
+      <div class="shortcut-row">
         <button
           v-for="shortcut in visibleRecentFixtureShortcuts"
           :key="`${shortcut.fixtureCode}-${shortcut.transactionType}-${shortcut.occurredAt}`"
@@ -186,13 +213,6 @@ watch(
   padding: 16px;
   position: relative;
   overflow: visible;
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  background:
-    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--blue) 16%, transparent), transparent 30%),
-    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--blue) 8%, transparent), transparent 26%),
-    linear-gradient(180deg, #ffffff 0%, color-mix(in srgb, var(--blue-soft) 50%, white) 100%);
-  box-shadow: var(--shadow);
 }
 
 .hero-head {
@@ -200,14 +220,6 @@ watch(
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
-}
-
-.hero-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 4px;
-  background: linear-gradient(180deg, var(--blue) 0%, color-mix(in srgb, var(--blue) 55%, white) 100%);
 }
 
 .hero-card > * {
@@ -223,7 +235,8 @@ watch(
 
 .hero-card.idle .hero-copy,
 .hero-card.idle .search-toolbar,
-.hero-card.idle .chip-row {
+.hero-card.idle .chip-row,
+.hero-card.idle .shortcut-panel {
   width: min(760px, 100%);
 }
 
@@ -299,8 +312,7 @@ h1 {
   transition: opacity 140ms ease, transform 140ms ease;
 }
 
-.release-notice-anchor:hover .release-notice-popover,
-.release-notice-anchor:focus-within .release-notice-popover {
+.release-notice-popover.open {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
@@ -386,6 +398,34 @@ h1 {
 .query-field {
   display: grid;
   gap: 6px;
+}
+
+.fixture-search-switch {
+  display: inline-flex;
+  width: fit-content;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--surface-secondary);
+}
+
+.fixture-search-switch button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 7px;
+  color: #61708a;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.fixture-search-switch button.active {
+  color: var(--tone-info);
+  background: #fff;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--blue) 14%, transparent);
 }
 
 .query-input-shell {
@@ -573,6 +613,32 @@ h1 {
 
   .query-submit-btn {
     width: 100%;
+  }
+}
+
+@media (max-width: 680px) {
+  .hero-card,
+  .hero-card.idle {
+    gap: 10px;
+    padding: 16px 14px 12px;
+  }
+
+  .shortcut-panel {
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .shortcut-row {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
+  }
+
+  .shortcut-chip {
+    flex: 0 0 auto;
   }
 }
 </style>

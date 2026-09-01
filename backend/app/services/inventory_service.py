@@ -1,4 +1,5 @@
 from collections import Counter
+from collections.abc import Iterator
 from datetime import datetime, time, timedelta, timezone
 from io import BytesIO
 
@@ -12,7 +13,7 @@ from backend.app.schemas.common import CsvImportPayload
 from backend.app.schemas.inventory import StockTransactionCreate
 from backend.app.services.audit_service import AuditService
 from backend.app.services.production_service import ProductionService
-from backend.app.utils.csv_tools import parse_csv_bytes, render_csv_text
+from backend.app.utils.csv_tools import escape_spreadsheet_formula, parse_csv_bytes, render_csv_text, stream_csv_text
 from backend.app.utils.identifier_rules import resolve_identifier_query
 
 
@@ -141,6 +142,7 @@ class InventoryService:
                 available_qty = self.repo.get_available_identifier_qty(
                     fixture_id=item.fixture_id,
                     identifier=identifier,
+                    ownership_type=item.ownership_type,
                 )
                 if available_qty <= 0:
                     self.db.rollback()
@@ -199,8 +201,12 @@ class InventoryService:
     def list_alerts(self, customer_id: int | None = None):
         return self.repo.list_stock_alert_rows(customer_id=customer_id)
 
-    def list_identifier_stock_summary(self, customer_id: int | None = None):
-        return self.repo.list_identifier_stock_summary_rows(customer_id=customer_id)
+    def list_identifier_stock_summary(
+        self,
+        customer_id: int | None = None,
+        fixture_id: int | None = None,
+    ):
+        return self.repo.list_identifier_stock_summary_rows(customer_id=customer_id, fixture_id=fixture_id)
 
     def build_dashboard_summary(self, customer_id: int | None = None) -> dict:
         target_date = datetime.now().astimezone().date()
@@ -231,6 +237,7 @@ class InventoryService:
         *,
         fixture_id: int | None = None,
         transaction_type: str | None = None,
+        ownership_type: str | None = None,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
         fixture_code: str | None = None,
@@ -244,6 +251,7 @@ class InventoryService:
             customer_id=customer_id,
             fixture_id=fixture_id,
             transaction_type=transaction_type,
+            ownership_type=ownership_type,
             date_from=date_from,
             date_to=date_to,
             fixture_code=fixture_code,
@@ -425,13 +433,13 @@ class InventoryService:
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "匯出資料"
-        sheet.append([report_title])
-        sheet.append(columns)
+        sheet.append([escape_spreadsheet_formula(report_title)])
+        sheet.append([escape_spreadsheet_formula(column) for column in columns])
         sheet["A1"].font = Font(bold=True)
         for cell in sheet[2]:
             cell.font = Font(bold=True)
         for row in rows:
-            sheet.append([row.get(column, "") for column in columns])
+            sheet.append([escape_spreadsheet_formula(row.get(column, "")) for column in columns])
         for column_cells in sheet.columns:
             max_length = max(len(str(cell.value or "")) for cell in column_cells)
             sheet.column_dimensions[column_cells[0].column_letter].width = min(max(max_length + 2, 10), 24)
@@ -439,60 +447,59 @@ class InventoryService:
         workbook.save(buffer)
         return buffer.getvalue()
 
-    def export_transactions_csv(
+    def stream_transactions_csv(
         self,
-        limit: int,
         customer_id: int | None = None,
         *,
         transaction_type: str | None = None,
+        ownership_type: str | None = None,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
         fixture_code: str | None = None,
         transaction_no: str | None = None,
         identifier: str | None = None,
         created_by: str | None = None,
-    ) -> str:
-        transactions = self.list_transactions(
-            limit,
+    ) -> Iterator[str]:
+        identifier_exact_matches, identifier_contains = resolve_identifier_query(identifier)
+        transactions = self.repo.iter_transactions(
             customer_id=customer_id,
             transaction_type=transaction_type,
+            ownership_type=ownership_type,
             date_from=date_from,
             date_to=date_to,
             fixture_code=fixture_code,
             transaction_no=transaction_no,
-            identifier=identifier,
+            identifier_exact_matches=identifier_exact_matches,
+            identifier_contains=identifier_contains,
             created_by=created_by,
         )
-        rows = []
-        for tx in transactions:
-            for item in tx["items"]:
-                rows.append(
-                    {
-                        "transaction_type": tx["transaction_type"],
-                        "transaction_no": tx["transaction_no"],
-                        "fixture_code": item["fixture_code"],
-                        "ownership_type": item["ownership_type"],
-                        "identifier": item["identifier"] or "",
-                        "quantity": item["quantity"],
-                        "created_by": tx["created_by"],
-                        "occurred_at": tx["occurred_at"].date().isoformat(),
-                        "note": item["note"] or tx["note"] or "",
-                    }
-                )
-        return render_csv_text(
-            [
-                "transaction_type",
-                "transaction_no",
-                "fixture_code",
-                "ownership_type",
-                "identifier",
-                "quantity",
-                "created_by",
-                "occurred_at",
-                "note",
-            ],
-            rows,
+        fieldnames = [
+            "transaction_type",
+            "transaction_no",
+            "fixture_code",
+            "ownership_type",
+            "identifier",
+            "quantity",
+            "created_by",
+            "occurred_at",
+            "note",
+        ]
+        rows = (
+            {
+                "transaction_type": tx["transaction_type"],
+                "transaction_no": tx["transaction_no"],
+                "fixture_code": item["fixture_code"],
+                "ownership_type": item["ownership_type"],
+                "identifier": item["identifier"] or "",
+                "quantity": item["quantity"],
+                "created_by": tx["created_by"],
+                "occurred_at": tx["occurred_at"].date().isoformat(),
+                "note": item["note"] or tx["note"] or "",
+            }
+            for tx in transactions
+            for item in tx["items"]
         )
+        yield from stream_csv_text(fieldnames, rows)
 
     def transaction_template_csv(self) -> str:
         return render_csv_text(

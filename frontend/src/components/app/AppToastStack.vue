@@ -14,9 +14,15 @@ const emit = defineEmits<{
 
 <template>
   <section class="toast-stack" aria-live="polite">
-    <article v-for="toast in toasts" :key="toast.id" class="toast-card" :class="toast.tone">
+    <article
+      v-for="toast in toasts"
+      :key="toast.id"
+      class="toast-card"
+      :class="toast.tone"
+      role="status"
+    >
       <span>{{ toast.message }}</span>
-      <button class="toast-close" type="button" @click="emit('dismiss', toast.id)">x</button>
+      <button class="toast-close" type="button" aria-label="關閉通知" @click="emit('dismiss', toast.id)">x</button>
     </article>
   </section>
 </template>

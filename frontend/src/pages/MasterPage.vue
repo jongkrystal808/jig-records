@@ -2,29 +2,29 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import { api, fetchFixtureImageObjectUrl } from "@/api";
+import { api } from "@/api";
 import { authSession, customers, onboardingActive, onboardingPickerOpen, onboardingStepIndex, selectedCustomerId, setCustomerSwitchGuard } from "@/appState";
 import MasterDetailPanel from "@/components/master/MasterDetailPanel.vue";
+import FixtureQualityQuickEditModal from "@/components/master/FixtureQualityQuickEditModal.vue";
 import MasterListPanel from "@/components/master/MasterListPanel.vue";
+import MasterPermanentDeleteModal from "@/components/master/MasterPermanentDeleteModal.vue";
 import FixtureQualityPanel from "@/components/master/FixtureQualityPanel.vue";
+import MasterToolbar from "@/components/master/MasterToolbar.vue";
 import TransactionAccountDetailPanel from "@/components/master/TransactionAccountDetailPanel.vue";
 import TransactionAccountListPanel from "@/components/master/TransactionAccountListPanel.vue";
 import UiSummaryCards from "@/components/UiSummaryCards.vue";
+import { useMasterCrudActions } from "@/composables/useMasterCrudActions";
+import { useMasterEntityDeletion } from "@/composables/useMasterEntityDeletion";
+import { useMasterLedger } from "@/composables/useMasterLedger";
+import { useMasterQuality } from "@/composables/useMasterQuality";
+import { requestConfirmation } from "@/confirmState";
+import { pageAfterItemRemoval } from "@/utils/pagination";
 import { pushToast } from "@/toastState";
-import type { AppUser, Customer, Fixture, FixtureQualityReport, MachineModel, MaterialTransaction, ModelStation, Station, TransactionQueryFilters } from "@/types";
+import type { AppUser, Customer, Fixture, MachineModel, Station } from "@/types";
 import { fallbackText } from "@/utils/display";
+import { canManageAccounts, canManageAdminReports } from "@/utils/roles";
 
 type MasterTab = "fixture" | "model" | "station" | "customer" | "user" | "ledger" | "quality";
-
-const QUALITY_ISSUE_LABELS: Record<string, string> = {
-  missing_name: "沒有名稱",
-  missing_storage_location: "沒有儲位",
-  missing_image: "沒有圖片",
-  missing_min_stock_qty: "沒有最低水位",
-  missing_model_relation: "沒有任何機種關聯",
-  stock_mismatch: "Identifier 庫存與總庫存不一致",
-  missing_storage_and_min_stock: "沒有儲位 / 沒有最低水位"
-};
 
 const router = useRouter();
 const route = useRoute();
@@ -35,72 +35,146 @@ const stations = ref<Station[]>([]);
 const users = ref<AppUser[]>([]);
 const customerRows = ref<Customer[]>([]);
 const customerAssignedUsers = ref<AppUser[]>([]);
-const ledgerTransactions = ref<MaterialTransaction[]>([]);
-const fixtureQualityReport = ref<FixtureQualityReport | null>(null);
-const qualityQuickEditOpen = ref(false);
-const qualityQuickEditIssueCode = ref<string | null>(null);
-const qualityQuickEditFixtureId = ref<number | null>(null);
-const qualityQuickEditForm = ref(makeEmptyFixtureForm());
-const qualityQuickEditSaving = ref(false);
-const qualityInlineSavingFixtureId = ref<number | null>(null);
-const qualityRelationSaving = ref(false);
-const qualityModelStations = ref<ModelStation[]>([]);
-const qualityRelationModelId = ref<number | null>(null);
-const qualityRelationStationId = ref<number | null>(null);
-const qualityRelationRequiredQty = ref(1);
-const qualityImageInput = ref<HTMLInputElement | null>(null);
-const qualityImageFile = ref<File | null>(null);
-const qualityImageUploading = ref(false);
-const qualityImageVersion = ref(Date.now());
-const fixtureImageBatchInput = ref<HTMLInputElement | null>(null);
+const masterToolbarRef = ref<InstanceType<typeof MasterToolbar> | null>(null);
 const fixtureImageBatchFiles = ref<File[]>([]);
 const fixtureImageBatchUploading = ref(false);
 const isMobileMasterFlow = ref(false);
 const mobileMasterDetailOpen = ref(false);
+const editorMode = ref<"summary" | "edit" | "create">("summary");
 
 const activeTab = ref<MasterTab>("fixture");
 const keyword = ref("");
-const statusFilter = ref<"all" | "active" | "inactive">("all");
+const statusFilter = ref<Array<"active" | "inactive">>([]);
 const loading = ref(false);
 const saving = ref(false);
-const hardDeleteDialogOpen = ref(false);
-const deleteFixtureTransactions = ref(false);
-const hardDeleting = ref(false);
-const hardDeleteTargetType = ref<"fixture" | "model" | "station" | null>(null);
 const listPage = ref(1);
 const listPageSize = 10;
-const ledgerTransactionNoFilter = ref("");
-const ledgerCreatedByFilter = ref("");
-const ledgerFixtureCodeFilter = ref("");
-const ledgerTypeFilter = ref<"all" | "receipt" | "return">("all");
-const ledgerPage = ref(1);
-const ledgerPageSize = ref(12);
-const ledgerTotal = ref(0);
-const ledgerLoading = ref(false);
-const ledgerProcessing = ref(false);
 
 const selectedFixtureId = ref<number | null>(null);
 const selectedModelId = ref<number | null>(null);
 const selectedStationId = ref<number | null>(null);
 const selectedUserId = ref<number | null>(null);
 const selectedCustomerRowId = ref<number | null>(null);
-const selectedLedgerTransactionId = ref<number | null>(null);
+
+const {
+  ledgerTransactions,
+  ledgerTransactionNoFilter,
+  ledgerCreatedByFilter,
+  ledgerFixtureCodeFilter,
+  ledgerTypeFilter,
+  ledgerPage,
+  ledgerPageSize,
+  ledgerTotal,
+  ledgerLoading,
+  ledgerProcessing,
+  ledgerTotalPages,
+  selectedLedgerTransactionId,
+  selectedLedgerTransaction,
+  loadLedgerPage,
+  focusSelectedLedgerRow,
+  resetLedgerFilters,
+  focusFixtureInLedger,
+  selectLedgerTransaction,
+  updateLedgerTransactionNo,
+  updateLedgerCreatedBy,
+  updateLedgerFixtureCode,
+  updateLedgerTypeFilter,
+  updateLedgerPageSize,
+  previousLedgerPage,
+  nextLedgerPage,
+  reloadLedgerSelection,
+  recalculateLedgerState,
+  reverseSelectedLedgerTransaction
+} = useMasterLedger({
+  selectedCustomerId,
+  canManage: () => canManageAdminReports(authSession.value?.role),
+  reloadData: (options) => loadData(false, options)
+});
+
+const {
+  fixtureQualityReport,
+  qualityQuickEditOpen,
+  qualityQuickEditIssueCode,
+  qualityQuickEditFixture,
+  qualityQuickEditForm,
+  qualityQuickEditSaving,
+  qualityInlineSavingFixtureId,
+  qualityRelationSaving,
+  qualityRelationModelId,
+  qualityRelationStationId,
+  qualityRelationRequiredQty,
+  qualityRelationStationOptions,
+  qualityImageInput,
+  qualityImageFile,
+  qualityImageUploading,
+  qualityImageUrl,
+  qualityImageLoading,
+  qualityQuickEditTitle,
+  openIssueEditorFromQuality,
+  openLedgerFromQuality,
+  closeQualityQuickEdit,
+  updateQualityImageFile,
+  saveQualityQuickEdit,
+  saveInlineQualityIssue,
+  saveQualityRelation,
+  uploadQualityImage
+} = useMasterQuality({
+  fixtures,
+  models,
+  stations,
+  selectedCustomerId,
+  reloadData: () =>
+    loadData(false, { preserveListPage: true, preserveLedgerPage: true }),
+  openRequirements: async () => {
+    await router.push({ name: "production-requirements" });
+  },
+  openLedger: async (fixtureCode) => {
+    focusFixtureInLedger(fixtureCode);
+    await router.push("/master/ledger");
+  }
+});
+
+const qualityQuickEditBusy = computed(
+  () => qualityQuickEditSaving.value || qualityRelationSaving.value || qualityImageUploading.value
+);
+
+function closeQualityQuickEditDialog(): void {
+  if (!qualityQuickEditBusy.value) closeQualityQuickEdit();
+}
 
 const fixtureForm = ref(makeEmptyFixtureForm());
 const modelForm = ref(makeEmptyModelForm());
 const stationForm = ref(makeEmptyStationForm());
 const customerForm = ref(makeEmptyCustomerForm());
 const userForm = ref(makeEmptyUserForm());
-const importInput = ref<HTMLInputElement | null>(null);
-const moreMenuOpen = ref(false);
-const moreMenuRef = ref<HTMLElement | null>(null);
-const canManageUsers = computed(() => authSession.value?.role === "admin");
-const canManageCustomers = computed(() => authSession.value?.role === "admin");
-const canManageLedger = computed(() => authSession.value?.role === "admin");
-const canManageQuality = computed(() => authSession.value?.role === "admin");
+const canManageUsers = computed(() => canManageAccounts(authSession.value?.role));
+const canManageCustomers = computed(() => canManageAccounts(authSession.value?.role));
+const canManageLedger = computed(() => canManageAdminReports(authSession.value?.role));
+const canManageQuality = computed(() => canManageAdminReports(authSession.value?.role));
+const canManageMasterEntities = computed(() => canManageAdminReports(authSession.value?.role));
 const selectedCustomerScopeCount = computed(() => customerFormAssignedUserIds.value.length);
 const customerFormAssignedUserIds = ref<number[]>([]);
 const selectedGlobalCustomer = computed(() => customers.value.find((row) => row.id === selectedCustomerId.value) ?? null);
+const { saveCurrent, toggleCurrentActive } = useMasterCrudActions({
+  activeTab,
+  selectedCustomerId,
+  selectedFixtureId,
+  selectedModelId,
+  selectedStationId,
+  selectedCustomerRowId,
+  selectedUserId,
+  fixtureForm,
+  modelForm,
+  stationForm,
+  customerForm,
+  userForm,
+  customerAssignedUserIds: customerFormAssignedUserIds,
+  saving,
+  reloadSelection: () => loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true }),
+  finishEditing: () => {
+    editorMode.value = "summary";
+  }
+});
 const canCreateInCurrentTab = computed(() => {
   if (activeTab.value === "ledger" || activeTab.value === "quality") {
     return false;
@@ -110,10 +184,6 @@ const canCreateInCurrentTab = computed(() => {
 
 function normalizeText(value: string | null | undefined): string {
   return (value ?? "").trim();
-}
-
-function displayTransactionNo(value: string | null | undefined): string {
-  return value?.trim() || "（無單號）";
 }
 
 function syncMasterViewport(): void {
@@ -142,9 +212,7 @@ function makeEmptyModelForm() {
 
 function clearFixtureImageBatchSelection(): void {
   fixtureImageBatchFiles.value = [];
-  if (fixtureImageBatchInput.value) {
-    fixtureImageBatchInput.value.value = "";
-  }
+  masterToolbarRef.value?.resetImageInput();
 }
 
 function makeEmptyStationForm() {
@@ -163,7 +231,8 @@ function makeEmptyUserForm() {
     role: "user",
     is_active: true,
     password: "",
-    reset_password: ""
+    reset_password: "",
+    allowed_customer_ids: selectedCustomerId.value ? [selectedCustomerId.value] : []
   };
 }
 
@@ -189,6 +258,11 @@ const tabTitleMap: Record<MasterTab, string> = {
   ledger: "收退料帳目",
   quality: "治具資料品質"
 };
+
+const mobileDetailHeading = computed(() => {
+  if (editorMode.value === "create") return `新增${tabTitleMap[activeTab.value]}`;
+  return selectedDetailLabel.value || `${tabTitleMap[activeTab.value]}明細`;
+});
 
 const TAB_PATH_MAP: Record<MasterTab, string> = {
   fixture: "/master/fixtures",
@@ -219,9 +293,9 @@ const filteredFixtures = computed(() =>
       row.code.toLowerCase().includes(keyword.value.toLowerCase()) ||
       row.name.toLowerCase().includes(keyword.value.toLowerCase());
     const byStatus =
-      statusFilter.value === "all" ||
-      (statusFilter.value === "active" && row.is_active) ||
-      (statusFilter.value === "inactive" && !row.is_active);
+      statusFilter.value.length === 0 ||
+      (statusFilter.value.includes("active") && row.is_active) ||
+      (statusFilter.value.includes("inactive") && !row.is_active);
     return byKeyword && byStatus;
   })
 );
@@ -233,9 +307,9 @@ const filteredModels = computed(() =>
       row.code.toLowerCase().includes(keyword.value.toLowerCase()) ||
       row.name.toLowerCase().includes(keyword.value.toLowerCase());
     const byStatus =
-      statusFilter.value === "all" ||
-      (statusFilter.value === "active" && row.is_active) ||
-      (statusFilter.value === "inactive" && !row.is_active);
+      statusFilter.value.length === 0 ||
+      (statusFilter.value.includes("active") && row.is_active) ||
+      (statusFilter.value.includes("inactive") && !row.is_active);
     return byKeyword && byStatus;
   })
 );
@@ -247,9 +321,9 @@ const filteredStations = computed(() =>
       row.code.toLowerCase().includes(keyword.value.toLowerCase()) ||
       row.name.toLowerCase().includes(keyword.value.toLowerCase());
     const byStatus =
-      statusFilter.value === "all" ||
-      (statusFilter.value === "active" && row.is_active) ||
-      (statusFilter.value === "inactive" && !row.is_active);
+      statusFilter.value.length === 0 ||
+      (statusFilter.value.includes("active") && row.is_active) ||
+      (statusFilter.value.includes("inactive") && !row.is_active);
     return byKeyword && byStatus;
   })
 );
@@ -271,9 +345,9 @@ const filteredUsers = computed(() =>
       (row.email ?? "").toLowerCase().includes(keyword.value.toLowerCase()) ||
       row.display_name.toLowerCase().includes(keyword.value.toLowerCase());
     const byStatus =
-      statusFilter.value === "all" ||
-      (statusFilter.value === "active" && row.is_active) ||
-      (statusFilter.value === "inactive" && !row.is_active);
+      statusFilter.value.length === 0 ||
+      (statusFilter.value.includes("active") && row.is_active) ||
+      (statusFilter.value.includes("inactive") && !row.is_active);
     return byKeyword && byStatus;
   })
 );
@@ -293,24 +367,19 @@ const pagedModelRows = computed(() => filteredModels.value.slice((listPage.value
 const pagedStationRows = computed(() => filteredStations.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
 const pagedCustomerRows = computed(() => filteredCustomers.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
 const pagedUserRows = computed(() => filteredUsers.value.slice((listPage.value - 1) * listPageSize, listPage.value * listPageSize));
-const ledgerTotalPages = computed(() => Math.max(1, Math.ceil(ledgerTotal.value / ledgerPageSize.value)));
 
 const emptyStateMessage = computed(() => {
   if (loading.value) return "資料載入中...";
   if (keyword.value) return `找不到符合「${keyword.value}」的資料`;
-  if (statusFilter.value !== "all") return "目前篩選條件下沒有資料";
+  if (statusFilter.value.length) return "目前篩選條件下沒有資料";
   return `目前沒有${tabTitleMap[activeTab.value]}資料`;
 });
 
 const selectedFixture = computed(() => fixtures.value.find((row) => row.id === selectedFixtureId.value) ?? null);
-const qualityQuickEditFixture = computed(() => fixtures.value.find((row) => row.id === qualityQuickEditFixtureId.value) ?? null);
 const selectedModel = computed(() => models.value.find((row) => row.id === selectedModelId.value) ?? null);
 const selectedStation = computed(() => stations.value.find((row) => row.id === selectedStationId.value) ?? null);
 const selectedUser = computed(() => users.value.find((row) => row.id === selectedUserId.value) ?? null);
 const selectedCustomerRow = computed(() => customerRows.value.find((row) => row.id === selectedCustomerRowId.value) ?? null);
-const selectedLedgerTransaction = computed(
-  () => ledgerTransactions.value.find((row) => row.id === selectedLedgerTransactionId.value) ?? null
-);
 const selectedDetailLabel = computed(() =>
   fallbackText(
       selectedFixture.value?.code ||
@@ -320,14 +389,69 @@ const selectedDetailLabel = computed(() =>
       selectedUser.value?.username
   )
 );
-const isCreateMode = computed(
-  () =>
-    selectedFixtureId.value === null &&
-    selectedModelId.value === null &&
-    selectedStationId.value === null &&
-    selectedCustomerRowId.value === null &&
-    selectedUserId.value === null
-);
+const isCreateMode = computed(() => editorMode.value === "create");
+const hasSelectedMasterRow = computed(() => {
+  if (activeTab.value === "fixture") return selectedFixture.value !== null;
+  if (activeTab.value === "model") return selectedModel.value !== null;
+  if (activeTab.value === "station") return selectedStation.value !== null;
+  if (activeTab.value === "customer") return selectedCustomerRow.value !== null;
+  if (activeTab.value === "user") return selectedUser.value !== null;
+  return false;
+});
+const masterSummaryFields = computed(() => {
+  const yesNoStatus = (active: boolean) => (active ? "啟用中" : "停用");
+  if (activeTab.value === "fixture" && selectedFixture.value) {
+    const row = selectedFixture.value;
+    const responsibleUser = users.value.find((user) => user.id === row.responsible_user_id);
+    return [
+      { label: "治具編號", value: fallbackText(row.code) },
+      { label: "治具名稱", value: fallbackText(row.name) },
+      { label: "產線儲位", value: fallbackText(row.line_storage_location, "未設定") },
+      { label: "部門儲位", value: fallbackText(row.department_storage_location, "未設定") },
+      { label: "最低水位", value: String(row.min_stock_qty) },
+      { label: "負責人", value: responsibleUser?.display_name ?? "未指定" },
+      { label: "狀態", value: yesNoStatus(row.is_active) },
+      { label: "備註", value: fallbackText(row.description, "無") }
+    ];
+  }
+  if (activeTab.value === "model" && selectedModel.value) {
+    return [
+      { label: "機種編號", value: fallbackText(selectedModel.value.code) },
+      { label: "機種名稱", value: fallbackText(selectedModel.value.name) },
+      { label: "狀態", value: yesNoStatus(selectedModel.value.is_active) }
+    ];
+  }
+  if (activeTab.value === "station" && selectedStation.value) {
+    return [
+      { label: "站點編號", value: fallbackText(selectedStation.value.code) },
+      { label: "站點名稱", value: fallbackText(selectedStation.value.name) },
+      { label: "狀態", value: yesNoStatus(selectedStation.value.is_active) }
+    ];
+  }
+  if (activeTab.value === "customer" && selectedCustomerRow.value) {
+    return [
+      { label: "客戶代碼", value: fallbackText(selectedCustomerRow.value.code) },
+      { label: "客戶名稱", value: fallbackText(selectedCustomerRow.value.name) },
+      { label: "指派使用者", value: `${selectedCustomerRow.value.assigned_user_ids.length} 位` }
+    ];
+  }
+  if (activeTab.value === "user" && selectedUser.value) {
+    const allowedCustomerLabel = selectedUser.value.allowed_customers?.length
+      ? selectedUser.value.allowed_customers.map((customer) => `${customer.code} ${customer.name}`).join("、")
+      : selectedUser.value.allowed_customer_ids.length > 0
+        ? `${selectedUser.value.allowed_customer_ids.length} 個客戶`
+        : "尚未分派";
+    return [
+      { label: "帳號", value: fallbackText(selectedUser.value.username) },
+      { label: "顯示名稱", value: fallbackText(selectedUser.value.display_name) },
+      { label: "Email", value: fallbackText(selectedUser.value.email, "未設定") },
+      { label: "角色", value: selectedUser.value.role === "super_admin" ? "Super Admin" : selectedUser.value.role === "admin" ? "Admin" : "User" },
+      { label: "可存取客戶", value: allowedCustomerLabel },
+      { label: "狀態", value: yesNoStatus(selectedUser.value.is_active) }
+    ];
+  }
+  return [];
+});
 const showMasterListPanel = computed(() => !isMobileMasterFlow.value || !mobileMasterDetailOpen.value);
 const showMasterDetailPanel = computed(() => !isMobileMasterFlow.value || mobileMasterDetailOpen.value);
 const editorBaseline = computed(() => {
@@ -385,7 +509,8 @@ const editorBaseline = computed(() => {
         role: row.role,
         is_active: row.is_active,
         password: "",
-        reset_password: ""
+        reset_password: "",
+        allowed_customer_ids: [...row.allowed_customer_ids].sort((a, b) => a - b)
       }
     : {
         username: "",
@@ -394,7 +519,8 @@ const editorBaseline = computed(() => {
         role: "user",
         is_active: true,
         password: "",
-        reset_password: ""
+        reset_password: "",
+        allowed_customer_ids: selectedCustomerId.value ? [selectedCustomerId.value] : []
       };
 });
 const editorCurrentState = computed(() => {
@@ -441,10 +567,15 @@ const editorCurrentState = computed(() => {
     role: userForm.value.role,
     is_active: userForm.value.is_active,
     password: normalizeText(userForm.value.password),
-    reset_password: normalizeText(userForm.value.reset_password)
+    reset_password: normalizeText(userForm.value.reset_password),
+    allowed_customer_ids: [...userForm.value.allowed_customer_ids].sort((a, b) => a - b)
   };
 });
-const hasUnsavedChanges = computed(() => JSON.stringify(editorCurrentState.value) !== JSON.stringify(editorBaseline.value));
+const hasUnsavedChanges = computed(
+  () =>
+    editorMode.value !== "summary" &&
+    JSON.stringify(editorCurrentState.value) !== JSON.stringify(editorBaseline.value)
+);
 const selectedStatusBadge = computed(() => {
   const row =
     activeTab.value === "fixture"
@@ -473,76 +604,8 @@ const selectedActivatableRow = computed(() => {
 
 const toggleActionLabel = computed(() => (selectedActivatableRow.value?.is_active ?? true ? "停用" : "恢復使用"));
 const canDeleteMasterEntity = computed(
-  () => canManageUsers.value && (activeTab.value === "fixture" || activeTab.value === "model" || activeTab.value === "station")
+  () => canManageMasterEntities.value && (activeTab.value === "fixture" || activeTab.value === "model" || activeTab.value === "station")
 );
-const hardDeleteTargetCode = computed(() => {
-  if (hardDeleteTargetType.value === "fixture") return selectedFixture.value?.code ?? "";
-  if (hardDeleteTargetType.value === "model") return selectedModel.value?.code ?? "";
-  if (hardDeleteTargetType.value === "station") return selectedStation.value?.code ?? "";
-  return "";
-});
-const hardDeleteDialogTitle = computed(() => {
-  if (hardDeleteTargetType.value === "fixture") return `永久刪除治具 ${hardDeleteTargetCode.value}`;
-  if (hardDeleteTargetType.value === "model") return `永久刪除機種 ${hardDeleteTargetCode.value}`;
-  if (hardDeleteTargetType.value === "station") return `永久刪除站點 ${hardDeleteTargetCode.value}`;
-  return "永久刪除主資料";
-});
-const hardDeleteDialogIntro = computed(() => {
-  if (hardDeleteTargetType.value === "fixture") {
-    return "治具主檔、庫存摘要與產能需求會永久刪除。請選擇歷史收退料記錄的處理方式。";
-  }
-  if (hardDeleteTargetType.value === "model") {
-    return "將一併刪除關聯的機種站點對應、站點治具需求與受影響產能摘要。是否確定刪除？";
-  }
-  if (hardDeleteTargetType.value === "station") {
-    return "將一併刪除關聯的機種站點對應、站點治具需求與該站點產能摘要。是否確定刪除？";
-  }
-  return "";
-});
-const qualityQuickEditIssueLabel = computed(() => {
-  if (!qualityQuickEditIssueCode.value) return "";
-  return QUALITY_ISSUE_LABELS[qualityQuickEditIssueCode.value] ?? qualityQuickEditIssueCode.value;
-});
-const qualityQuickEditTitle = computed(() => {
-  const fixtureCode = qualityQuickEditFixture.value?.code ?? "";
-  return fixtureCode ? `${fixtureCode} - ${qualityQuickEditIssueLabel.value}` : qualityQuickEditIssueLabel.value;
-});
-const qualityRelationStationOptions = computed(() => {
-  return stations.value;
-});
-const qualityImageUrl = ref("");
-const qualityImageLoading = ref(false);
-
-function revokeQualityImageUrl(): void {
-  if (qualityImageUrl.value) {
-    URL.revokeObjectURL(qualityImageUrl.value);
-    qualityImageUrl.value = "";
-  }
-}
-
-// Fixture images require an auth token, so <img :src="...plain URL..."> can't be used directly
-// (the browser's own image request won't carry our Authorization header and gets a 401).
-// We fetch the image ourselves via fetchFixtureImageObjectUrl (which does attach the token)
-// and hand the <img> a local blob: URL instead.
-watch(
-  [() => qualityQuickEditFixture.value?.code, () => qualityQuickEditFixture.value?.has_image, qualityImageVersion],
-  async ([fixtureCode, hasImage]) => {
-    revokeQualityImageUrl();
-    if (!fixtureCode || !hasImage) {
-      return;
-    }
-    qualityImageLoading.value = true;
-    try {
-      qualityImageUrl.value = await fetchFixtureImageObjectUrl(fixtureCode);
-    } catch (err) {
-      qualityImageUrl.value = "";
-    } finally {
-      qualityImageLoading.value = false;
-    }
-  },
-  { immediate: true }
-);
-
 // Keep the page responsible only for counts; layout now lives in UiSummaryCards.
 const summaryCards = computed(() => [
   { label: "治具總數", value: fixtures.value.length, meta: `啟用 ${fixtures.value.filter((row) => row.is_active).length}` },
@@ -555,6 +618,41 @@ const summaryCards = computed(() => [
 function clampPage(page: number, totalPages: number): number {
   return Math.min(Math.max(1, page), totalPages);
 }
+
+function moveListPageBackAfterLastRowRemoval(): void {
+  const pageStart = (listPage.value - 1) * listPageSize;
+  const currentPageItemCount = currentRows.value.slice(pageStart, pageStart + listPageSize).length;
+  listPage.value = pageAfterItemRemoval(listPage.value, currentPageItemCount);
+}
+
+const {
+  dialogOpen: hardDeleteDialogOpen,
+  deleteFixtureTransactions,
+  deleting: hardDeleting,
+  targetType: hardDeleteTargetType,
+  dialogTitle: hardDeleteDialogTitle,
+  dialogIntro: hardDeleteDialogIntro,
+  openDialog: openHardDeleteDialog,
+  closeDialog: closeHardDeleteDialog,
+  confirmDeletion: confirmHardDeletion
+} = useMasterEntityDeletion({
+  activeTab,
+  canManage: canManageMasterEntities,
+  selectedCustomerId,
+  selectedFixtureId,
+  selectedModelId,
+  selectedStationId,
+  selectedFixtureCode: computed(() => selectedFixture.value?.code ?? ""),
+  selectedModelCode: computed(() => selectedModel.value?.code ?? ""),
+  selectedStationCode: computed(() => selectedStation.value?.code ?? ""),
+  saving,
+  selectedTabLabel: () => tabTitleMap[activeTab.value],
+  movePageBackAfterRemoval: moveListPageBackAfterLastRowRemoval,
+  reloadAfterRemoval: () => loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true }),
+  finishEditing: () => {
+    editorMode.value = "summary";
+  }
+});
 
 function getSelectedListRowId(): number | null {
   if (activeTab.value === "fixture") return selectedFixtureId.value;
@@ -579,19 +677,6 @@ function focusSelectedListRow(fallbackPage = listPage.value): void {
   listPage.value = Math.floor(selectedIndex / listPageSize) + 1;
 }
 
-function focusSelectedLedgerRow(fallbackPage = ledgerPage.value): void {
-  if (ledgerTransactions.value.length === 0) {
-    selectedLedgerTransactionId.value = null;
-    ledgerPage.value = clampPage(fallbackPage, ledgerTotalPages.value);
-    return;
-  }
-  ledgerPage.value = clampPage(fallbackPage, ledgerTotalPages.value);
-  const selectedExists = ledgerTransactions.value.some((row) => row.id === selectedLedgerTransactionId.value);
-  if (!selectedExists) {
-    selectedLedgerTransactionId.value = ledgerTransactions.value[0]?.id ?? null;
-  }
-}
-
 type LoadDataOptions = {
   preserveListPage?: boolean;
   preserveLedgerPage?: boolean;
@@ -604,53 +689,12 @@ async function startDemoTour(): Promise<void> {
     pushToast("請先選擇客戶，才可以開始新手導覽。", "warning");
     return;
   }
-  if (!confirmDiscardChanges("開始導覽會從首頁重新開始，並使用目前客戶的資料做教學流程。要繼續嗎？")) {
+  if (!(await confirmDiscardChanges("開始導覽會從首頁重新開始，並使用目前客戶的資料做教學流程。要繼續嗎？"))) {
     return;
   }
   onboardingActive.value = false;
   onboardingStepIndex.value = 0;
   onboardingPickerOpen.value = true;
-}
-
-function buildLedgerFilters(): TransactionQueryFilters {
-  return {
-    transaction_type: ledgerTypeFilter.value === "all" ? undefined : ledgerTypeFilter.value,
-    transaction_no: normalizeText(ledgerTransactionNoFilter.value) || undefined,
-    created_by: normalizeText(ledgerCreatedByFilter.value) || undefined,
-    fixture_code: normalizeText(ledgerFixtureCodeFilter.value) || undefined
-  };
-}
-
-async function loadLedgerPage(options: { preserveSelection?: boolean } = {}): Promise<void> {
-  const customerId = selectedCustomerId.value ?? undefined;
-  if (!canManageLedger.value || !customerId) {
-    ledgerTransactions.value = [];
-    ledgerTotal.value = 0;
-    selectedLedgerTransactionId.value = null;
-    return;
-  }
-  ledgerLoading.value = true;
-  try {
-    const response = await api.listTransactionLedgerPage(ledgerPage.value, ledgerPageSize.value, customerId, buildLedgerFilters());
-    const totalPages = Math.max(1, Math.ceil(response.total / response.page_size));
-    if (ledgerPage.value > totalPages) {
-      ledgerPage.value = totalPages;
-      return;
-    }
-    ledgerTransactions.value = response.items;
-    ledgerTotal.value = response.total;
-    if (options.preserveSelection && response.items.some((row) => row.id === selectedLedgerTransactionId.value)) {
-      return;
-    }
-    selectedLedgerTransactionId.value = response.items.find((row) => row.id === selectedLedgerTransactionId.value)?.id ?? response.items[0]?.id ?? null;
-  } catch (err) {
-    ledgerTransactions.value = [];
-    ledgerTotal.value = 0;
-    selectedLedgerTransactionId.value = null;
-    pushToast(err instanceof Error ? err.message : "載入收退料帳目失敗", "error");
-  } finally {
-    ledgerLoading.value = false;
-  }
 }
 
 async function loadData(showLoading = true, options: LoadDataOptions = {}): Promise<void> {
@@ -678,11 +722,11 @@ async function loadData(showLoading = true, options: LoadDataOptions = {}): Prom
     customerAssignedUsers.value = customerUsers;
     fixtureQualityReport.value = qualityReport;
 
-    selectedFixtureId.value = f.find((row) => row.id === selectedFixtureId.value)?.id ?? f[0]?.id ?? null;
-    selectedModelId.value = m.find((row) => row.id === selectedModelId.value)?.id ?? m[0]?.id ?? null;
-    selectedStationId.value = s.find((row) => row.id === selectedStationId.value)?.id ?? s[0]?.id ?? null;
-    selectedUserId.value = u.find((row) => row.id === selectedUserId.value)?.id ?? u[0]?.id ?? null;
-    selectedCustomerRowId.value = c.find((row) => row.id === selectedCustomerRowId.value)?.id ?? c[0]?.id ?? null;
+    selectedFixtureId.value = f.find((row) => row.id === selectedFixtureId.value)?.id ?? null;
+    selectedModelId.value = m.find((row) => row.id === selectedModelId.value)?.id ?? null;
+    selectedStationId.value = s.find((row) => row.id === selectedStationId.value)?.id ?? null;
+    selectedUserId.value = u.find((row) => row.id === selectedUserId.value)?.id ?? null;
+    selectedCustomerRowId.value = c.find((row) => row.id === selectedCustomerRowId.value)?.id ?? null;
     if (!canManageUsers.value && activeTab.value === "user") {
       activeTab.value = "fixture";
     }
@@ -762,7 +806,8 @@ function syncEditorFromSelection(): void {
       role: row.role,
       is_active: row.is_active,
       password: "",
-      reset_password: ""
+      reset_password: "",
+      allowed_customer_ids: [...row.allowed_customer_ids].sort((a, b) => a - b)
     };
     return;
   }
@@ -771,39 +816,37 @@ function syncEditorFromSelection(): void {
   }
 }
 
-function confirmDiscardChanges(message: string): boolean {
+async function confirmDiscardChanges(message: string): Promise<boolean> {
   if (!hasUnsavedChanges.value) {
     return true;
   }
-  return window.confirm(message);
+  return requestConfirmation(message, {
+    title: "捨棄未儲存的修改？",
+    confirmLabel: "捨棄並繼續",
+    tone: "danger"
+  });
 }
 
 function switchTab(tab: MasterTab): void {
   if (tab === activeTab.value && route.path === TAB_PATH_MAP[tab]) {
     return;
   }
-  if (!confirmDiscardChanges("目前表單有未儲存的修改，切換分頁後將會捨棄。要繼續嗎？")) {
-    return;
-  }
   keyword.value = "";
-  statusFilter.value = "all";
+  statusFilter.value = [];
   listPage.value = 1;
-  ledgerTransactionNoFilter.value = "";
-  ledgerCreatedByFilter.value = "";
-  ledgerFixtureCodeFilter.value = "";
-  ledgerTypeFilter.value = "all";
-  ledgerPage.value = 1;
+  resetLedgerFilters();
   void router.push(TAB_PATH_MAP[tab]);
 }
 
-function startCreate(): void {
-  if (!confirmDiscardChanges("目前表單有未儲存的修改，切換到新增模式後將會捨棄。要繼續嗎？")) {
+async function startCreate(): Promise<void> {
+  if (!(await confirmDiscardChanges("目前表單有未儲存的修改，切換到新增模式後將會捨棄。要繼續嗎？"))) {
     return;
   }
   startCreateWithoutPrompt();
 }
 
 function startCreateWithoutPrompt(): void {
+  editorMode.value = "create";
   if (activeTab.value === "fixture") {
     selectedFixtureId.value = null;
     fixtureForm.value = makeEmptyFixtureForm();
@@ -841,7 +884,7 @@ function startCreateWithoutPrompt(): void {
   }
 }
 
-function selectRow(id: number): void {
+async function selectRow(id: number): Promise<void> {
   const currentId =
     activeTab.value === "fixture"
       ? selectedFixtureId.value
@@ -853,9 +896,16 @@ function selectRow(id: number): void {
             ? selectedCustomerRowId.value
             : selectedUserId.value;
   if (currentId === id) {
+    if (
+      editorMode.value === "summary" &&
+      activeTab.value !== "ledger" &&
+      activeTab.value !== "quality"
+    ) {
+      mobileMasterDetailOpen.value = isMobileMasterFlow.value;
+    }
     return;
   }
-  if (!confirmDiscardChanges("目前表單有未儲存的修改，切換資料後將會捨棄。要繼續嗎？")) {
+  if (!(await confirmDiscardChanges("目前表單有未儲存的修改，切換資料後將會捨棄。要繼續嗎？"))) {
     return;
   }
   if (activeTab.value === "fixture") selectedFixtureId.value = id;
@@ -863,208 +913,50 @@ function selectRow(id: number): void {
   if (activeTab.value === "station") selectedStationId.value = id;
   if (activeTab.value === "customer") selectedCustomerRowId.value = id;
   if (activeTab.value === "user") selectedUserId.value = id;
-  if (activeTab.value === "ledger") selectedLedgerTransactionId.value = id;
-  syncEditorFromSelection();
+  if (activeTab.value === "ledger") selectLedgerTransaction(id);
   if (activeTab.value !== "ledger" && activeTab.value !== "quality") {
+    editorMode.value = "summary";
     mobileMasterDetailOpen.value = isMobileMasterFlow.value;
   }
 }
 
-function returnToMobileList(): void {
-  if (!confirmDiscardChanges("返回清單會離開目前明細畫面。尚未儲存的修改將會捨棄。要繼續嗎？")) {
+async function returnToMobileList(): Promise<void> {
+  if (!(await confirmDiscardChanges("返回清單會離開目前明細畫面。尚未儲存的修改將會捨棄。要繼續嗎？"))) {
     return;
   }
+  editorMode.value = "summary";
   mobileMasterDetailOpen.value = false;
 }
 
-async function openIssueEditorFromQuality(fixtureId: number, issueCode: string): Promise<void> {
-  const editorIssueCode =
-    issueCode === "missing_storage_location" || issueCode === "missing_min_stock_qty"
-      ? "missing_storage_and_min_stock"
-      : issueCode;
-  if (editorIssueCode === "missing_model_relation") {
-    await router.push({ name: "production-requirements" });
-    return;
-  }
-  const fixture = fixtures.value.find((row) => row.id === fixtureId);
-  if (!fixture) {
-    pushToast("找不到要修正的治具資料。", "warning");
-    return;
-  }
-  qualityQuickEditFixtureId.value = fixtureId;
-  qualityQuickEditIssueCode.value = editorIssueCode;
-  qualityQuickEditForm.value = makeFixtureFormFromRow(fixture);
-  qualityRelationRequiredQty.value = 1;
-  qualityQuickEditOpen.value = true;
-}
-
-async function openLedgerFromQuality(): Promise<void> {
-  const fixtureCode = qualityQuickEditFixture.value?.code ?? "";
-  ledgerTransactionNoFilter.value = "";
-  ledgerCreatedByFilter.value = "";
-  ledgerFixtureCodeFilter.value = fixtureCode;
-  ledgerTypeFilter.value = "all";
-  ledgerPage.value = 1;
-  await router.push(TAB_PATH_MAP.ledger);
-}
-
-function closeQualityQuickEdit(): void {
-  qualityQuickEditOpen.value = false;
-  qualityQuickEditIssueCode.value = null;
-  qualityQuickEditFixtureId.value = null;
-  qualityQuickEditForm.value = makeEmptyFixtureForm();
-  qualityRelationModelId.value = null;
-  qualityRelationStationId.value = null;
-  qualityRelationRequiredQty.value = 1;
-  qualityImageFile.value = null;
-  if (qualityImageInput.value) {
-    qualityImageInput.value.value = "";
-  }
-  revokeQualityImageUrl();
-}
-
-function updateQualityImageFile(event: Event): void {
-  const input = event.target as HTMLInputElement;
-  qualityImageFile.value = input.files?.[0] ?? null;
-}
-
-function reloadSelection(): void {
-  if (!confirmDiscardChanges("重載會放棄目前尚未儲存的修改，重新載入已選資料。要繼續嗎？")) {
+function startEdit(): void {
+  if (!hasSelectedMasterRow.value) {
+    pushToast(`請先選擇要編輯的${tabTitleMap[activeTab.value]}。`, "warning");
     return;
   }
   syncEditorFromSelection();
+  editorMode.value = "edit";
+  mobileMasterDetailOpen.value = isMobileMasterFlow.value;
 }
 
-async function saveQualityQuickEdit(): Promise<void> {
-  if (!selectedCustomerId.value || !qualityQuickEditFixtureId.value) {
-    pushToast("請先選擇客戶與治具。", "warning");
+async function cancelEditor(): Promise<void> {
+  if (!(await confirmDiscardChanges("取消後將捨棄目前尚未儲存的修改。要繼續嗎？"))) {
     return;
   }
-  qualityQuickEditSaving.value = true;
-  try {
-    await api.updateFixture(qualityQuickEditFixtureId.value, {
-      customer_id: selectedCustomerId.value,
-      responsible_user_id: qualityQuickEditForm.value.responsible_user_id,
-      code: qualityQuickEditForm.value.code.trim(),
-      name: qualityQuickEditForm.value.name.trim(),
-      line_storage_location: qualityQuickEditForm.value.line_storage_location.trim() || undefined,
-      department_storage_location: qualityQuickEditForm.value.department_storage_location.trim() || undefined,
-      min_stock_qty: qualityQuickEditForm.value.min_stock_qty,
-      description: qualityQuickEditForm.value.description.trim() || undefined,
-      is_active: qualityQuickEditForm.value.is_active
-    });
-    await loadData(false, { preserveListPage: true, preserveLedgerPage: true });
-    pushToast(`治具 ${qualityQuickEditForm.value.code} 已更新。`, "success");
-    closeQualityQuickEdit();
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "更新治具失敗", "error");
-  } finally {
-    qualityQuickEditSaving.value = false;
+  editorMode.value = "summary";
+  if (isMobileMasterFlow.value && !hasSelectedMasterRow.value) {
+    mobileMasterDetailOpen.value = false;
   }
 }
 
-async function saveInlineQualityIssue(
-  fixtureId: number,
-  lineStorageLocation: string,
-  departmentStorageLocation: string,
-  minStockQty: number
-): Promise<void> {
-  if (!selectedCustomerId.value) {
-    pushToast("請先選擇客戶。", "warning");
+async function reloadSelection(): Promise<void> {
+  if (
+    !(await confirmDiscardChanges(
+      "重載會放棄目前尚未儲存的修改，重新載入已選資料。要繼續嗎？"
+    ))
+  ) {
     return;
   }
-  const fixture = fixtures.value.find((row) => row.id === fixtureId);
-  if (!fixture) {
-    pushToast("找不到要更新的治具資料。", "warning");
-    return;
-  }
-  qualityInlineSavingFixtureId.value = fixtureId;
-  try {
-    await api.updateFixture(fixtureId, {
-      customer_id: selectedCustomerId.value,
-      responsible_user_id: fixture.responsible_user_id,
-      code: fixture.code.trim(),
-      name: fixture.name.trim(),
-      line_storage_location: lineStorageLocation.trim() || undefined,
-      department_storage_location: departmentStorageLocation.trim() || undefined,
-      min_stock_qty: minStockQty,
-      description: fixture.description?.trim() || undefined,
-      is_active: fixture.is_active
-    });
-    await loadData(false, { preserveListPage: true, preserveLedgerPage: true });
-    pushToast(`治具 ${fixture.code} 已更新。`, "success");
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "更新治具失敗", "error");
-  } finally {
-    qualityInlineSavingFixtureId.value = null;
-  }
-}
-
-async function saveQualityRelation(): Promise<void> {
-  if (!selectedCustomerId.value || !qualityQuickEditFixtureId.value) {
-    pushToast("請先選擇客戶與治具。", "warning");
-    return;
-  }
-  if (!qualityRelationModelId.value || !qualityRelationStationId.value) {
-    pushToast("請先選擇機種與站點。", "warning");
-    return;
-  }
-  qualityRelationSaving.value = true;
-  try {
-    const existingMapping = qualityModelStations.value.find(
-      (row) => row.model_id === qualityRelationModelId.value && row.station_id === qualityRelationStationId.value
-    );
-    if (!existingMapping) {
-      const createdMapping = await api.createModelStation({
-        customer_id: selectedCustomerId.value,
-        model_id: qualityRelationModelId.value,
-        station_id: qualityRelationStationId.value
-      });
-      qualityModelStations.value = [...qualityModelStations.value, createdMapping];
-    }
-    await api.createFixtureRequirement({
-      customer_id: selectedCustomerId.value,
-      model_id: qualityRelationModelId.value,
-      station_id: qualityRelationStationId.value,
-      fixture_id: qualityQuickEditFixtureId.value,
-      required_qty: qualityRelationRequiredQty.value
-    });
-    await loadData(false, { preserveListPage: true, preserveLedgerPage: true });
-    pushToast("已補上第一筆機種站點治具需求。", "success");
-    closeQualityQuickEdit();
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "建立治具關聯失敗", "error");
-  } finally {
-    qualityRelationSaving.value = false;
-  }
-}
-
-async function uploadQualityImage(): Promise<void> {
-  if (!selectedCustomerId.value || !qualityQuickEditFixtureId.value) {
-    pushToast("請先選擇客戶與治具。", "warning");
-    return;
-  }
-  if (!qualityImageFile.value) {
-    pushToast("請先選擇要上傳的圖片。", "warning");
-    return;
-  }
-  qualityImageUploading.value = true;
-  try {
-    const result = await api.uploadFixtureImage(qualityQuickEditFixtureId.value, selectedCustomerId.value, qualityImageFile.value);
-    qualityImageVersion.value = Date.now();
-    qualityQuickEditForm.value = makeFixtureFormFromRow(result.fixture);
-    await loadData(false, { preserveListPage: true, preserveLedgerPage: true });
-    pushToast(`治具 ${result.fixture_code} 圖片已更新。`, "success");
-    closeQualityQuickEdit();
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "上傳治具圖片失敗", "error");
-  } finally {
-    qualityImageUploading.value = false;
-  }
-}
-
-function openFixtureImageBatchPicker(): void {
-  fixtureImageBatchInput.value?.click();
+  syncEditorFromSelection();
 }
 
 function updateFixtureImageBatchFiles(event: Event): void {
@@ -1132,296 +1024,6 @@ function hasAssignedUser(userId: number): boolean {
   return customerFormAssignedUserIds.value.includes(userId);
 }
 
-async function saveCurrent(): Promise<void> {
-  const isUpdate =
-    (activeTab.value === "fixture" && selectedFixtureId.value !== null) ||
-    (activeTab.value === "model" && selectedModelId.value !== null) ||
-    (activeTab.value === "station" && selectedStationId.value !== null) ||
-    (activeTab.value === "customer" && selectedCustomerRowId.value !== null) ||
-    (activeTab.value === "user" && selectedUserId.value !== null);
-  saving.value = true;
-  try {
-    if (activeTab.value === "fixture") {
-      if (!selectedCustomerId.value) {
-        pushToast("請先在側邊欄選擇客戶。", "warning");
-        return;
-      }
-      if (selectedFixtureId.value) {
-        const fixture = await api.updateFixture(selectedFixtureId.value, {
-          customer_id: selectedCustomerId.value,
-          responsible_user_id: fixtureForm.value.responsible_user_id,
-          code: fixtureForm.value.code.trim(),
-          name: fixtureForm.value.name.trim(),
-          line_storage_location: fixtureForm.value.line_storage_location.trim() || undefined,
-          department_storage_location: fixtureForm.value.department_storage_location.trim() || undefined,
-          min_stock_qty: fixtureForm.value.min_stock_qty,
-          description: fixtureForm.value.description.trim() || undefined,
-          is_active: fixtureForm.value.is_active
-        });
-        selectedFixtureId.value = fixture.id;
-      } else {
-        const fixture = await api.createFixture({
-          customer_id: selectedCustomerId.value,
-          responsible_user_id: fixtureForm.value.responsible_user_id,
-          code: fixtureForm.value.code.trim(),
-          name: fixtureForm.value.name.trim(),
-          line_storage_location: fixtureForm.value.line_storage_location.trim() || undefined,
-          department_storage_location: fixtureForm.value.department_storage_location.trim() || undefined,
-          min_stock_qty: fixtureForm.value.min_stock_qty,
-          description: fixtureForm.value.description.trim() || undefined
-        });
-        selectedFixtureId.value = fixture.id;
-      }
-    } else if (activeTab.value === "model") {
-      if (!selectedCustomerId.value) {
-        pushToast("請先選擇客戶。", "warning");
-        return;
-      }
-      if (selectedModelId.value) {
-        const model = await api.updateModel(selectedModelId.value, {
-          customer_id: selectedCustomerId.value,
-          code: modelForm.value.code.trim(),
-          name: modelForm.value.name.trim(),
-          is_active: modelForm.value.is_active
-        });
-        selectedModelId.value = model.id;
-      } else {
-        const model = await api.createModel({
-          customer_id: selectedCustomerId.value,
-          code: modelForm.value.code.trim(),
-          name: modelForm.value.name.trim()
-        });
-        selectedModelId.value = model.id;
-      }
-    } else if (activeTab.value === "station") {
-      if (!selectedCustomerId.value) {
-        pushToast("請先選擇客戶。", "warning");
-        return;
-      }
-      if (selectedStationId.value) {
-        const station = await api.updateStation(selectedStationId.value, {
-          customer_id: selectedCustomerId.value,
-          code: stationForm.value.code.trim(),
-          name: stationForm.value.name.trim(),
-          is_active: stationForm.value.is_active
-        });
-        selectedStationId.value = station.id;
-      } else {
-        const station = await api.createStation({
-          customer_id: selectedCustomerId.value,
-          code: stationForm.value.code.trim(),
-          name: stationForm.value.name.trim()
-        });
-        selectedStationId.value = station.id;
-      }
-    } else if (activeTab.value === "customer") {
-      const assignedUserIds = [...customerFormAssignedUserIds.value].sort((a, b) => a - b);
-      if (selectedCustomerRowId.value) {
-        const customer = await api.updateCustomer(selectedCustomerRowId.value, {
-          code: customerForm.value.code.trim(),
-          name: customerForm.value.name.trim(),
-          assigned_user_ids: assignedUserIds
-        });
-        selectedCustomerRowId.value = customer.id;
-      } else {
-        const customer = await api.createCustomer({
-          code: customerForm.value.code.trim(),
-          name: customerForm.value.name.trim(),
-          assigned_user_ids: assignedUserIds
-        });
-        selectedCustomerId.value = customer.id;
-        selectedCustomerRowId.value = customer.id;
-      }
-    } else if (activeTab.value === "user") {
-      if (selectedUserId.value) {
-        const user = await api.updateUser(selectedUserId.value, {
-          email: userForm.value.email.trim() || null,
-          display_name: userForm.value.display_name.trim(),
-          role: userForm.value.role,
-          is_active: userForm.value.is_active,
-          allowed_customer_ids: []
-        });
-        selectedUserId.value = user.id;
-      } else {
-        if (!userForm.value.password.trim()) {
-          pushToast("新增使用者時必須輸入密碼。", "warning");
-          return;
-        }
-        const user = await api.createUser({
-          username: userForm.value.username.trim(),
-          email: userForm.value.email.trim() || null,
-          password: userForm.value.password.trim(),
-          display_name: userForm.value.display_name.trim(),
-          role: userForm.value.role,
-          is_active: userForm.value.is_active,
-          allowed_customer_ids: []
-        });
-        selectedUserId.value = user.id;
-      }
-    }
-    await loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true });
-    syncEditorFromSelection();
-    pushToast(isUpdate ? "更新完成。" : "新增完成。", "success");
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "儲存失敗", "error");
-  } finally {
-    saving.value = false;
-  }
-}
-
-async function toggleCurrentActive(): Promise<void> {
-  const nextActive = !(selectedActivatableRow.value?.is_active ?? true);
-  saving.value = true;
-  try {
-    if (activeTab.value === "fixture" && selectedFixtureId.value) {
-      if (!selectedCustomerId.value) {
-        pushToast("請先在側邊欄選擇客戶。", "warning");
-        return;
-      }
-      await api.updateFixture(selectedFixtureId.value, {
-        customer_id: selectedCustomerId.value,
-        responsible_user_id: fixtureForm.value.responsible_user_id,
-        code: fixtureForm.value.code.trim(),
-        name: fixtureForm.value.name.trim(),
-        line_storage_location: fixtureForm.value.line_storage_location.trim() || undefined,
-        department_storage_location: fixtureForm.value.department_storage_location.trim() || undefined,
-        min_stock_qty: fixtureForm.value.min_stock_qty,
-        description: fixtureForm.value.description.trim() || undefined,
-        is_active: nextActive
-      });
-    } else if (activeTab.value === "model" && selectedModelId.value) {
-      if (!selectedCustomerId.value) {
-        pushToast("請先選擇客戶。", "warning");
-        return;
-      }
-      await api.updateModel(selectedModelId.value, {
-        customer_id: selectedCustomerId.value,
-        code: modelForm.value.code.trim(),
-        name: modelForm.value.name.trim(),
-        is_active: nextActive
-      });
-    } else if (activeTab.value === "station" && selectedStationId.value) {
-      if (!selectedCustomerId.value) {
-        pushToast("請先選擇客戶。", "warning");
-        return;
-      }
-      await api.updateStation(selectedStationId.value, {
-        customer_id: selectedCustomerId.value,
-        code: stationForm.value.code.trim(),
-        name: stationForm.value.name.trim(),
-        is_active: nextActive
-      });
-    } else if (activeTab.value === "user" && selectedUserId.value) {
-      await api.updateUser(selectedUserId.value, {
-        email: userForm.value.email.trim() || null,
-        display_name: userForm.value.display_name.trim(),
-        role: userForm.value.role,
-        is_active: nextActive,
-        allowed_customer_ids: []
-      });
-    } else {
-      pushToast(activeTab.value === "customer" ? "客戶分頁不提供停用。" : "請先選擇要調整狀態的資料。", "warning");
-      return;
-    }
-    await loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true });
-    syncEditorFromSelection();
-    pushToast(nextActive ? "已恢復使用。" : "停用完成。", "success");
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "狀態更新失敗", "error");
-  } finally {
-    saving.value = false;
-  }
-}
-
-function openHardDeleteDialog(): void {
-  if (!canManageUsers.value) {
-    pushToast("只有管理員可以永久刪除主資料。", "warning");
-    return;
-  }
-  if (activeTab.value === "fixture" && selectedFixtureId.value) {
-    hardDeleteTargetType.value = "fixture";
-  } else if (activeTab.value === "model" && selectedModelId.value) {
-    hardDeleteTargetType.value = "model";
-  } else if (activeTab.value === "station" && selectedStationId.value) {
-    hardDeleteTargetType.value = "station";
-  } else {
-    pushToast(`請先選擇要刪除的${tabTitleMap[activeTab.value]}。`, "warning");
-    return;
-  }
-  deleteFixtureTransactions.value = false;
-  hardDeleteDialogOpen.value = true;
-}
-
-function closeHardDeleteDialog(): void {
-  if (hardDeleting.value) {
-    return;
-  }
-  hardDeleteDialogOpen.value = false;
-  hardDeleteTargetType.value = null;
-}
-
-async function confirmHardDeletion(): Promise<void> {
-  const customerId = selectedCustomerId.value;
-  if (!customerId || !hardDeleteTargetType.value) {
-    pushToast("請先選擇要刪除的主資料與客戶。", "warning");
-    return;
-  }
-
-  hardDeleting.value = true;
-  saving.value = true;
-  try {
-    if (hardDeleteTargetType.value === "fixture") {
-      const fixtureId = selectedFixtureId.value;
-      if (!fixtureId) {
-        pushToast("請先選擇要刪除的治具。", "warning");
-        return;
-      }
-      const result = await api.deleteFixture(fixtureId, customerId, deleteFixtureTransactions.value);
-      selectedFixtureId.value = null;
-      await loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true });
-      syncEditorFromSelection();
-      const recordMessage = result.transaction_records_deleted
-        ? `已刪除 ${result.transaction_item_count} 筆相關收退料明細。`
-        : `已保留 ${result.transaction_item_count} 筆相關收退料歷史。`;
-      pushToast(`治具 ${result.fixture_code} 已永久刪除。${recordMessage}`, "success");
-    } else if (hardDeleteTargetType.value === "model") {
-      const modelId = selectedModelId.value;
-      if (!modelId) {
-        pushToast("請先選擇要刪除的機種。", "warning");
-        return;
-      }
-      const result = await api.deleteModel(modelId, customerId);
-      selectedModelId.value = null;
-      await loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true });
-      syncEditorFromSelection();
-      pushToast(
-        `機種 ${result.model_code} 已永久刪除。同步刪除 ${result.deleted_model_station_count} 筆機種站點對應、${result.deleted_requirement_count} 筆治具需求、${result.deleted_capacity_summary_count} 筆產能摘要。`,
-        "success"
-      );
-    } else if (hardDeleteTargetType.value === "station") {
-      const stationId = selectedStationId.value;
-      if (!stationId) {
-        pushToast("請先選擇要刪除的站點。", "warning");
-        return;
-      }
-      const result = await api.deleteStation(stationId, customerId);
-      selectedStationId.value = null;
-      await loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true });
-      syncEditorFromSelection();
-      pushToast(
-        `站點 ${result.station_code} 已永久刪除。同步刪除 ${result.deleted_model_station_count} 筆機種站點對應、${result.deleted_requirement_count} 筆治具需求、${result.deleted_capacity_summary_count} 筆產能摘要。`,
-        "success"
-      );
-    }
-    hardDeleteDialogOpen.value = false;
-    hardDeleteTargetType.value = null;
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "主資料刪除失敗", "error");
-  } finally {
-    hardDeleting.value = false;
-    saving.value = false;
-  }
-}
 async function resetUserPassword(): Promise<void> {
   if (activeTab.value !== "user" || !selectedUserId.value) {
     pushToast("請先選擇使用者。", "warning");
@@ -1444,7 +1046,6 @@ async function resetUserPassword(): Promise<void> {
 }
 
 function downloadCurrent(): void {
-  closeMoreMenu();
   const payload = JSON.stringify(currentRows.value, null, 2);
   const blob = new Blob([payload], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -1467,52 +1068,12 @@ function updateKeyword(value: string): void {
   keyword.value = value;
 }
 
-function updateStatusFilter(value: "all" | "active" | "inactive"): void {
+function updateStatusFilter(value: Array<"active" | "inactive">): void {
   statusFilter.value = value;
 }
 
 watch([activeTab, keyword, statusFilter], () => {
   listPage.value = 1;
-});
-
-function updateLedgerTransactionNo(value: string): void {
-  ledgerTransactionNoFilter.value = value;
-}
-
-function updateLedgerCreatedBy(value: string): void {
-  ledgerCreatedByFilter.value = value;
-}
-
-function updateLedgerFixtureCode(value: string): void {
-  ledgerFixtureCodeFilter.value = value;
-}
-
-function updateLedgerTypeFilter(value: "all" | "receipt" | "return"): void {
-  ledgerTypeFilter.value = value;
-}
-
-function updateLedgerPageSize(value: number): void {
-  ledgerPageSize.value = value;
-}
-
-function previousLedgerPage(): void {
-  ledgerPage.value = Math.max(1, ledgerPage.value - 1);
-}
-
-function nextLedgerPage(): void {
-  ledgerPage.value = Math.min(ledgerTotalPages.value, ledgerPage.value + 1);
-}
-
-watch([ledgerTransactionNoFilter, ledgerCreatedByFilter, ledgerFixtureCodeFilter, ledgerTypeFilter, ledgerPageSize], async () => {
-  if (ledgerPage.value !== 1) {
-    ledgerPage.value = 1;
-    return;
-  }
-  await loadLedgerPage();
-});
-
-watch(ledgerPage, async () => {
-  await loadLedgerPage();
 });
 
 watch(currentRows, () => {
@@ -1533,7 +1094,6 @@ function downloadCsv(filename: string, content: string): void {
 
 async function exportActiveCsv(): Promise<void> {
   try {
-    closeMoreMenu();
     if (activeTab.value !== "fixture" && activeTab.value !== "model" && activeTab.value !== "station") {
       pushToast("此分頁目前未提供匯出 CSV。", "info");
       return;
@@ -1569,7 +1129,6 @@ async function exportActiveCsv(): Promise<void> {
 
 async function downloadTemplate(): Promise<void> {
   try {
-    closeMoreMenu();
     if (activeTab.value !== "fixture" && activeTab.value !== "model" && activeTab.value !== "station") {
       pushToast("此分頁目前未提供範本下載。", "info");
       return;
@@ -1596,83 +1155,6 @@ async function downloadTemplate(): Promise<void> {
     }
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "下載範本失敗", "error");
-  }
-}
-
-function triggerImport(): void {
-  moreMenuOpen.value = false;
-  if (activeTab.value !== "fixture" && activeTab.value !== "model" && activeTab.value !== "station") {
-    pushToast("此分頁目前未提供匯入 CSV。", "info");
-    return;
-  }
-  importInput.value?.click();
-}
-
-function toggleMoreMenu(): void {
-  moreMenuOpen.value = !moreMenuOpen.value;
-}
-
-function closeMoreMenu(): void {
-  moreMenuOpen.value = false;
-}
-
-function handleDocumentClick(event: MouseEvent): void {
-  if (!moreMenuRef.value) return;
-  const target = event.target;
-  if (target instanceof Node && !moreMenuRef.value.contains(target)) {
-    moreMenuOpen.value = false;
-  }
-}
-
-async function reloadLedgerSelection(): Promise<void> {
-  await loadLedgerPage({ preserveSelection: true });
-}
-
-async function recalculateLedgerState(options?: { skipConfirm?: boolean }): Promise<void> {
-  if (!selectedCustomerId.value) {
-    pushToast("請先選擇客戶。", "warning");
-    return;
-  }
-  if (!options?.skipConfirm && !window.confirm("將依目前交易明細全量重算庫存摘要。要繼續嗎？")) {
-    return;
-  }
-  ledgerProcessing.value = true;
-  try {
-    const result = await api.recalculateInventoryState(selectedCustomerId.value);
-    await loadData(false, { preserveListPage: true, focusSelectedLedgerRow: true });
-    pushToast(`重算完成：${result.fixture_count} 個治具、${result.item_count} 筆明細。`, "success");
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "重算失敗", "error");
-  } finally {
-    ledgerProcessing.value = false;
-  }
-}
-
-async function reverseSelectedLedgerTransaction(): Promise<void> {
-  if (!selectedCustomerId.value) {
-    pushToast("請先選擇客戶。", "warning");
-    return;
-  }
-  if (!selectedLedgerTransaction.value) {
-    pushToast("請先選擇要撤回的案件。", "warning");
-    return;
-  }
-  const tx = selectedLedgerTransaction.value;
-  if (!window.confirm(`確定要撤回單號 ${displayTransactionNo(tx.transaction_no)}？這會刪除整筆${tx.transaction_type === "receipt" ? "收料" : "退料"}案件並重算庫存。`)) {
-    return;
-  }
-  ledgerProcessing.value = true;
-  try {
-    const result = await api.reverseTransaction(tx.id, selectedCustomerId.value);
-    await loadData(false, { preserveListPage: true, focusSelectedLedgerRow: true });
-    pushToast(`已撤回 ${displayTransactionNo(result.transaction_no)}，共 ${result.item_count} 筆明細。`, "success");
-    if (window.confirm("案件已撤回。要接著再執行一次全量重算嗎？")) {
-      await recalculateLedgerState({ skipConfirm: true });
-    }
-  } catch (err) {
-    pushToast(err instanceof Error ? err.message : "撤回案件失敗", "error");
-  } finally {
-    ledgerProcessing.value = false;
   }
 }
 
@@ -1703,7 +1185,7 @@ async function importCsv(event: Event): Promise<void> {
       result = await api.importStationsCsv(selectedCustomerId.value, content, file.name);
     }
     await loadData(false, { focusSelectedListRow: true, preserveLedgerPage: true });
-    syncEditorFromSelection();
+    editorMode.value = "summary";
     pushToast(`匯入完成，共 ${result?.imported_count ?? 0} 筆。`, "success");
   } catch (err) {
     pushToast(err instanceof Error ? err.message : "匯入失敗", "error");
@@ -1712,8 +1194,8 @@ async function importCsv(event: Event): Promise<void> {
   }
 }
 
-watch(activeTab, syncEditorFromSelection);
 watch(activeTab, () => {
+  editorMode.value = "summary";
   mobileMasterDetailOpen.value = false;
 });
 watch(
@@ -1723,12 +1205,6 @@ watch(
   },
   { immediate: true }
 );
-watch(qualityRelationStationOptions, (rows) => {
-  if (rows.some((row) => row.id === qualityRelationStationId.value)) {
-    return;
-  }
-  qualityRelationStationId.value = rows[0]?.id ?? null;
-});
 watch(
   [activeTab, selectedCustomerId, selectedFixtureId],
   () => {
@@ -1736,6 +1212,7 @@ watch(
   }
 );
 watch(selectedCustomerId, async () => {
+  editorMode.value = "summary";
   await loadData();
   applyMasterDeepLinkSelection();
 });
@@ -1744,14 +1221,24 @@ function applyMasterDeepLinkSelection(): void {
   const fixtureId = Number.parseInt(typeof route.query.fixture_id === "string" ? route.query.fixture_id : "", 10);
   const modelId = Number.parseInt(typeof route.query.model_id === "string" ? route.query.model_id : "", 10);
   const stationId = Number.parseInt(typeof route.query.station_id === "string" ? route.query.station_id : "", 10);
+  const customerId = Number.parseInt(typeof route.query.customer_id === "string" ? route.query.customer_id : "", 10);
+  const userId = Number.parseInt(typeof route.query.user_id === "string" ? route.query.user_id : "", 10);
   if (activeTab.value === "fixture" && fixtures.value.some((row) => row.id === fixtureId)) {
     selectedFixtureId.value = fixtureId;
   } else if (activeTab.value === "model" && models.value.some((row) => row.id === modelId)) {
     selectedModelId.value = modelId;
   } else if (activeTab.value === "station" && stations.value.some((row) => row.id === stationId)) {
     selectedStationId.value = stationId;
+  } else if (activeTab.value === "customer" && customerRows.value.some((row) => row.id === customerId)) {
+    selectedCustomerRowId.value = customerId;
+  } else if (activeTab.value === "user" && users.value.some((row) => row.id === userId)) {
+    selectedUserId.value = userId;
   }
-  syncEditorFromSelection();
+  if (route.query.edit === "1" && hasSelectedMasterRow.value) {
+    startEdit();
+  } else {
+    editorMode.value = "summary";
+  }
 }
 
 watch(
@@ -1772,7 +1259,6 @@ watch(
 onMounted(async () => {
   syncMasterViewport();
   window.addEventListener("resize", syncMasterViewport);
-  document.addEventListener("click", handleDocumentClick);
   activeTab.value = resolveMasterTabFromPath(route.path);
   await loadData();
   applyMasterDeepLinkSelection();
@@ -1780,78 +1266,45 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", syncMasterViewport);
-  document.removeEventListener("click", handleDocumentClick);
-  revokeQualityImageUrl();
   clearFixtureImageBatchSelection();
   setCustomerSwitchGuard("master-page", false, "主資料頁有未儲存的修改");
 });
 </script>
 
 <template>
-  <div class="master-shell">
-    <UiSummaryCards class="summary-row" :cards="summaryCards" :desktop-columns="5" :tablet-columns="2" :mobile-columns="1" />
+  <div class="master-shell" :class="{ 'mobile-detail-active': isMobileMasterFlow && mobileMasterDetailOpen }">
+    <UiSummaryCards
+      v-if="!isMobileMasterFlow || !mobileMasterDetailOpen"
+      class="summary-row"
+      :cards="summaryCards"
+      :variant="isMobileMasterFlow ? 'compact' : 'default'"
+      :desktop-columns="5"
+      :tablet-columns="2"
+      :mobile-columns="1"
+    />
 
-    <section class="toolbar panel">
-      <div class="tab-bar" data-tour="master-tabs">
-        <div class="tab-group">
-          <span class="tab-group-label">資料維護</span>
-          <button class="tab-btn" :class="{ active: activeTab === 'fixture' }" data-tour="master-tab-fixture" @click="switchTab('fixture')">治具資訊</button>
-          <button class="tab-btn" :class="{ active: activeTab === 'model' }" data-tour="master-tab-model" @click="switchTab('model')">機種資訊</button>
-          <button class="tab-btn" :class="{ active: activeTab === 'station' }" data-tour="master-tab-station" @click="switchTab('station')">站點資訊</button>
-        </div>
-        <div v-if="canManageCustomers || canManageUsers" class="tab-group tab-group-admin">
-          <span class="tab-group-label">系統管理</span>
-          <button v-if="canManageCustomers" class="tab-btn tab-btn-admin" :class="{ active: activeTab === 'customer' }" data-tour="master-tab-customer" @click="switchTab('customer')">客戶</button>
-          <button v-if="canManageUsers" class="tab-btn tab-btn-admin" :class="{ active: activeTab === 'user' }" data-tour="master-tab-user" @click="switchTab('user')">使用者</button>
-          <button v-if="canManageLedger" class="tab-btn tab-btn-admin" :class="{ active: activeTab === 'ledger' }" data-tour="master-tab-ledger" @click="switchTab('ledger')">收退料帳目管理</button>
-          <button v-if="canManageQuality" class="tab-btn tab-btn-admin" :class="{ active: activeTab === 'quality' }" data-tour="master-tab-quality" @click="switchTab('quality')">治具資料品質</button>
-        </div>
-      </div>
-
-        <div class="toolbar-side">
-          <div class="toolbar-actions">
-            <button
-              class="outline-btn btn-compact toolbar-primary-action demo-tour-btn"
-              type="button"
-              :disabled="loading"
-              @click="startDemoTour"
-            >
-              {{ selectedGlobalCustomer ? "開始新手導覽" : "先選客戶再導覽" }}
-            </button>
-            <button
-              v-if="activeTab === 'fixture'"
-              class="toolbar-image-btn"
-              type="button"
-              :disabled="loading || fixtureImageBatchUploading || !selectedGlobalCustomer"
-              @click="openFixtureImageBatchPicker"
-            >
-              <span class="toolbar-image-btn-title">{{ fixtureImageBatchFiles.length > 0 ? `已選 ${fixtureImageBatchFiles.length} 張圖片` : "治具圖片上傳" }}</span>
-              <span class="toolbar-image-btn-meta">檔名對應治具編號，最多 50 張 / 每張小於 5 MB</span>
-            </button>
-            <button
-              v-if="activeTab === 'fixture' && fixtureImageBatchFiles.length > 0"
-              class="toolbar-image-upload-btn"
-              type="button"
-              :disabled="loading || fixtureImageBatchUploading || !selectedGlobalCustomer"
-              @click="uploadFixtureImageBatch"
-            >
-              {{ fixtureImageBatchUploading ? "圖片上傳中..." : `開始上傳 ${fixtureImageBatchFiles.length} 張` }}
-            </button>
-            <button class="outline-btn btn-compact toolbar-primary-action" type="button" @click="router.push({ name: 'search' })">返回搜尋</button>
-            <button class="outline-btn btn-compact toolbar-primary-action" type="button" :disabled="loading || activeTab === 'ledger'" @click="exportActiveCsv">匯出 CSV</button>
-          <div ref="moreMenuRef" class="more-menu">
-            <button class="outline-btn btn-compact more-menu-trigger" type="button" :disabled="loading || activeTab === 'ledger'" :aria-expanded="moreMenuOpen" @click.stop="toggleMoreMenu">更多</button>
-            <div v-if="moreMenuOpen" class="more-menu-panel">
-              <button class="more-menu-item" type="button" :disabled="loading" @click="downloadTemplate">下載範本</button>
-              <button class="more-menu-item" type="button" :disabled="loading" @click="triggerImport">匯入 CSV</button>
-              <button class="more-menu-item" type="button" :disabled="loading" @click="downloadCurrent">匯出 JSON</button>
-            </div>
-          </div>
-          <input ref="importInput" type="file" accept=".csv,text/csv" class="hidden-input" @change="importCsv" />
-          <input ref="fixtureImageBatchInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple class="hidden-input" @change="updateFixtureImageBatchFiles" />
-        </div>
-      </div>
-    </section>
+    <MasterToolbar
+      v-if="!isMobileMasterFlow || !mobileMasterDetailOpen"
+      ref="masterToolbarRef"
+      :active-tab="activeTab"
+      :can-manage-customers="canManageCustomers"
+      :can-manage-users="canManageUsers"
+      :can-manage-ledger="canManageLedger"
+      :can-manage-quality="canManageQuality"
+      :loading="loading"
+      :has-selected-customer="Boolean(selectedGlobalCustomer)"
+      :image-batch-uploading="fixtureImageBatchUploading"
+      :image-batch-file-count="fixtureImageBatchFiles.length"
+      @switch-tab="switchTab"
+      @start-tour="startDemoTour"
+      @upload-images="uploadFixtureImageBatch"
+      @return-search="router.push({ name: 'search' })"
+      @export-csv="exportActiveCsv"
+      @download-template="downloadTemplate"
+      @download-json="downloadCurrent"
+      @import-csv="importCsv"
+      @image-files-change="updateFixtureImageBatchFiles"
+    />
 
     <section class="content-grid" :class="{ 'content-grid-single': activeTab === 'quality' }">
       <template v-if="activeTab === 'quality'">
@@ -1898,11 +1351,28 @@ onBeforeUnmount(() => {
         />
 
         <div v-if="showMasterDetailPanel" class="detail-panel-stack">
-          <button v-if="isMobileMasterFlow" class="outline-btn mobile-back-btn" type="button" @click="returnToMobileList">返回清單</button>
+          <header v-if="isMobileMasterFlow" class="mobile-detail-header">
+            <button class="outline-btn mobile-back-btn" type="button" @click="returnToMobileList">← 返回清單</button>
+            <div class="mobile-detail-context">
+              <span>{{ tabTitleMap[activeTab] }}</span>
+              <strong>{{ mobileDetailHeading }}</strong>
+            </div>
+            <button
+              v-if="editorMode === 'summary' && masterSummaryFields.length > 0"
+              class="primary-btn mobile-detail-edit-btn"
+              type="button"
+              :disabled="saving"
+              @click="startEdit"
+            >
+              編輯
+            </button>
+          </header>
           <MasterDetailPanel
           :active-tab="activeTab"
           :tab-title="tabTitleMap[activeTab]"
+          :editor-mode="editorMode"
           :is-create-mode="isCreateMode"
+          :summary-fields="masterSummaryFields"
           :selected-detail-label="selectedDetailLabel"
           :selected-status-badge="selectedStatusBadge"
           :saving="saving"
@@ -1916,6 +1386,7 @@ onBeforeUnmount(() => {
           :selected-customer-row="selectedCustomerRow"
           :selected-user="selectedUser"
           :customer-assigned-users="customerAssignedUsers"
+          :customers="customerRows"
           :users="users"
           :fixture-form="fixtureForm"
           :model-form="modelForm"
@@ -1923,6 +1394,8 @@ onBeforeUnmount(() => {
           :customer-form="customerForm"
           :user-form="userForm"
           :on-start-create="startCreate"
+          :on-start-edit="startEdit"
+          :on-cancel-edit="cancelEditor"
           :on-reload-selection="reloadSelection"
           :on-save-current="saveCurrent"
           :on-toggle-current-active="toggleCurrentActive"
@@ -1967,1059 +1440,44 @@ onBeforeUnmount(() => {
       </template>
     </section>
 
-    <div v-if="qualityQuickEditOpen" class="ui-modal-backdrop quality-issue-backdrop" role="presentation" @click.self="closeQualityQuickEdit">
-      <section class="ui-modal-card quality-issue-dialog" role="dialog" aria-modal="true" aria-labelledby="quality-issue-title">
-        <header class="quality-issue-head">
-          <div>
-            <p class="fixture-delete-eyebrow">治具資料品質</p>
-            <h3 id="quality-issue-title">{{ qualityQuickEditTitle }}</h3>
-          </div>
-          <button class="fixture-delete-close" type="button" :disabled="qualityQuickEditSaving || qualityRelationSaving || qualityImageUploading" aria-label="關閉" @click="closeQualityQuickEdit">×</button>
-        </header>
+    <FixtureQualityQuickEditModal
+      v-model:form="qualityQuickEditForm"
+      v-model:relation-model-id="qualityRelationModelId"
+      v-model:relation-station-id="qualityRelationStationId"
+      v-model:relation-required-qty="qualityRelationRequiredQty"
+      :open="qualityQuickEditOpen"
+      :busy="qualityQuickEditBusy"
+      :issue-code="qualityQuickEditIssueCode"
+      :fixture="qualityQuickEditFixture"
+      :models="models"
+      :station-options="qualityRelationStationOptions"
+      :image-url="qualityImageUrl"
+      :image-file="qualityImageFile"
+      :quick-edit-saving="qualityQuickEditSaving"
+      :relation-saving="qualityRelationSaving"
+      :image-uploading="qualityImageUploading"
+      :title="qualityQuickEditTitle"
+      @close="closeQualityQuickEditDialog"
+      @image-change="updateQualityImageFile"
+      @image-input="qualityImageInput = $event"
+      @open-ledger="openLedgerFromQuality"
+      @save-fixture="saveQualityQuickEdit"
+      @save-relation="saveQualityRelation"
+      @upload-image="uploadQualityImage"
+    />
 
-        <div class="quality-issue-body">
-          <p class="quality-issue-intro">
-            點擊品質問題後可直接在這裡修正，不需要先跳頁。
-          </p>
-
-          <template v-if="qualityQuickEditIssueCode === 'missing_name'">
-            <label class="quality-field">
-              <span>治具名稱 *</span>
-              <input v-model="qualityQuickEditForm.name" />
-            </label>
-          </template>
-
-          <template v-else-if="qualityQuickEditIssueCode === 'missing_storage_and_min_stock'">
-            <label class="quality-field">
-              <span>產線儲位</span>
-              <input v-model="qualityQuickEditForm.line_storage_location" placeholder="A-01-03" />
-            </label>
-            <label class="quality-field">
-              <span>部門儲位</span>
-              <input v-model="qualityQuickEditForm.department_storage_location" placeholder="RD-SHELF-3" />
-            </label>
-            <label class="quality-field">
-              <span>最低水位</span>
-              <input v-model.number="qualityQuickEditForm.min_stock_qty" type="number" min="0" />
-            </label>
-          </template>
-
-          <template v-else-if="qualityQuickEditIssueCode === 'missing_model_relation'">
-            <p class="quality-helper">直接補上第一筆機種 / 站點 / 治具需求；若缺少 mapping，會一併建立。</p>
-            <label class="quality-field">
-              <span>機種 *</span>
-              <select v-model="qualityRelationModelId">
-                <option :value="null">請選擇機種</option>
-                <option v-for="row in models" :key="row.id" :value="row.id">{{ row.code }} / {{ row.name }}</option>
-              </select>
-            </label>
-            <label class="quality-field">
-              <span>站點 *</span>
-              <select v-model="qualityRelationStationId">
-                <option :value="null">請選擇站點</option>
-                <option v-for="row in qualityRelationStationOptions" :key="row.id" :value="row.id">{{ row.code }} / {{ row.name }}</option>
-              </select>
-            </label>
-            <label class="quality-field">
-              <span>需求數量 *</span>
-              <input v-model.number="qualityRelationRequiredQty" type="number" min="1" />
-            </label>
-          </template>
-
-          <template v-else-if="qualityQuickEditIssueCode === 'missing_image'">
-            <p class="quality-helper">直接上傳治具圖片；成功後會即時刷新品質結果。</p>
-            <div v-if="qualityImageUrl" class="quality-image-preview">
-              <img :src="qualityImageUrl" :alt="`${qualityQuickEditFixture?.code || 'fixture'} image`" />
-            </div>
-            <label class="quality-field">
-              <span>選擇圖片 *</span>
-              <input ref="qualityImageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="updateQualityImageFile" />
-            </label>
-            <p class="quality-helper">支援 PNG / JPG / WEBP / GIF，大小上限 5 MB。</p>
-          </template>
-
-          <template v-else-if="qualityQuickEditIssueCode === 'stock_mismatch'">
-            <p class="quality-helper">
-              這個異常來自交易明細與庫存摘要不一致，不是治具主檔欄位缺漏。請到收退料帳目管理做重算或撤回；這裡先不自動跳頁。
-            </p>
-            <button class="outline-btn" type="button" @click="openLedgerFromQuality">前往收退料帳目管理</button>
-          </template>
-        </div>
-
-        <footer class="quality-issue-actions">
-          <button class="outline-btn" type="button" :disabled="qualityQuickEditSaving || qualityRelationSaving" @click="closeQualityQuickEdit">關閉</button>
-          <button
-            v-if="qualityQuickEditIssueCode === 'missing_name' || qualityQuickEditIssueCode === 'missing_storage_and_min_stock'"
-            class="fixture-delete-confirm"
-            type="button"
-            :disabled="qualityQuickEditSaving"
-            @click="saveQualityQuickEdit"
-          >
-            {{ qualityQuickEditSaving ? "儲存中..." : "直接更新治具" }}
-          </button>
-          <button
-            v-else-if="qualityQuickEditIssueCode === 'missing_image'"
-            class="fixture-delete-confirm"
-            type="button"
-            :disabled="qualityImageUploading || !qualityImageFile"
-            @click="uploadQualityImage"
-          >
-            {{ qualityImageUploading ? "上傳中..." : "上傳圖片" }}
-          </button>
-          <button
-            v-else-if="qualityQuickEditIssueCode === 'missing_model_relation'"
-            class="fixture-delete-confirm"
-            type="button"
-            :disabled="qualityRelationSaving"
-            @click="saveQualityRelation"
-          >
-            {{ qualityRelationSaving ? "建立中..." : "建立第一筆關聯" }}
-          </button>
-        </footer>
-      </section>
-    </div>
-
-    <div v-if="hardDeleteDialogOpen" class="ui-modal-backdrop fixture-delete-backdrop" role="presentation" @click.self="closeHardDeleteDialog">
-      <section class="ui-modal-card fixture-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="fixture-delete-title">
-        <header class="fixture-delete-dialog-head">
-          <div>
-            <p class="fixture-delete-eyebrow">Admin only</p>
-            <h3 id="fixture-delete-title">{{ hardDeleteDialogTitle }}</h3>
-          </div>
-          <button class="fixture-delete-close" type="button" :disabled="hardDeleting" aria-label="關閉" @click="closeHardDeleteDialog">×</button>
-        </header>
-        <p class="fixture-delete-intro">{{ hardDeleteDialogIntro }}</p>
-
-        <div v-if="hardDeleteTargetType === 'fixture'" class="fixture-delete-options">
-          <label :class="{ selected: !deleteFixtureTransactions }">
-            <input v-model="deleteFixtureTransactions" type="radio" :value="false" />
-            <span>
-              <strong>保留收退料記錄（建議）</strong>
-              <small>歷史明細會保留刪除當下的治具編號與名稱，仍可查詢及匯出。</small>
-            </span>
-          </label>
-
-          <label :class="{ selected: deleteFixtureTransactions }">
-            <input v-model="deleteFixtureTransactions" type="radio" :value="true" />
-            <span>
-              <strong>一併刪除相關記錄</strong>
-              <small>只刪除此治具的明細；案件若還有其他治具會保留，沒有其他明細才刪除整張案件。</small>
-            </span>
-          </label>
-        </div>
-
-        <p v-if="deleteFixtureTransactions" class="fixture-delete-warning">
-          相關收退料明細將永久刪除，且無法透過帳目管理復原。
-        </p>
-
-        <p v-else-if="hardDeleteTargetType === 'model' || hardDeleteTargetType === 'station'" class="fixture-delete-warning">
-          將一併刪除關聯資料，且無法復原。
-        </p>
-
-        <footer class="fixture-delete-dialog-actions">
-          <button class="outline-btn" type="button" :disabled="hardDeleting" @click="closeHardDeleteDialog">取消</button>
-          <button class="fixture-delete-confirm" type="button" :disabled="hardDeleting" @click="confirmHardDeletion">{{ hardDeleting ? "刪除中..." : "確認永久刪除" }}</button>
-        </footer>
-      </section>
-    </div>
+    <MasterPermanentDeleteModal
+      v-model:delete-fixture-transactions="deleteFixtureTransactions"
+      :open="hardDeleteDialogOpen"
+      :deleting="hardDeleting"
+      :target-type="hardDeleteTargetType"
+      :title="hardDeleteDialogTitle"
+      :intro="hardDeleteDialogIntro"
+      @close="closeHardDeleteDialog"
+      @confirm="confirmHardDeletion"
+    />
   </div>
 </template>
 
-<style scoped>
-.master-shell {
-  height: 100%;
-  overflow: hidden;
-  padding: 8px;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 8px;
-  background: #fff;
-}
 
-.panel {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #fff;
-}
-
-.loading-banner,
-.empty-cell {
-  text-align: center;
-  padding: 14px 12px;
-  color: #56657f;
-  background: #f8fbff;
-  border-top: 1px solid var(--line);
-}
-
-.panel {
-  padding: 10px;
-  min-width: 0;
-  min-height: 0;
-}
-
-.toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(420px, 0.8fr);
-  gap: 10px 14px;
-  align-items: start;
-}
-
-.tab-bar {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.tab-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.tab-group-admin {
-  position: relative;
-  margin-left: 10px;
-  padding-left: 14px;
-}
-
-.tab-group-admin::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 1px;
-  background: linear-gradient(180deg, rgba(182, 192, 208, 0) 0%, rgba(182, 192, 208, 0.95) 20%, rgba(182, 192, 208, 0.95) 80%, rgba(182, 192, 208, 0) 100%);
-}
-
-.tab-group-label {
-  color: #7a869b;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.toolbar-side {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-}
-
-.tab-btn {
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  background: linear-gradient(180deg, #ffffff 0%, #f7f9fd 100%);
-  padding: 6px 10px;
-  color: #5b677d;
-  font-weight: 700;
-  cursor: pointer;
-  min-height: 32px;
-  font-size: 12px;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, filter 0.15s ease;
-}
-
-.tab-btn.active {
-  border-color: #a9c3f9;
-  background: linear-gradient(180deg, #eff5ff 0%, #e3eeff 100%);
-  color: var(--blue);
-  box-shadow: 0 6px 16px rgba(47, 110, 229, 0.12);
-}
-
-.tab-btn-admin {
-  border-color: #d5dbe6;
-  background: linear-gradient(180deg, #fffef9 0%, #f7f3e8 100%);
-  color: #68563a;
-}
-
-.tab-btn-admin.active {
-  border-color: #d7bf92;
-  background: linear-gradient(180deg, #fff7e5 0%, #f8ecd2 100%);
-  color: #8a5a08;
-  box-shadow: 0 6px 16px rgba(180, 126, 28, 0.14);
-}
-
-.toolbar-actions,
-.action-group {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.toolbar-actions {
-  justify-content: flex-end;
-}
-
-.toolbar-primary-action {
-  flex: 0 0 auto;
-}
-
-.toolbar-image-btn,
-.toolbar-image-upload-btn {
-  flex: 0 0 auto;
-  min-height: 36px;
-  border-radius: 12px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
-}
-
-.toolbar-image-btn {
-  display: grid;
-  gap: 2px;
-  min-width: 250px;
-  padding: 7px 12px;
-  text-align: left;
-  border: 1px solid #e4bc84;
-  color: #8d4d00;
-  background: linear-gradient(180deg, #fff7ea 0%, #ffeccf 100%);
-  box-shadow: 0 8px 18px rgba(201, 138, 48, 0.16);
-}
-
-.toolbar-image-btn-title {
-  line-height: 1.2;
-}
-
-.toolbar-image-btn-meta {
-  color: #9b6730;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.toolbar-image-upload-btn {
-  padding: 0 14px;
-  border: 1px solid #bf6f17;
-  color: #fffaf2;
-  background: linear-gradient(180deg, #d68a2d 0%, #b66d16 100%);
-  box-shadow: 0 10px 20px rgba(182, 109, 22, 0.22);
-}
-
-.toolbar-image-btn:hover,
-.toolbar-image-upload-btn:hover {
-  transform: translateY(-1px);
-}
-
-.toolbar-image-btn:disabled,
-.toolbar-image-upload-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
-.more-menu {
-  position: relative;
-}
-
-.more-menu-trigger {
-  min-width: 72px;
-}
-
-.more-menu-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 20;
-  min-width: 148px;
-  display: grid;
-  gap: 4px;
-  padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 14px 28px rgba(28, 47, 84, 0.14);
-}
-
-.more-menu-item {
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: #fff;
-  padding: 8px 10px;
-  color: #324462;
-  font: inherit;
-  font-weight: 700;
-  text-align: left;
-  cursor: pointer;
-}
-
-.more-menu-item:hover {
-  background: #f6f9ff;
-  border-color: #d8e3f5;
-}
-
-.customer-admin {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
-  gap: 8px;
-  align-items: end;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-
-.customer-admin label {
-  display: grid;
-  gap: 6px;
-}
-
-.customer-admin span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.customer-admin input {
-  width: 100%;
-}
-
-.content-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
-  gap: 8px;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.content-grid-single {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.detail-panel-stack {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-  min-height: 0;
-}
-
-.detail-panel {
-  display: grid;
-  min-height: 0;
-  gap: 8px;
-  overflow: auto;
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.detail-panel-create {
-  border-color: rgba(224, 138, 30, 0.28);
-  background: linear-gradient(180deg, rgba(255, 252, 246, 0.98) 0%, rgba(255, 248, 237, 0.96) 100%);
-  box-shadow: inset 0 0 0 1px rgba(255, 244, 220, 0.7);
-}
-
-.list-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  gap: 8px;
-  overflow: hidden;
-}
-
-.panel-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.panel-head h2 {
-  margin: 0;
-  color: #22314a;
-  font-size: 15px;
-}
-
-.panel-head p {
-  margin: 3px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.detail-head-actions {
-  align-items: center;
-}
-
-.action-divider-btn {
-  margin-left: 8px;
-}
-
-.panel-head-create {
-  padding: 10px 12px;
-  margin: -2px -2px 0;
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(255, 243, 220, 0.95) 0%, rgba(255, 249, 237, 0.92) 100%);
-  border: 1px solid rgba(224, 138, 30, 0.18);
-}
-
-.mode-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 28px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
-.mode-chip-create {
-  color: #8f4b00;
-  background: rgba(255, 239, 207, 0.95);
-  border: 1px solid rgba(224, 138, 30, 0.24);
-}
-
-.list-toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px 128px;
-  gap: 8px;
-  align-items: start;
-}
-
-input,
-select,
-textarea {
-  width: 100%;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  padding: 5px 8px;
-  background: #fff;
-  font: inherit;
-  font-size: 12px;
-}
-
-textarea {
-  resize: vertical;
-}
-
-.detail-form {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px 8px;
-  align-content: start;
-}
-
-.detail-form label {
-  display: grid;
-  gap: 6px;
-}
-
-.field-hint {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.3;
-}
-
-.detail-form label.full {
-  grid-column: 1 / -1;
-}
-
-.form-actions-full {
-  grid-column: 1 / -1;
-}
-
-.detail-form span {
-  color: #56657f;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.inline-action {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 6px;
-}
-
-.customer-scope-note {
-  border: 1px dashed var(--line-strong);
-  border-radius: 8px;
-  padding: 8px 10px;
-  color: #5d6d89;
-  background: #f7f9fd;
-}
-
-.role-scope-panel {
-  display: grid;
-  gap: 6px;
-}
-
-.customer-scope-panel {
-  display: grid;
-  gap: 8px;
-}
-
-.customer-scope-summary {
-  color: #5d6d89;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.customer-scope-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px;
-  background: #fbfcff;
-  max-height: 220px;
-  overflow: auto;
-}
-
-.customer-scope-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid #d9e3f2;
-  border-radius: 8px;
-  background: #fff;
-  cursor: pointer;
-}
-
-.customer-scope-item:hover {
-  border-color: #b8c9e6;
-  background: #f8fbff;
-}
-
-.customer-scope-checkbox {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.customer-scope-indicator {
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
-  flex: 0 0 16px;
-  border-radius: 999px;
-  border: 2px solid #d24b4b;
-  background: #fff;
-  box-shadow: inset 0 0 0 3px #fff;
-}
-
-.customer-scope-indicator.selected {
-  background: #d24b4b;
-}
-
-.customer-scope-text {
-  color: #22314a;
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  line-height: 1.4;
-}
-
-.customer-scope-text strong,
-.customer-scope-text small {
-  display: block;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.customer-scope-text strong {
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.customer-scope-text small {
-  color: #5d6d89;
-  font-size: 11px;
-}
-
-.actions {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: flex-end;
-  gap: 4px;
-  margin-top: 2px;
-}
-
-.tab-btn:hover {
-  transform: translateY(-1px);
-}
-
-.outline-btn:hover,
-.tab-btn:hover {
-  border-color: #c0cad9;
-  box-shadow: 0 4px 12px rgba(28, 47, 84, 0.08);
-}
-
-.tab-btn:active {
-  transform: translateY(0);
-}
-
-.data-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.table-scroll {
-  min-width: 0;
-  overflow-x: auto;
-  min-height: 0;
-}
-
-.data-table th,
-.data-table td {
-  padding: 3px 8px;
-  text-align: left;
-  border-bottom: 1px solid var(--line);
-  font-size: 12px;
-}
-
-.data-table thead th {
-  background: #f7f9fd;
-  color: #52607b;
-  font-weight: 700;
-}
-
-.data-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.data-table tbody tr:hover {
-  background: #f6f9ff;
-  cursor: pointer;
-}
-
-.data-table tbody tr.selected {
-  background: #edf3ff;
-}
-
-.status-legend {
-  margin-left: auto;
-}
-
-.hidden-input {
-  display: none;
-}
-
-.list-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  color: #5d6d89;
-  font-size: 12px;
-}
-
-.pager-actions {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.mobile-back-btn {
-  width: auto;
-  justify-self: start;
-  min-height: 40px;
-  padding-inline: 14px;
-}
-
-.fixture-delete-backdrop {
-  z-index: 1200;
-}
-
-.fixture-delete-dialog {
-  width: min(620px, calc(100vw - 28px));
-  display: grid;
-  gap: 14px;
-  padding: 18px;
-}
-
-.quality-issue-dialog {
-  width: min(560px, calc(100vw - 28px));
-  display: grid;
-  gap: 14px;
-  padding: 18px;
-}
-
-.fixture-delete-dialog-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.quality-issue-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.fixture-delete-eyebrow {
-  margin: 0 0 4px;
-  color: #b23a3a;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.fixture-delete-dialog h3,
-.fixture-delete-intro,
-.fixture-delete-warning {
-  margin: 0;
-}
-
-.fixture-delete-dialog h3 {
-  color: #29374f;
-  font-size: 18px;
-}
-
-.quality-issue-dialog h3 {
-  margin: 0;
-  color: #29374f;
-  font-size: 18px;
-}
-
-.fixture-delete-intro {
-  color: #5c6b82;
-  line-height: 1.6;
-}
-
-.quality-issue-intro,
-.quality-helper {
-  margin: 0;
-  color: #5c6b82;
-  line-height: 1.6;
-}
-
-.quality-issue-body {
-  display: grid;
-  gap: 12px;
-}
-
-.quality-field {
-  display: grid;
-  gap: 6px;
-}
-
-.quality-field span {
-  color: #56657f;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.quality-image-preview {
-  display: flex;
-  justify-content: center;
-  padding: 12px;
-  border: 1px dashed #cfd7e6;
-  border-radius: 10px;
-  background: #f8fbff;
-}
-
-.quality-image-preview img {
-  max-width: 100%;
-  max-height: 240px;
-  object-fit: contain;
-  border-radius: 8px;
-}
-
-.fixture-delete-close {
-  border: 0;
-  background: transparent;
-  color: #6a778b;
-  font-size: 24px;
-  cursor: pointer;
-}
-
-.fixture-delete-options {
-  display: grid;
-  gap: 10px;
-}
-
-.fixture-delete-options label {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fff;
-  cursor: pointer;
-}
-
-.fixture-delete-options label.selected {
-  border-color: #cf5a5a;
-  box-shadow: 0 0 0 2px rgba(207, 90, 90, 0.12);
-}
-
-.fixture-delete-options span {
-  display: grid;
-  gap: 4px;
-}
-
-.fixture-delete-options strong {
-  color: #34425a;
-}
-
-.fixture-delete-options small {
-  color: #69778c;
-  line-height: 1.5;
-}
-
-.fixture-delete-warning {
-  padding: 10px 12px;
-  border: 1px solid #edb5b5;
-  border-radius: 8px;
-  color: #9b3030;
-  background: #fff4f4;
-  font-weight: 700;
-}
-
-.fixture-delete-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.quality-issue-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.fixture-delete-confirm {
-  border: 1px solid #b93434;
-  border-radius: 9px;
-  padding: 7px 12px;
-  color: #fff;
-  background: #b93434;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.fixture-delete-confirm:disabled,
-.fixture-delete-close:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-@media (max-width: 1100px) {
-  .content-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .toolbar {
-    grid-template-columns: 1fr;
-  }
-
-  .list-toolbar,
-  .detail-form {
-    grid-template-columns: 1fr;
-  }
-
-  .customer-scope-list {
-    grid-template-columns: 1fr;
-  }
-
-  .actions {
-    justify-content: stretch;
-  }
-}
-
-@media (max-width: 900px) {
-  .master-shell {
-    padding: 6px;
-    gap: 8px;
-  }
-
-  .toolbar-actions,
-  .action-group {
-    width: 100%;
-  }
-
-  .customer-admin {
-    grid-template-columns: 1fr;
-  }
-
-  .toolbar-actions button,
-  .action-group button {
-    flex: 1 1 120px;
-  }
-
-  .toolbar-image-btn,
-  .toolbar-image-upload-btn {
-    width: 100%;
-  }
-
-  .toolbar-actions {
-    justify-content: flex-start;
-  }
-
-  .tab-group-admin {
-    margin-left: 0;
-    padding-left: 0;
-  }
-
-  .tab-group-admin::before {
-    display: none;
-  }
-
-  .more-menu {
-    flex: 1 1 120px;
-  }
-
-  .more-menu-trigger {
-    width: 100%;
-  }
-
-  .more-menu-panel {
-    left: 0;
-    right: auto;
-    min-width: min(220px, 100%);
-  }
-
-  .detail-form,
-  .list-toolbar {
-    grid-template-columns: 1fr;
-  }
-
-  .panel-head,
-  .toolbar,
-  .list-toolbar {
-    align-items: stretch;
-  }
-
-  .actions {
-    flex-direction: column;
-  }
-}
-
-@media (max-width: 640px) {
-  .panel {
-    padding: 10px;
-  }
-
-  .tab-bar {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .tab-btn {
-    width: 100%;
-  }
-
-  .data-table th,
-  .data-table td {
-    white-space: nowrap;
-  }
-
-  .inline-action {
-    grid-template-columns: 1fr;
-  }
-}
-</style>
+<style src="@/styles/surfaces/master.css"></style>

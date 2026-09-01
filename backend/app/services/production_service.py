@@ -4,11 +4,18 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.auth import SessionContext
+from backend.app.repositories.inventory_repository import InventoryRepository
 from backend.app.repositories.production_repository import ProductionRepository
 from backend.app.schemas.common import CsvImportPayload
-from backend.app.schemas.production import FixtureRequirementCopy, FixtureRequirementCreate, ModelStationCreate
+from backend.app.schemas.production import (
+    FixtureRequirementCopy,
+    FixtureRequirementCreate,
+    ModelStationCreate,
+    ProductionCsvImportPayload,
+)
 from backend.app.services.audit_service import AuditService
-from backend.app.utils.csv_tools import parse_csv_bytes, render_csv_text
+from backend.app.utils.csv_tools import parse_csv_bytes, render_csv_text, stream_csv_text
+from backend.app.utils.identifier_rules import normalize_identifier_for_write
 
 
 class ProductionService:
@@ -16,6 +23,27 @@ class ProductionService:
         self.db = db
         self.repo = ProductionRepository(db)
         self.audit = AuditService(db)
+
+    def _validate_designated_identifiers(self, payload: FixtureRequirementCreate) -> list[str]:
+        if not payload.designated_mode:
+            return []
+        identifiers = list(
+            dict.fromkeys(
+                normalize_identifier_for_write(identifier)
+                for identifier in payload.designated_identifiers
+            )
+        )
+        if not identifiers:
+            raise ValueError("指定模式至少需要選擇一個有庫存的 identifier")
+        available_rows = InventoryRepository(self.db).list_identifier_stock_summary_rows(
+            customer_id=payload.customer_id,
+            fixture_id=payload.fixture_id,
+        )
+        available = {str(row["identifier"]) for row in available_rows if int(row["stock_qty"]) > 0}
+        missing = [identifier for identifier in identifiers if identifier not in available]
+        if missing:
+            raise ValueError(f"指定的 identifier 無可用庫存：{', '.join(missing)}")
+        return identifiers
 
     def create_model_station(self, payload: ModelStationCreate, actor: SessionContext | None = None):
         model = self.repo.get_model(payload.model_id, customer_id=payload.customer_id)
@@ -80,6 +108,10 @@ class ProductionService:
     def list_model_stations(self, customer_id: int | None = None):
         return self.repo.list_model_stations(customer_id=customer_id)
 
+    def list_model_stations_page(self, **kwargs) -> dict:
+        items, total = self.repo.list_model_stations_page(**kwargs)
+        return {"items": items, "page": kwargs["page"], "page_size": kwargs["page_size"], "total": total}
+
     def delete_model_station(self, row_id: int, customer_id: int | None = None, actor: SessionContext | None = None) -> None:
         row = self.repo.get_model_station_by_id(row_id, customer_id=customer_id)
         if row is None:
@@ -114,6 +146,8 @@ class ProductionService:
         if station is None:
             raise ValueError(f"station {payload.station_id} not found")
 
+        designated_identifiers = self._validate_designated_identifiers(payload)
+
         self._ensure_model_station(
             customer_id=payload.customer_id,
             model_id=payload.model_id,
@@ -125,13 +159,23 @@ class ProductionService:
             station_id=payload.station_id,
             fixture_id=payload.fixture_id,
             required_qty=payload.required_qty,
+            designated_mode=payload.designated_mode,
+            designated_identifiers=designated_identifiers,
+        )
+        from backend.app.services.storage_service import StorageService
+
+        StorageService(self.db).sync_fixture_storage_fields(
+            fixture, fixture.line_storage_location, fixture.department_storage_location
         )
         self.audit.record(
             customer_id=payload.customer_id,
             entity_type="fixture_requirement",
             entity_key=f"{model.code}->{station.code}->{fixture.code}",
             action="create",
-            summary=f"建立治具需求 {model.code} / {station.code} / {fixture.code} = {payload.required_qty}",
+            summary=(
+                f"建立治具需求 {model.code} / {station.code} / {fixture.code} = {payload.required_qty}"
+                + (f"；指定 identifier：{', '.join(designated_identifiers)}" if payload.designated_mode else "")
+            ),
             actor=actor,
         )
         self.db.commit()
@@ -208,11 +252,18 @@ class ProductionService:
                     station_id=payload.target_station_id,
                     fixture_id=source_requirement.fixture_id,
                     required_qty=source_requirement.required_qty,
+                    designated_mode=source_requirement.designated_mode,
+                    designated_identifiers=source_requirement.designated_identifiers,
                 )
                 created_count += 1
                 continue
 
-            if not payload.overwrite_existing or target_requirement.required_qty == source_requirement.required_qty:
+            target_matches_source = (
+                target_requirement.required_qty == source_requirement.required_qty
+                and target_requirement.designated_mode == source_requirement.designated_mode
+                and target_requirement.designated_identifiers == source_requirement.designated_identifiers
+            )
+            if not payload.overwrite_existing or target_matches_source:
                 skipped_count += 1
                 continue
 
@@ -222,6 +273,8 @@ class ProductionService:
                 station_id=payload.target_station_id,
                 fixture_id=source_requirement.fixture_id,
                 required_qty=source_requirement.required_qty,
+                designated_mode=source_requirement.designated_mode,
+                designated_identifiers=source_requirement.designated_identifiers,
             )
             updated_count += 1
 
@@ -266,6 +319,11 @@ class ProductionService:
         if station is None:
             raise ValueError(f"station {payload.station_id} not found")
 
+        designation_supplied = bool(
+            {"designated_mode", "designated_identifiers"} & payload.model_fields_set
+        )
+        designated_identifiers = self._validate_designated_identifiers(payload) if designation_supplied else []
+
         self._ensure_model_station(
             customer_id=payload.customer_id,
             model_id=payload.model_id,
@@ -280,6 +338,7 @@ class ProductionService:
         if existing is not None and existing.id != requirement_id:
             raise ValueError("fixture requirement already exists")
 
+        previous_fixture_id = requirement.fixture_id
         try:
             updated = self.repo.update_requirement(
                 requirement,
@@ -287,13 +346,32 @@ class ProductionService:
                 station_id=payload.station_id,
                 fixture_id=payload.fixture_id,
                 required_qty=payload.required_qty,
+                designated_mode=payload.designated_mode if designation_supplied else None,
+                designated_identifiers=designated_identifiers if designation_supplied else None,
+            )
+            from backend.app.services.storage_service import StorageService
+
+            storage_service = StorageService(self.db)
+            if previous_fixture_id != fixture.id:
+                previous_fixture = self.repo.get_fixture(previous_fixture_id, customer_id=payload.customer_id)
+                if previous_fixture is not None:
+                    storage_service.sync_fixture_storage_fields(
+                        previous_fixture,
+                        previous_fixture.line_storage_location,
+                        previous_fixture.department_storage_location,
+                    )
+            storage_service.sync_fixture_storage_fields(
+                fixture, fixture.line_storage_location, fixture.department_storage_location
             )
             self.audit.record(
                 customer_id=payload.customer_id,
                 entity_type="fixture_requirement",
                 entity_key=f"{model.code}->{station.code}->{fixture.code}",
                 action="update",
-                summary=f"更新治具需求 {model.code} / {station.code} / {fixture.code} = {payload.required_qty}",
+                summary=(
+                    f"更新治具需求 {model.code} / {station.code} / {fixture.code} = {payload.required_qty}"
+                    + (f"；指定 identifier：{', '.join(designated_identifiers)}" if designation_supplied and payload.designated_mode else "")
+                ),
                 actor=actor,
             )
             self.db.commit()
@@ -311,6 +389,12 @@ class ProductionService:
         station = self.repo.get_station(requirement.station_id, customer_id=customer_id)
         fixture = self.repo.get_fixture(requirement.fixture_id, customer_id=customer_id)
         self.repo.delete_requirement(requirement)
+        if fixture is not None:
+            from backend.app.services.storage_service import StorageService
+
+            StorageService(self.db).sync_fixture_storage_fields(
+                fixture, fixture.line_storage_location, fixture.department_storage_location
+            )
         self.audit.record(
             customer_id=customer_id,
             entity_type="fixture_requirement",
@@ -356,7 +440,7 @@ class ProductionService:
         for req in requirements:
             if req.required_qty <= 0:
                 continue
-            stock_qty = self.repo.get_stock_qty(req.fixture_id)
+            stock_qty = self.repo.get_requirement_stock_qty(req)
             capacity = floor(stock_qty / req.required_qty)
             fixture = self.repo.get_fixture(req.fixture_id, customer_id=customer_id)
             fixture_code = "unknown" if fixture is None else fixture.code
@@ -433,7 +517,7 @@ class ProductionService:
                 fixture = self.repo.get_fixture(req.fixture_id, customer_id=customer_id)
                 if fixture is None:
                     continue
-                stock_qty = self.repo.get_stock_qty(req.fixture_id)
+                stock_qty = self.repo.get_requirement_stock_qty(req)
                 level = self.repo.get_stock_level(req.fixture_id)
                 min_stock_qty = 0 if level is None else level.min_stock_qty
                 if stock_qty <= 0:
@@ -453,6 +537,8 @@ class ProductionService:
                         "fixture_code": fixture.code,
                         "fixture_name": fixture.name,
                         "required_qty": req.required_qty,
+                        "designated_mode": req.designated_mode,
+                        "designated_identifiers": req.designated_identifiers,
                         "stock_qty": stock_qty,
                         "max_open_station_count": capacity,
                         "stock_status": stock_status,
@@ -529,36 +615,146 @@ class ProductionService:
             )
         return render_csv_text(["model_code", "station_code"], rows)
 
+    def stream_form_export_csv(
+        self,
+        *,
+        entity: str,
+        customer_id: int,
+        model_id: int | None = None,
+        station_id: int | None = None,
+        keyword: str = "",
+    ):
+        if entity == "mappings":
+            source = self.repo.iter_model_station_rows(
+                customer_id=customer_id,
+                model_id=model_id,
+                station_id=station_id,
+                keyword=keyword,
+            )
+            rows = (
+                {
+                    "機種編號": row["model_code"],
+                    "機種名稱": row["model_name"],
+                    "站點編號": row["station_code"],
+                    "站點名稱": row["station_name"],
+                    "狀態": "已配置",
+                }
+                for row in source
+            )
+            return stream_csv_text(["機種編號", "機種名稱", "站點編號", "站點名稱", "狀態"], rows)
+        if entity != "requirements":
+            raise ValueError(f"unsupported form export entity: {entity}")
+        source = self.repo.iter_requirement_export_rows(
+            customer_id=customer_id,
+            model_id=model_id,
+            station_id=station_id,
+            keyword=keyword,
+        )
+        rows = (
+            {
+                "機種": row["model_code"],
+                "站點": row["station_code"],
+                "治具": row["fixture_code"],
+                "治具名稱": row["fixture_name"],
+                "每站需求": row["required_qty"],
+                "使用模式": "指定 identifier" if row["designated_mode"] else "不限 identifier",
+                "指定 identifier": str(row["designated_identifiers"] or "").replace(",", "、"),
+                "目前庫存": row["stock_qty"],
+                "可開站": int(row["stock_qty"] or 0) // int(row["required_qty"]),
+            }
+            for row in source
+        )
+        return stream_csv_text(
+            ["機種", "站點", "治具", "治具名稱", "每站需求", "使用模式", "指定 identifier", "目前庫存", "可開站"],
+            rows,
+        )
+
     def model_station_template_csv(self) -> str:
         return render_csv_text(["model_code", "station_code"], [{"model_code": "VPort-254", "station_code": "ST-01"}])
 
-    def import_model_stations_csv(self, customer_id: int | None, payload: CsvImportPayload, actor: SessionContext | None = None) -> int:
+    @staticmethod
+    def _summarize_import_preview(rows: list[dict]) -> dict:
+        return {
+            "rows": rows,
+            "new_count": sum(row["status"] == "new" for row in rows),
+            "unchanged_count": sum(row["status"] == "unchanged" for row in rows),
+            "conflict_count": sum(row["status"] == "conflict" for row in rows),
+            "error_count": sum(row["status"] == "error" for row in rows),
+        }
+
+    def preview_model_stations_csv(self, customer_id: int | None, payload: CsvImportPayload) -> dict:
         if customer_id is None:
             raise ValueError("customer_id is required")
         rows = parse_csv_bytes(payload.content.encode("utf-8"))
-        imported_count = 0
-        for row in rows:
-            model_code = row.get("model_code", "")
-            station_code = row.get("station_code", "")
+        preview_rows: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for index, row in enumerate(rows, start=2):
+            model_code = row.get("model_code", "").strip()
+            station_code = row.get("station_code", "").strip()
+            preview = {
+                "line": index,
+                "model_code": model_code,
+                "station_code": station_code,
+                "status": "error",
+                "message": "",
+            }
             if not model_code or not station_code:
+                preview["message"] = "機種編號與站點編號不可空白"
+                preview_rows.append(preview)
                 continue
+            key = (model_code.casefold(), station_code.casefold())
+            if key in seen:
+                preview["message"] = "同一份貼上資料中已有重複的機種站點綁定"
+                preview_rows.append(preview)
+                continue
+            seen.add(key)
             model = self.repo.get_model_by_code(model_code, customer_id=customer_id)
             station = self.repo.get_station_by_code(station_code, customer_id=customer_id)
             if model is None or station is None:
-                raise ValueError(f"mapping not found: {model_code} / {station_code}")
-            if self.repo.get_model_station(model.id, station.id, customer_id=customer_id) is None:
-                self.repo.create_model_station(model_id=model.id, station_id=station.id)
-                imported_count += 1
+                preview["message"] = f"找不到機種或站點：{model_code} / {station_code}"
+            elif self.repo.get_model_station(model.id, station.id, customer_id=customer_id) is None:
+                preview.update(status="new", message="將新增機種站點綁定")
+            else:
+                preview.update(status="unchanged", message="已存在相同綁定，將略過")
+            preview_rows.append(preview)
+        return self._summarize_import_preview(preview_rows)
+
+    def import_model_stations_csv(
+        self,
+        customer_id: int | None,
+        payload: ProductionCsvImportPayload,
+        actor: SessionContext | None = None,
+    ) -> dict:
+        preview = self.preview_model_stations_csv(customer_id, payload)
+        if preview["error_count"]:
+            first_error = next(row for row in preview["rows"] if row["status"] == "error")
+            raise ValueError(f"第 {first_error['line']} 行：{first_error['message']}")
+        created_count = 0
+        for row in preview["rows"]:
+            if row["status"] != "new":
+                continue
+            model = self.repo.get_model_by_code(row["model_code"], customer_id=customer_id)
+            station = self.repo.get_station_by_code(row["station_code"], customer_id=customer_id)
+            if model is None or station is None:
+                raise ValueError(f"mapping not found: {row['model_code']} / {row['station_code']}")
+            self.repo.create_model_station(model_id=model.id, station_id=station.id)
+            created_count += 1
+        skipped_count = preview["unchanged_count"]
         self.audit.record(
             customer_id=customer_id,
             entity_type="model_station",
             entity_key="import",
             action="import",
-            summary=f"匯入機種站點對應，共 {imported_count} 筆",
+            summary=f"匯入機種站點對應，新增 {created_count} 筆、略過 {skipped_count} 筆",
             actor=actor,
         )
         self.db.commit()
-        return imported_count
+        return {
+            "imported_count": created_count,
+            "created_count": created_count,
+            "updated_count": 0,
+            "skipped_count": skipped_count,
+        }
 
     def export_fixture_requirements_csv(self, customer_id: int | None = None) -> str:
         requirements = self.repo.list_all_requirements(customer_id=customer_id)
@@ -573,12 +769,21 @@ class ProductionService:
                     "station_code": station.code if station else "",
                     "fixture_code": fixture.code if fixture else "",
                     "required_qty": row.required_qty,
+                    "designated_mode": "yes" if row.designated_mode else "no",
+                    "designated_identifiers": ",".join(row.designated_identifiers),
                 }
             )
-        return render_csv_text(["model_code", "station_code", "fixture_code", "required_qty"], rows)
+        return render_csv_text(
+            ["model_code", "station_code", "fixture_code", "required_qty", "designated_mode", "designated_identifiers"],
+            rows,
+        )
 
     def list_fixture_requirements(self, customer_id: int | None = None) -> list[dict]:
         return self.repo.list_requirement_rows(customer_id=customer_id)
+
+    def list_fixture_requirements_page(self, **kwargs) -> dict:
+        items, total = self.repo.list_requirement_rows_page(**kwargs)
+        return {"items": items, "page": kwargs["page"], "page_size": kwargs["page_size"], "total": total}
 
     def list_station_requirements(self, station_id: int, model_id: int, customer_id: int | None = None) -> list[dict]:
         rows = self.repo.list_requirement_rows(customer_id=customer_id)
@@ -590,39 +795,116 @@ class ProductionService:
             [{"model_code": "VPort-254", "station_code": "ST-01", "fixture_code": "C-00001", "required_qty": "2"}],
         )
 
-    def import_fixture_requirements_csv(self, customer_id: int | None, payload: CsvImportPayload, actor: SessionContext | None = None) -> int:
+    def preview_fixture_requirements_csv(self, customer_id: int | None, payload: CsvImportPayload) -> dict:
         if customer_id is None:
             raise ValueError("customer_id is required")
         rows = parse_csv_bytes(payload.content.encode("utf-8"))
-        imported_count = 0
-        for row in rows:
-            model_code = row.get("model_code", "")
-            station_code = row.get("station_code", "")
-            fixture_code = row.get("fixture_code", "")
-            required_qty = int(row.get("required_qty", "0") or "0")
+        preview_rows: list[dict] = []
+        seen: set[tuple[str, str, str]] = set()
+        for index, row in enumerate(rows, start=2):
+            model_code = row.get("model_code", "").strip()
+            station_code = row.get("station_code", "").strip()
+            fixture_code = row.get("fixture_code", "").strip()
+            required_qty_text = row.get("required_qty", "").strip()
+            required_qty = int(required_qty_text) if required_qty_text.isdigit() else 0
+            preview = {
+                "line": index,
+                "model_code": model_code,
+                "station_code": station_code,
+                "fixture_code": fixture_code,
+                "incoming_required_qty": required_qty if required_qty > 0 else None,
+                "existing_required_qty": None,
+                "status": "error",
+                "message": "",
+            }
             if not model_code or not station_code or not fixture_code or required_qty <= 0:
+                preview["message"] = "機種、站點、治具不可空白，且每站需求量須為大於 0 的整數"
+                preview_rows.append(preview)
                 continue
+            key = (model_code.casefold(), station_code.casefold(), fixture_code.casefold())
+            if key in seen:
+                preview["message"] = "同一份貼上資料中已有重複的機種站點治具綁定"
+                preview_rows.append(preview)
+                continue
+            seen.add(key)
             model = self.repo.get_model_by_code(model_code, customer_id=customer_id)
             station = self.repo.get_station_by_code(station_code, customer_id=customer_id)
             fixture = self.repo.get_fixture_by_code(fixture_code, customer_id=customer_id)
             if model is None or station is None or fixture is None:
-                raise ValueError(f"requirement not found: {model_code} / {station_code} / {fixture_code}")
+                preview["message"] = f"找不到機種、站點或治具：{model_code} / {station_code} / {fixture_code}"
+                preview_rows.append(preview)
+                continue
             if self.repo.get_model_station(model.id, station.id, customer_id=customer_id) is None:
-                raise ValueError(f"mapping not found: {model_code} / {station_code}")
+                preview["message"] = f"機種 {model_code} 尚未綁定站點 {station_code}"
+                preview_rows.append(preview)
+                continue
+            existing = self.repo.get_requirement(
+                model_id=model.id,
+                station_id=station.id,
+                fixture_id=fixture.id,
+            )
+            if existing is None:
+                preview.update(status="new", message="將新增治具需求綁定")
+            elif existing.required_qty == required_qty:
+                preview.update(
+                    existing_required_qty=existing.required_qty,
+                    status="unchanged",
+                    message="與現有資料相同，將略過",
+                )
+            else:
+                preview.update(
+                    existing_required_qty=existing.required_qty,
+                    status="conflict",
+                    message=f"每站需求量將由 {existing.required_qty} 取代為 {required_qty}",
+                )
+            preview_rows.append(preview)
+        return self._summarize_import_preview(preview_rows)
+
+    def import_fixture_requirements_csv(
+        self,
+        customer_id: int | None,
+        payload: ProductionCsvImportPayload,
+        actor: SessionContext | None = None,
+    ) -> dict:
+        preview = self.preview_fixture_requirements_csv(customer_id, payload)
+        if preview["error_count"]:
+            first_error = next(row for row in preview["rows"] if row["status"] == "error")
+            raise ValueError(f"第 {first_error['line']} 行：{first_error['message']}")
+        created_count = 0
+        updated_count = 0
+        skipped_count = 0
+        for row in preview["rows"]:
+            if row["status"] == "unchanged" or (row["status"] == "conflict" and not payload.overwrite_existing):
+                skipped_count += 1
+                continue
+            model = self.repo.get_model_by_code(row["model_code"], customer_id=customer_id)
+            station = self.repo.get_station_by_code(row["station_code"], customer_id=customer_id)
+            fixture = self.repo.get_fixture_by_code(row["fixture_code"], customer_id=customer_id)
+            if model is None or station is None or fixture is None:
+                raise ValueError(f"requirement not found: {row['model_code']} / {row['station_code']} / {row['fixture_code']}")
             self.repo.create_or_update_requirement(
                 model_id=model.id,
                 station_id=station.id,
                 fixture_id=fixture.id,
-                required_qty=required_qty,
+                required_qty=row["incoming_required_qty"],
             )
-            imported_count += 1
+            if row["status"] == "conflict":
+                updated_count += 1
+            else:
+                created_count += 1
+        imported_count = created_count + updated_count
         self.audit.record(
             customer_id=customer_id,
             entity_type="fixture_requirement",
             entity_key="import",
             action="import",
-            summary=f"匯入治具需求，共 {imported_count} 筆",
+            summary=f"匯入治具需求，新增 {created_count} 筆、取代 {updated_count} 筆、略過 {skipped_count} 筆",
             actor=actor,
         )
         self.db.commit()
-        return imported_count
+        return {
+            "imported_count": imported_count,
+            "created_count": created_count,
+            "updated_count": updated_count,
+            "skipped_count": skipped_count,
+        }

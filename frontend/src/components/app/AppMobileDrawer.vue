@@ -18,6 +18,7 @@ const props = defineProps<{
   todayReturnQty: number;
   lowStockCount: number;
   menuEntries: MenuEntry[];
+  onboardingLabel?: string;
 }>();
 
 const emit = defineEmits<{
@@ -26,6 +27,7 @@ const emit = defineEmits<{
   openBatch: [];
   openExport: [];
   openOnboarding: [];
+  openPassword: [];
   openMenuRoute: [path: string, disabled: boolean];
   logout: [];
 }>();
@@ -63,7 +65,8 @@ function handleOpenOnboarding(): void {
       </div>
       <button v-if="canOperateInventory" class="primary-btn receipt-btn mobile-receipt-btn" type="button" @click="handleOpenBatch">治具收/退料</button>
       <button class="primary-btn receipt-btn mobile-receipt-btn" type="button" @click="handleOpenExport">匯出中心</button>
-      <button class="outline-btn drawer-link" type="button" @click="handleOpenOnboarding">新手教學</button>
+      <button class="outline-btn drawer-link" type="button" @click="handleOpenOnboarding">{{ onboardingLabel || "Modern UI 教學" }}</button>
+      <button v-if="canOperateInventory" class="outline-btn drawer-link" type="button" @click="emit('openPassword'); emit('close')">修改密碼</button>
       <button
         v-for="entry in menuEntries"
         :key="`mobile-${entry.to}`"

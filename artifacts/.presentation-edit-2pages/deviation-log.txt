@@ -1,0 +1,3 @@
+Output slide 1: source slide 2 duplicated. Narrative copy and cost comparisons condensed to include the workbench, batch operations, unified identifier rules, and traceability. Existing screenshot preserved.
+Output slide 2: source slide 4 duplicated. Narrative copy and cost comparisons condensed to include bottleneck capacity, backend report aggregation, customer scope, storage, and image governance. Existing screenshot preserved.
+No geometry, font, color, image frame, footer brand, or master/layout changes.

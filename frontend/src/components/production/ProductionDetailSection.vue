@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { computed, ref, watch } from "vue";
+
+import { onboardingActive, onboardingFlowId, onboardingStepIndex } from "@/appState";
 import UiAutocompleteInput from "@/components/UiAutocompleteInput.vue";
 import UiFormActions from "@/components/UiFormActions.vue";
 import UiSectionHeader from "@/components/UiSectionHeader.vue";
 import UiStatusPill from "@/components/UiStatusPill.vue";
-import type { Fixture, FixtureRequirementListItem, Station } from "@/types";
+import { getOnboardingFlow } from "@/onboarding";
+import type { Fixture, FixtureRequirementListItem, IdentifierStockSummary, Station } from "@/types";
 import type { ProjectedStationCapacity } from "@/utils/productionCapacityPreview";
 
 type StationWorkspaceRow = {
@@ -44,6 +48,9 @@ const props = defineProps<{
   mappingStationCodeInput: string;
   fixtureCodeInput: string;
   requiredQty: number;
+  designatedMode?: boolean;
+  designatedIdentifiers?: string[];
+  identifierStockRows?: IdentifierStockSummary[];
   openAutocompleteKey: null | "mapping-model" | "mapping-station" | "requirement-station" | "fixture";
   filteredStationSuggestions: Station[];
   filteredFixtureSuggestions: Fixture[];
@@ -53,13 +60,13 @@ const props = defineProps<{
   onImportModelStationsCsv: (file: File) => void | Promise<void>;
   onImportFixtureRequirementsCsv: (file: File) => void | Promise<void>;
   onSaveMapping: () => void | Promise<void>;
-  onResetMappingEditor: () => void;
-  onStartEditMapping: (row: { id: number; model_id: number; station_id: number }) => void;
+  onResetMappingEditor: () => boolean | Promise<boolean>;
+  onStartEditMapping: (row: { id: number; model_id: number; station_id: number }) => boolean | Promise<boolean>;
   onRemoveMapping: (id: number) => void | Promise<void>;
   onSelectMappingStation: (stationId: number) => void;
   onSaveRequirement: () => void | Promise<void>;
-  onResetRequirementEditor: () => void;
-  onStartEditRequirement: (row: { id: number; station_id: number; fixture_id: number; required_qty: number }) => void;
+  onResetRequirementEditor: () => boolean | Promise<boolean>;
+  onStartEditRequirement: (row: FixtureRequirementListItem) => boolean | Promise<boolean>;
   onRemoveRequirement: (id: number) => void | Promise<void>;
   onMappingStationFocus: () => void;
   onMappingStationInput: (value: string) => void;
@@ -70,7 +77,108 @@ const props = defineProps<{
   onFixtureBlur: () => void;
   onSelectFixtureSuggestion: (code: string) => void;
   onRequiredQtyChange: (value: number) => void;
+  onDesignatedModeChange?: (value: boolean) => void;
+  onDesignatedIdentifiersChange?: (value: string[]) => void;
 }>();
+
+const stationEditorOpen = ref(false);
+const requirementEditorOpen = ref(false);
+const currentOnboardingStepId = computed(
+  () => getOnboardingFlow(onboardingFlowId.value)?.steps[onboardingStepIndex.value]?.id ?? ""
+);
+
+async function toggleStationEditor(): Promise<void> {
+  if (stationEditorOpen.value) {
+    if (await props.onResetMappingEditor()) stationEditorOpen.value = false;
+    return;
+  }
+  stationEditorOpen.value = true;
+}
+
+async function toggleRequirementEditor(): Promise<void> {
+  if (requirementEditorOpen.value) {
+    if (await props.onResetRequirementEditor()) requirementEditorOpen.value = false;
+    return;
+  }
+  requirementEditorOpen.value = true;
+}
+
+async function resetStationEditor(): Promise<void> {
+  if (await props.onResetMappingEditor()) stationEditorOpen.value = false;
+}
+
+async function resetRequirementEditor(): Promise<void> {
+  if (await props.onResetRequirementEditor()) requirementEditorOpen.value = false;
+}
+
+async function startEditMapping(row: { id: number; model_id: number; station_id: number }): Promise<void> {
+  if (await props.onStartEditMapping(row)) stationEditorOpen.value = true;
+}
+
+async function startEditRequirement(row: FixtureRequirementListItem): Promise<void> {
+  if (await props.onStartEditRequirement(row)) requirementEditorOpen.value = true;
+}
+
+const selectableIdentifierRows = computed(() => {
+  const byIdentifier = new Map((props.identifierStockRows ?? []).map((row) => [row.identifier, row]));
+  for (const identifier of props.designatedIdentifiers ?? []) {
+    if (!byIdentifier.has(identifier)) {
+      byIdentifier.set(identifier, {
+        fixture_id: 0,
+        identifier,
+        stock_qty: 0,
+        customer_supplied_qty: 0,
+        self_purchased_qty: 0
+      });
+    }
+  }
+  return [...byIdentifier.values()].sort((left, right) => left.identifier.localeCompare(right.identifier));
+});
+
+function toggleIdentifier(identifier: string, checked: boolean): void {
+  const next = new Set(props.designatedIdentifiers ?? []);
+  if (checked) next.add(identifier);
+  else next.delete(identifier);
+  props.onDesignatedIdentifiersChange?.([...next]);
+}
+
+watch(
+  () => props.editingMappingId,
+  (editingId) => {
+    if (editingId !== null) stationEditorOpen.value = true;
+  }
+);
+
+watch(
+  () => props.editingRequirementId,
+  (editingId) => {
+    if (editingId !== null) requirementEditorOpen.value = true;
+  }
+);
+
+watch(
+  () => props.selectedModelCode,
+  () => {
+    if (props.editingMappingId === null) stationEditorOpen.value = false;
+  }
+);
+
+watch(
+  () => props.selectedRequirementStationId,
+  () => {
+    if (props.editingRequirementId === null) requirementEditorOpen.value = false;
+  }
+);
+
+watch(
+  () => [onboardingActive.value, currentOnboardingStepId.value] as const,
+  ([active, stepId]) => {
+    if (!active) return;
+    if (stepId === "production-mapping-form") stationEditorOpen.value = true;
+    if (stepId === "production-requirement-form") requirementEditorOpen.value = true;
+  },
+  { immediate: true }
+);
 
 function handleModelFileChange(event: Event): void {
   const input = event.target as HTMLInputElement;
@@ -115,11 +223,22 @@ function previewTone(): string {
         :description="`目前機種：${selectedModelCode || '-'}。點選站點後，在右側配置治具需求。`"
       >
         <template #actions>
-          <span class="count-pill">{{ selectedModelStationRows.length }} 個站點</span>
+          <div class="section-actions">
+            <span class="count-pill">{{ selectedModelStationRows.length }} 個站點</span>
+            <button
+              v-if="canEdit"
+              class="primary-compact-btn"
+              type="button"
+              :aria-expanded="stationEditorOpen"
+              @click="toggleStationEditor"
+            >
+              {{ stationEditorOpen ? "收起" : "＋ 加入站點" }}
+            </button>
+          </div>
         </template>
       </UiSectionHeader>
 
-      <div v-if="canEdit" class="station-create-card">
+      <div v-if="canEdit && stationEditorOpen" class="station-create-card">
         <div class="editor-title-row">
           <div>
             <strong>{{ editingMappingId === null ? "加入站點" : "更換站點" }}</strong>
@@ -155,11 +274,11 @@ function previewTone(): string {
             cancel-label="取消"
             :show-delete="false"
             :show-state="false"
-            @cancel="onResetMappingEditor"
+            @cancel="resetStationEditor"
           />
         </form>
       </div>
-      <p v-else class="read-only-note">目前為訪客模式，可查看設定但不能修改。</p>
+      <p v-if="!canEdit" class="read-only-note">目前為訪客模式，可查看設定但不能修改。</p>
 
       <div class="station-list" data-tour="production-mapping-list" role="list" aria-label="目前機種的站點">
         <div
@@ -186,14 +305,14 @@ function previewTone(): string {
             </span>
           </button>
           <div v-if="canEdit" class="row-actions">
-            <button class="ghost-btn small" type="button" @click="onStartEditMapping(item)">編輯</button>
+            <button class="ghost-btn small" type="button" @click="startEditMapping(item)">編輯</button>
             <button class="danger-btn small" type="button" @click="onRemoveMapping(item.id)">刪除</button>
           </div>
         </div>
 
         <div v-if="!loading && selectedModelStationRows.length === 0" class="empty-state">
           <strong>此機種尚未設定站點</strong>
-          <span v-if="canEdit">請從上方搜尋站點，建立第一個站點設定。</span>
+          <span v-if="canEdit">點上方「加入站點」，建立第一個站點設定。</span>
           <span v-else>請由具編輯權限的人員建立站點設定。</span>
         </div>
       </div>
@@ -207,15 +326,26 @@ function previewTone(): string {
           :description="selectedStationName || '每筆數量代表開一站需要幾套治具。'"
         >
           <template #actions>
-            <div class="capacity-summary">
-              <span>最大開站</span>
-              <strong>{{ stationCapacityCount ?? 0 }}</strong>
-              <small>{{ stationBottleneckFixtureCode ? `限制：${stationBottleneckFixtureCode}` : "尚無限制治具" }}</small>
+            <div class="section-actions requirement-section-actions">
+              <div class="capacity-summary">
+                <span>最大開站</span>
+                <strong>{{ stationCapacityCount ?? 0 }}</strong>
+                <small>{{ stationBottleneckFixtureCode ? `限制：${stationBottleneckFixtureCode}` : "尚無限制治具" }}</small>
+              </div>
+              <button
+                v-if="canEdit"
+                class="primary-compact-btn"
+                type="button"
+                :aria-expanded="requirementEditorOpen"
+                @click="toggleRequirementEditor"
+              >
+                {{ requirementEditorOpen ? "收起" : "＋ 加入治具需求" }}
+              </button>
             </div>
           </template>
         </UiSectionHeader>
 
-        <div v-if="canEdit" class="requirement-editor">
+        <div v-if="canEdit && requirementEditorOpen" class="requirement-editor">
           <div class="editor-title-row">
             <div>
               <strong>{{ editingRequirementId === null ? "加入治具需求" : "編輯治具需求" }}</strong>
@@ -262,6 +392,35 @@ function previewTone(): string {
                 @input="onRequiredQtyChange(Number.parseInt(($event.target as HTMLInputElement).value, 10) || 1)"
               />
             </label>
+            <fieldset class="designated-mode-field">
+              <label class="designated-mode-toggle">
+                <input
+                  type="checkbox"
+                  :checked="designatedMode"
+                  :disabled="loading || savingRequirement"
+                  @change="onDesignatedModeChange?.(($event.target as HTMLInputElement).checked)"
+                />
+                <span>
+                  <strong>開啟指定模式</strong>
+                  <small>只使用所選 identifier 的在庫數量計算此機種／站點產能。</small>
+                </span>
+              </label>
+              <div v-if="designatedMode" class="identifier-picker">
+                <p v-if="!fixtureCodeInput">請先選擇治具，再指定 identifier。</p>
+                <p v-else-if="selectableIdentifierRows.length === 0">這支治具目前沒有可指定的 identifier 庫存。</p>
+                <label v-for="row in selectableIdentifierRows" :key="row.identifier" class="identifier-option">
+                  <input
+                    type="checkbox"
+                    :checked="designatedIdentifiers?.includes(row.identifier) ?? false"
+                    :disabled="loading || savingRequirement || row.stock_qty <= 0"
+                    @change="toggleIdentifier(row.identifier, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <strong>{{ row.identifier }}</strong>
+                  <span>可用 {{ row.stock_qty }} pcs</span>
+                  <small v-if="row.stock_qty <= 0">目前已無庫存</small>
+                </label>
+              </div>
+            </fieldset>
             <UiFormActions
               class="compact-actions"
               :editing="editingRequirementId !== null"
@@ -271,7 +430,7 @@ function previewTone(): string {
               cancel-label="取消"
               :show-delete="false"
               :show-state="false"
-              @cancel="onResetRequirementEditor"
+              @cancel="resetRequirementEditor"
             />
           </form>
 
@@ -301,8 +460,9 @@ function previewTone(): string {
                 <th>治具</th>
                 <th>治具名稱</th>
                 <th>每站需求</th>
+                <th>使用模式</th>
                 <th>目前庫存</th>
-                <th>可開站</th>
+                <th>此治具可支援站數</th>
                 <th>狀態</th>
                 <th v-if="canEdit">動作</th>
               </tr>
@@ -312,18 +472,22 @@ function previewTone(): string {
                 <td><strong>{{ item.fixture_code }}</strong></td>
                 <td>{{ item.fixture_name || "-" }}</td>
                 <td>{{ item.required_qty }}</td>
+                <td>
+                  <span v-if="item.designated_mode" class="designated-badge">指定：{{ (item.designated_identifiers ?? []).join("、") }}</span>
+                  <span v-else>不限 identifier</span>
+                </td>
                 <td>{{ item.stockQty }}</td>
                 <td><strong>{{ item.maxOpenStationCount }}</strong></td>
                 <td>
                   <UiStatusPill :label="capacityLabel(item)" :tone="capacityTone(item)" />
                 </td>
                 <td v-if="canEdit" class="table-actions">
-                  <button class="ghost-btn small" type="button" @click="onStartEditRequirement(item)">編輯</button>
+                  <button class="ghost-btn small" type="button" @click="startEditRequirement(item)">編輯</button>
                   <button class="danger-btn small" type="button" @click="onRemoveRequirement(item.id)">刪除</button>
                 </td>
               </tr>
               <tr v-if="!loading && selectedStationRequirementRows.length === 0">
-                <td :colspan="canEdit ? 7 : 6" class="empty-cell">
+                <td :colspan="canEdit ? 8 : 7" class="empty-cell">
                   此站點尚未設定治具需求。
                   <span v-if="canEdit">請從上方加入第一支治具。</span>
                 </td>
@@ -369,6 +533,35 @@ function previewTone(): string {
 
 .section-head {
   margin-bottom: 0;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.primary-compact-btn {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--blue);
+  border-radius: 8px;
+  color: #fff;
+  background: var(--blue);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.primary-compact-btn:hover {
+  filter: brightness(0.96);
+}
+
+.requirement-section-actions {
+  align-items: center;
 }
 
 .count-pill,
@@ -463,6 +656,70 @@ function previewTone(): string {
   padding: 8px 10px;
   background: #fff;
   font: inherit;
+}
+
+.designated-mode-field {
+  grid-column: 1 / 3;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid #d8e2f2;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #f7faff;
+}
+
+.designated-mode-toggle,
+.identifier-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.designated-mode-toggle > span {
+  display: grid;
+  gap: 2px;
+}
+
+.designated-mode-toggle strong,
+.identifier-option strong {
+  color: #22314a;
+  font-size: 12px;
+}
+
+.designated-mode-toggle small,
+.identifier-picker p,
+.identifier-option span,
+.identifier-option small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.identifier-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #dfe7f4;
+}
+
+.identifier-option {
+  border: 1px solid #d8e2f2;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff;
+}
+
+.designated-badge {
+  display: inline-block;
+  max-width: 220px;
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: #eaf2ff;
+  color: #215fac;
+  font-size: 10px;
+  overflow-wrap: anywhere;
 }
 
 .compact-actions {
@@ -741,6 +998,10 @@ function previewTone(): string {
     grid-template-columns: 1fr;
   }
 
+  .designated-mode-field {
+    grid-column: 1;
+  }
+
   .compact-actions {
     width: 100%;
   }
@@ -749,6 +1010,17 @@ function previewTone(): string {
   .requirement-list-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .section-actions,
+  .requirement-section-actions {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .primary-compact-btn {
+    width: 100%;
   }
 
   .station-row {

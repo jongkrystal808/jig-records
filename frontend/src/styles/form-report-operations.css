@@ -1,0 +1,40 @@
+.form-operation-workspace { width: 100%; }
+.filter-panel { max-width: 1800px; margin: 0 auto 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: 0 8px 24px rgba(28, 47, 84, 0.06); overflow: hidden; }
+.filter-panel-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; padding: 7px 12px; border-bottom: 1px solid var(--line); background: var(--surface-secondary); }
+.filter-panel-title > div:first-child { display: flex; align-items: baseline; gap: 10px; }
+.filter-panel-title strong { font-size: 0.9rem; }
+.filter-panel-title span { color: var(--muted); font-size: 0.72rem; }
+.filter-panel-title-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.form-operation-filters,
+.form-operation-filters.compact { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 9px 10px; padding: 10px 12px 12px; }
+.form-operation-filters label { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 7px; min-width: 0; }
+.form-operation-filters label > span { color: #4f5f79; font-size: 0.73rem; font-weight: 700; white-space: nowrap; }
+.form-operation-filters input, .form-operation-filters select, .editable-grid input, .editable-grid select { width: 100%; min-width: 0; min-height: 34px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 5px; outline: none; color: var(--text); background: #fff; font: inherit; }
+.form-operation-filters input:focus, .form-operation-filters select:focus { border-color: var(--tone-info); box-shadow: 0 0 0 3px var(--tone-info-soft); }
+.form-operation-toolbar-actions { display: flex; align-items: center; gap: 6px; }
+.page-size-inline { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.72rem; }
+.page-size-inline select { min-height: 30px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.form-draft-note { color: #9a5a00; font-weight: 700; }
+.form-report-grid-wrap { width: 100%; min-height: min(58vh, 620px); overflow-x: auto; overflow-y: visible; }
+.form-report-grid { width: 100%; min-width: 900px; border-collapse: separate; border-spacing: 0; background: #fff; }
+.form-report-grid th, .form-report-grid td { padding: 7px 9px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; font-size: 0.75rem; }
+.form-report-grid th:last-child, .form-report-grid td:last-child { border-right: 0; }
+.form-report-grid thead th { position: sticky; top: 0; z-index: 1; color: #314e73; background: #dce9f8; font-weight: 800; }
+.form-report-grid tbody tr:nth-child(even) { background: #f7faff; }
+.form-report-grid tbody tr:hover { background: #edf4fc; }
+.form-report-grid .editing-row { background: #fff9e9; }
+.form-report-grid td:last-child { white-space: nowrap; }
+.form-report-grid td:last-child button + button { margin-left: 4px; }
+.customer-scope-cell { min-width: 390px; }
+.authorized-customers { min-width: 180px; max-width: 320px; line-height: 1.4; }
+.danger-text-button { border: 0; color: #b33a3a; background: transparent; font: inherit; font-weight: 700; cursor: pointer; }
+.form-grid-pager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 8px 12px; color: var(--muted); font-size: 0.75rem; }
+.status-pill.muted { color: #68758a; background: #edf0f4; }
+.empty-cell { padding: 20px !important; color: var(--muted); text-align: center !important; }
+
+@media (max-width: 620px) {
+  .form-operation-filters, .form-operation-filters.compact { grid-template-columns: 1fr; }
+  .form-operation-filters label { grid-template-columns: 1fr; gap: 5px; }
+  .filter-panel-title, .filter-panel-title > div:first-child { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .filter-panel-title-actions { width: 100%; justify-content: flex-start; }
+}

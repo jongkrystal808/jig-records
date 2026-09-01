@@ -1,0 +1,1174 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/nor60g",
+    "id": "nor60g",
+    "slide": 1,
+    "layoutId": "2dae21e6-8edc-4c47-90f1-75651deddfe0",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "5c6614aa-0d75-4ca4-a878-ebc40026e02c",
+    "masterLayoutName": "Master",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "Helvetica Neue",
+      "Microsoft JhengHei"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "2dae21e6-8edc-4c47-90f1-75651deddfe0",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "5c6614aa-0d75-4ca4-a878-ebc40026e02c",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "5c6614aa-0d75-4ca4-a878-ebc40026e02c",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/03y9gbi1",
+      "id": "1",
+      "name": "Google-Shape-532-p58-2",
+      "bbox": [
+        1184.18,
+        659.24,
+        54.48,
+        25.33
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.0"
+      },
+      "geometry": "rect",
+      "text": "01 / 03",
+      "textPreview": "01 / 03",
+      "resolvedFontSize": 13.33,
+      "resolvedTextStyle": {
+        "anchor": 3,
+        "fontSize": 13.33,
+        "typeface": "Helvetica Neue",
+        "color": "#000000",
+        "alignment": "right",
+        "verticalAlignment": "bottom",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "01 / 03"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "01 / 03",
+          "resolvedTextStyle": {
+            "anchor": 3,
+            "fontSize": 13.33,
+            "typeface": "Helvetica Neue",
+            "color": "#000000",
+            "alignment": "right",
+            "verticalAlignment": "bottom",
+            "wrap": "square",
+            "autoFit": "none",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "01 / 03",
+              "anchor": 3,
+              "fontSize": 13.33,
+              "typeface": "Helvetica Neue",
+              "color": "#000000",
+              "alignment": "right",
+              "verticalAlignment": "bottom",
+              "wrap": "square",
+              "autoFit": "none",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/z2p8n6hg",
+      "id": "2",
+      "name": "Google-Shape-533-p58-3",
+      "bbox": [
+        41.33,
+        36.12,
+        1197.33,
+        109.97
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.1"
+      },
+      "geometry": "rect",
+      "text": "治具系統，把查找、庫存與產能串在一起",
+      "textPreview": "治具系統，把查找、庫存與產能串在一起",
+      "resolvedFontSize": 38.67,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 38.67,
+        "typeface": "Helvetica Neue",
+        "color": "#000000",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "治具系統，把查找、庫存與產能串在一起"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "治具系統，把查找、庫存與產能串在一起",
+          "lineSpacingPercent": 112000,
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 38.67,
+            "typeface": "Helvetica Neue",
+            "color": "#000000",
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "none",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "治具系統，把查找、庫存與產能串在一起",
+              "fontSize": 50,
+              "typeface": "Microsoft JhengHei",
+              "color": "#111827",
+              "bold": true
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/y1grel0v",
+      "id": "3",
+      "name": "Google-Shape-558-p61-4",
+      "bbox": [
+        41.33,
+        421.33,
+        374.67,
+        208
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.2"
+      },
+      "geometry": "rect",
+      "text": "快速查找\n治具、機種、工站與庫位一站定位",
+      "textPreview": "快速查找 | 治具、機種、工站與庫位一站定位",
+      "resolvedFontSize": 32,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 32,
+        "typeface": "Helvetica Neue",
+        "color": "#000000",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "快速查找"
+          },
+          {
+            "index": 2,
+            "text": "治具、機種、工站與庫位一站定位"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "快速查找\n治具、機種、工站與庫位一站定位",
+          "lineSpacingPercent": 118000,
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 32,
+            "typeface": "Helvetica Neue",
+            "color": "#000000",
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "none",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "快速查找",
+              "fontSize": 30,
+              "typeface": "Microsoft JhengHei",
+              "color": "#111827",
+              "bold": true
+            },
+            {
+              "index": 2,
+              "text": "\n治具、機種、工站與庫位一站定位",
+              "fontSize": 22,
+              "typeface": "Microsoft JhengHei",
+              "color": "#4B5563"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/d07qlgza",
+      "id": "4",
+      "name": "Google-Shape-559-p61-5",
+      "bbox": [
+        453.33,
+        421.33,
+        374.67,
+        208
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.3"
+      },
+      "geometry": "rect",
+      "text": "庫存管理\n收料／退料、批次匯入與低庫存警示",
+      "textPreview": "庫存管理 | 收料／退料、批次匯入與低庫存警示",
+      "resolvedFontSize": 32,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 32,
+        "typeface": "Helvetica Neue",
+        "color": "#000000",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "庫存管理"
+          },
+          {
+            "index": 2,
+            "text": "收料／退料、批次匯入與低庫存警示"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "庫存管理\n收料／退料、批次匯入與低庫存警示",
+          "lineSpacingPercent": 118000,
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 32,
+            "typeface": "Helvetica Neue",
+            "color": "#000000",
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "none",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "庫存管理",
+              "fontSize": 30,
+              "typeface": "Microsoft JhengHei",
+              "color": "#111827",
+              "bold": true
+            },
+            {
+              "index": 2,
+              "text": "\n收料／退料、批次匯入與低庫存警示",
+              "fontSize": 22,
+              "typeface": "Microsoft JhengHei",
+              "color": "#4B5563"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/czy9cbip",
+      "id": "5",
+      "name": "Google-Shape-560-p61-6",
+      "bbox": [
+        864.28,
+        421.33,
+        374.67,
+        208
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.4"
+      },
+      "geometry": "rect",
+      "text": "產能規劃\n依機種＋工站換算最大可開站數",
+      "textPreview": "產能規劃 | 依機種＋工站換算最大可開站數",
+      "resolvedFontSize": 32,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 32,
+        "typeface": "Helvetica Neue",
+        "color": "#000000",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "產能規劃"
+          },
+          {
+            "index": 2,
+            "text": "依機種＋工站換算最大可開站數"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "產能規劃\n依機種＋工站換算最大可開站數",
+          "lineSpacingPercent": 118000,
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 32,
+            "typeface": "Helvetica Neue",
+            "color": "#000000",
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "none",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "產能規劃",
+              "fontSize": 30,
+              "typeface": "Microsoft JhengHei",
+              "color": "#111827",
+              "bold": true
+            },
+            {
+              "index": 2,
+              "text": "\n依機種＋工站換算最大可開站數",
+              "fontSize": 22,
+              "typeface": "Microsoft JhengHei",
+              "color": "#4B5563"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/bep8j6h4",
+      "id": "6",
+      "name": "Google-Shape-561-p61-7",
+      "bbox": [
+        449.33,
+        355.1,
+        33.13,
+        37.15
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.5"
+      },
+      "geometry": "custom",
+      "fillColor": "#000000"
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/qdgra10j",
+      "id": "7",
+      "name": "Google-Shape-562-p61-8",
+      "bbox": [
+        42.14,
+        354.67,
+        34.34,
+        38.01
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.6"
+      },
+      "geometry": "custom",
+      "fillColor": "#000000"
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/hwbah0ze",
+      "id": "8",
+      "name": "Google-Shape-563-p61-9",
+      "bbox": [
+        864.21,
+        357.67,
+        35.55,
+        28.44
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.7"
+      },
+      "geometry": "custom",
+      "fillColor": "#000000"
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wv29ovi9",
+      "id": "9",
+      "name": "accent-rule",
+      "bbox": [
+        41.33,
+        136,
+        176,
+        5
+      ],
+      "geometry": "rect",
+      "fillColor": "#3D8DFF",
+      "lineColor": "#3D8DFF",
+      "lineWidth": 0
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/a5o3qlcb",
+      "id": "10",
+      "name": "fixture-photo-search-frame",
+      "bbox": [
+        37.33,
+        170,
+        382.67,
+        156
+      ],
+      "geometry": "rect",
+      "fillColor": "#EDEDED",
+      "lineColor": "#D1D5DB",
+      "lineWidth": 1
+    },
+    {
+      "order": 11,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/sbad8f6h",
+      "id": "11",
+      "bbox": [
+        41.33,
+        174,
+        374.67,
+        148
+      ],
+      "alt": "治具實物與識別標籤範例",
+      "contentType": "image/jpeg",
+      "imageFit": "cover",
+      "asset": {
+        "assetId": "f6a117e5-7584-42a7-bcc9-fca391f745f2",
+        "contentType": "image/jpeg",
+        "byteLength": 193310
+      }
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/w76lsvuh",
+      "id": "12",
+      "name": "fixture-photo-inventory-frame",
+      "bbox": [
+        449.33,
+        170,
+        382.67,
+        156
+      ],
+      "geometry": "rect",
+      "fillColor": "#EDEDED",
+      "lineColor": "#D1D5DB",
+      "lineWidth": 1
+    },
+    {
+      "order": 13,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/q9sv65ob",
+      "id": "13",
+      "bbox": [
+        453.33,
+        174,
+        374.67,
+        148
+      ],
+      "alt": "治具實物照片範例",
+      "contentType": "image/jpeg",
+      "imageFit": "cover",
+      "asset": {
+        "assetId": "05d033cb-1022-4e83-bf28-27a48e7f60fe",
+        "contentType": "image/jpeg",
+        "byteLength": 34405
+      }
+    },
+    {
+      "order": 14,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/mh43mlcz",
+      "id": "14",
+      "name": "fixture-photo-capacity-frame",
+      "bbox": [
+        860.28,
+        170,
+        382.67,
+        156
+      ],
+      "geometry": "rect",
+      "fillColor": "#EDEDED",
+      "lineColor": "#D1D5DB",
+      "lineWidth": 1
+    },
+    {
+      "order": 15,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/47qd4v65",
+      "id": "15",
+      "bbox": [
+        864.28,
+        174,
+        374.67,
+        148
+      ],
+      "alt": "附識別碼的治具實物範例",
+      "contentType": "image/jpeg",
+      "imageFit": "cover",
+      "asset": {
+        "assetId": "a6efb860-3c78-4a11-851d-162ebc048ecc",
+        "contentType": "image/jpeg",
+        "byteLength": 1883316
+      }
+    }
+  ],
+  "composeRuns": [
+    {
+      "index": 1,
+      "frame": {
+        "left": 0,
+        "top": 0,
+        "width": 1280,
+        "height": 720
+      },
+      "baseUnit": 1,
+      "root": {
+        "path": "0",
+        "kind": "layers",
+        "name": "codex-grid-layout-library#slide-07",
+        "requestedSize": {
+          "width": {
+            "mode": "fill",
+            "value": 1
+          },
+          "height": {
+            "mode": "fill",
+            "value": 1
+          }
+        },
+        "intrinsicSize": {
+          "width": 1238.95,
+          "height": 684.57
+        },
+        "frame": {
+          "left": 0,
+          "top": 0,
+          "width": 1280,
+          "height": 720
+        },
+        "children": [
+          {
+            "path": "0.0",
+            "kind": "text",
+            "name": "Google-Shape-532-p58-2",
+            "position": {
+              "left": 1184.18,
+              "top": 659.24
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 54.48
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 25.33
+              }
+            },
+            "intrinsicSize": {
+              "width": 54.48,
+              "height": 25.33
+            },
+            "frame": {
+              "left": 1184.18,
+              "top": 659.24,
+              "width": 54.48,
+              "height": 25.33
+            },
+            "snappedFrame": {
+              "left": 1184.18,
+              "top": 659.24,
+              "width": 54.48,
+              "height": 25.33
+            },
+            "children": [],
+            "text": "01 / 03",
+            "transform": "none",
+            "element": {
+              "aid": "sh/03y9gbi1",
+              "id": "1",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.1",
+            "kind": "text",
+            "name": "Google-Shape-533-p58-3",
+            "position": {
+              "left": 41.33,
+              "top": 36.12
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 1197.33
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 109.97
+              }
+            },
+            "intrinsicSize": {
+              "width": 1197.33,
+              "height": 109.97
+            },
+            "frame": {
+              "left": 41.33,
+              "top": 36.12,
+              "width": 1197.33,
+              "height": 109.97
+            },
+            "snappedFrame": {
+              "left": 41.33,
+              "top": 36.12,
+              "width": 1197.33,
+              "height": 109.97
+            },
+            "children": [],
+            "text": "治具系統，把查找、庫存與產能串在一起",
+            "transform": "none",
+            "element": {
+              "aid": "sh/z2p8n6hg",
+              "id": "2",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.2",
+            "kind": "text",
+            "name": "Google-Shape-558-p61-4",
+            "position": {
+              "left": 41.33,
+              "top": 421.33
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 374.67
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 208
+              }
+            },
+            "intrinsicSize": {
+              "width": 374.67,
+              "height": 208
+            },
+            "frame": {
+              "left": 41.33,
+              "top": 421.33,
+              "width": 374.67,
+              "height": 208
+            },
+            "snappedFrame": {
+              "left": 41.33,
+              "top": 421.33,
+              "width": 374.67,
+              "height": 208
+            },
+            "children": [],
+            "text": "快速查找\n治具、機種、工站與庫位一站定位",
+            "transform": "none",
+            "element": {
+              "aid": "sh/y1grel0v",
+              "id": "3",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.3",
+            "kind": "text",
+            "name": "Google-Shape-559-p61-5",
+            "position": {
+              "left": 453.33,
+              "top": 421.33
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 374.67
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 208
+              }
+            },
+            "intrinsicSize": {
+              "width": 374.67,
+              "height": 208
+            },
+            "frame": {
+              "left": 453.33,
+              "top": 421.33,
+              "width": 374.67,
+              "height": 208
+            },
+            "snappedFrame": {
+              "left": 453.33,
+              "top": 421.33,
+              "width": 374.67,
+              "height": 208
+            },
+            "children": [],
+            "text": "庫存管理\n收料／退料、批次匯入與低庫存警示",
+            "transform": "none",
+            "element": {
+              "aid": "sh/d07qlgza",
+              "id": "4",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.4",
+            "kind": "text",
+            "name": "Google-Shape-560-p61-6",
+            "position": {
+              "left": 864.28,
+              "top": 421.33
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 374.67
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 208
+              }
+            },
+            "intrinsicSize": {
+              "width": 374.67,
+              "height": 208
+            },
+            "frame": {
+              "left": 864.28,
+              "top": 421.33,
+              "width": 374.67,
+              "height": 208
+            },
+            "snappedFrame": {
+              "left": 864.28,
+              "top": 421.33,
+              "width": 374.67,
+              "height": 208
+            },
+            "children": [],
+            "text": "產能規劃\n依機種＋工站換算最大可開站數",
+            "transform": "none",
+            "element": {
+              "aid": "sh/czy9cbip",
+              "id": "5",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.5",
+            "kind": "shape",
+            "name": "Google-Shape-561-p61-7",
+            "position": {
+              "left": 449.33,
+              "top": 355.1
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 33.13
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 37.15
+              }
+            },
+            "intrinsicSize": {
+              "width": 33.13,
+              "height": 37.15
+            },
+            "frame": {
+              "left": 449.33,
+              "top": 355.1,
+              "width": 33.13,
+              "height": 37.15
+            },
+            "snappedFrame": {
+              "left": 449.33,
+              "top": 355.1,
+              "width": 33.13,
+              "height": 37.15
+            },
+            "children": [],
+            "geometry": "custom",
+            "element": {
+              "aid": "sh/bep8j6h4",
+              "id": "6",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.6",
+            "kind": "shape",
+            "name": "Google-Shape-562-p61-8",
+            "position": {
+              "left": 42.14,
+              "top": 354.67
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 34.34
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 38.01
+              }
+            },
+            "intrinsicSize": {
+              "width": 34.34,
+              "height": 38.01
+            },
+            "frame": {
+              "left": 42.14,
+              "top": 354.67,
+              "width": 34.34,
+              "height": 38.01
+            },
+            "snappedFrame": {
+              "left": 42.14,
+              "top": 354.67,
+              "width": 34.34,
+              "height": 38.01
+            },
+            "children": [],
+            "geometry": "custom",
+            "element": {
+              "aid": "sh/qdgra10j",
+              "id": "7",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.7",
+            "kind": "shape",
+            "name": "Google-Shape-563-p61-9",
+            "position": {
+              "left": 864.21,
+              "top": 357.67
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 35.55
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 28.44
+              }
+            },
+            "intrinsicSize": {
+              "width": 35.55,
+              "height": 28.44
+            },
+            "frame": {
+              "left": 864.21,
+              "top": 357.67,
+              "width": 35.55,
+              "height": 28.44
+            },
+            "snappedFrame": {
+              "left": 864.21,
+              "top": 357.67,
+              "width": 35.55,
+              "height": 28.44
+            },
+            "children": [],
+            "geometry": "custom",
+            "element": {
+              "aid": "sh/hwbah0ze",
+              "id": "8",
+              "kind": "shape"
+            }
+          }
+        ],
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "alignItems": "stretch",
+        "justifyItems": "stretch",
+        "contentFrame": {
+          "left": 0,
+          "top": 0,
+          "width": 1280,
+          "height": 720
+        },
+        "items": [
+          {
+            "path": "0.0",
+            "frame": {
+              "left": 1184.18,
+              "top": 659.24,
+              "width": 54.48,
+              "height": 25.33
+            }
+          },
+          {
+            "path": "0.1",
+            "frame": {
+              "left": 41.33,
+              "top": 36.12,
+              "width": 1197.33,
+              "height": 109.97
+            }
+          },
+          {
+            "path": "0.2",
+            "frame": {
+              "left": 41.33,
+              "top": 421.33,
+              "width": 374.67,
+              "height": 208
+            }
+          },
+          {
+            "path": "0.3",
+            "frame": {
+              "left": 453.33,
+              "top": 421.33,
+              "width": 374.67,
+              "height": 208
+            }
+          },
+          {
+            "path": "0.4",
+            "frame": {
+              "left": 864.28,
+              "top": 421.33,
+              "width": 374.67,
+              "height": 208
+            }
+          },
+          {
+            "path": "0.5",
+            "frame": {
+              "left": 449.33,
+              "top": 355.1,
+              "width": 33.13,
+              "height": 37.15
+            }
+          },
+          {
+            "path": "0.6",
+            "frame": {
+              "left": 42.14,
+              "top": 354.67,
+              "width": 34.34,
+              "height": 38.01
+            }
+          },
+          {
+            "path": "0.7",
+            "frame": {
+              "left": 864.21,
+              "top": 357.67,
+              "width": 35.55,
+              "height": 28.44
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

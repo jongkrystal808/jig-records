@@ -1,0 +1,22 @@
+Source deck: C:/Users/user/PycharmProjects/jig-record/治具系統_功能場景效益.pptx
+
+Structure:
+- 3 slides, 1280 × 720, white canvas, black typography, blue accent rule.
+- Slide 1: three-column feature overview with three fixture images and editable text blocks.
+- Slide 2: three-card usage timeline; preserve unchanged.
+- Slide 3: two-column benefit explanation with five checked system actions.
+
+Typography and spacing:
+- Microsoft JhengHei for Chinese copy.
+- Slide titles remain single-line at the inherited 50 px treatment.
+- Feature headings remain 30 px bold; feature details remain 22 px.
+- Benefit detail remains 24 px with the existing line spacing and text frame.
+
+Inspection note:
+- Every source slide was reviewed from the latest artifact-tool renders and layout/inspect sidecars.
+- The bundled template inventory helper could not complete its ZIP-media phase because the Windows environment has no `unzip` executable; artifact-tool import/edit/render remains available.
+- No empty inherited placeholders are visible in the source inspection.
+
+Insertion contract:
+- Preserve slide order, layout hierarchy, images, shapes, page markers, and speaker notes.
+- Rewrite only the specified text objects on slides 1 and 3.

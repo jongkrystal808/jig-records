@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
+import UiModalShell from "@/components/common/UiModalShell.vue";
+
 interface GuidedTourStepNote {
   tone: "warning" | "info";
   text: string;
@@ -155,9 +157,15 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <teleport to="body">
-    <div v-if="open && currentStep" class="tour-layer" aria-live="polite">
-      <div class="tour-backdrop" @click="emit('close')"></div>
+  <UiModalShell
+    :open="open && Boolean(currentStep)"
+    labelled-by="guided-tour-title"
+    described-by="guided-tour-description"
+    layer-class="tour-layer"
+    dialog-class="tour-dialog"
+    @close="emit('close')"
+  >
+    <template v-if="currentStep">
       <div v-if="spotlightRect" class="tour-spotlight" :style="{
         top: `${spotlightRect.top - 8}px`,
         left: `${spotlightRect.left - 8}px`,
@@ -169,7 +177,7 @@ onBeforeUnmount(() => {
           <span v-if="flowSectionLabel" class="tour-flow-label">{{ flowSectionLabel }}</span>
           <span class="tour-step-count">{{ flowLabel || "新手教學" }} · 步驟 {{ currentIndex + 1 }} / {{ steps.length }}</span>
         </div>
-        <h3>{{ currentStep.title }}</h3>
+        <h3 id="guided-tour-title">{{ currentStep.title }}</h3>
 
         <img
           v-if="currentStep.image"
@@ -179,7 +187,7 @@ onBeforeUnmount(() => {
           @load="refreshLayout"
         />
 
-        <p>{{ currentStep.description }}</p>
+        <p id="guided-tour-description">{{ currentStep.description }}</p>
 
         <ul v-if="currentStep.bullets?.length" class="tour-bullets">
           <li v-for="(bullet, i) in currentStep.bullets" :key="i">{{ bullet }}</li>
@@ -202,27 +210,25 @@ onBeforeUnmount(() => {
         </div>
       </aside>
       <div class="tour-floating-actions">
-        <button class="outline-btn" type="button" @click="emit('close')">結束</button>
+        <button class="outline-btn" type="button" data-modal-initial-focus @click="emit('close')">結束</button>
         <button class="outline-btn" type="button" :disabled="isFirstStep" @click="emit('prev')">上一步</button>
         <button class="primary-btn" type="button" @click="isLastStep ? emit('close') : emit('next')">
           {{ isLastStep ? "完成" : "下一步" }}
         </button>
       </div>
-    </div>
-  </teleport>
+    </template>
+  </UiModalShell>
 </template>
 
 <style scoped>
-.tour-layer {
+:global(.tour-layer) {
   position: fixed;
   inset: 0;
   z-index: 120;
 }
 
-.tour-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.34);
+:global(.tour-dialog) {
+  display: contents;
 }
 
 .tour-spotlight {

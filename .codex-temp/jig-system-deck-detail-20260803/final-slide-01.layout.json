@@ -1,0 +1,723 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/y90nupkv",
+    "id": "y90nupkv",
+    "slide": 1,
+    "layoutId": "/ppt/slideLayouts/slideLayout1.xml",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+    "masterLayoutName": "Master",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "fontScheme": {
+      "name": "Office",
+      "majorFont": {
+        "latinTypeface": "Calibri Light",
+        "eastAsianTypeface": "Calibri Light",
+        "complexScriptTypeface": "Calibri Light"
+      },
+      "minorFont": {
+        "latinTypeface": "Calibri",
+        "eastAsianTypeface": "Calibri",
+        "complexScriptTypeface": "Calibri"
+      }
+    },
+    "typefaces": [
+      "Calibri",
+      "Calibri Light",
+      "Helvetica Neue",
+      "Microsoft JhengHei"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "/ppt/slideLayouts/slideLayout1.xml",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "/ppt/slideMasters/slideMaster1.xml",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ipovexwn",
+      "id": "16",
+      "name": "Google-Shape-532-p58-2",
+      "bbox": [
+        1184.18,
+        659.24,
+        54.48,
+        25.33
+      ],
+      "geometry": "rect",
+      "text": "01 / 03",
+      "textPreview": "01 / 03",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 3,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "bottom",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "01 / 03"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "01 / 03",
+          "resolvedTextStyle": {
+            "fontSize": 13.33,
+            "typeface": "Helvetica Neue",
+            "color": "#000000",
+            "alignment": "right"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "01 / 03",
+              "fontSize": 13.33,
+              "typeface": "Helvetica Neue",
+              "color": "#000000",
+              "alignment": "right"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/547294r6",
+      "id": "2",
+      "name": "Google-Shape-533-p58-3",
+      "bbox": [
+        41.33,
+        36.12,
+        1197.33,
+        109.97
+      ],
+      "geometry": "rect",
+      "text": "治具系統，串起查找、庫存與產能",
+      "textPreview": "治具系統，串起查找、庫存與產能",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "治具系統，串起查找、庫存與產能"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "治具系統，串起查找、庫存與產能",
+          "lineSpacingPercent": 112000,
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "none",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "治具系統，串起查找、庫存與產能",
+              "fontSize": 50,
+              "typeface": "Microsoft JhengHei",
+              "color": "#111827",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/k3yl0zql",
+      "id": "3",
+      "name": "Google-Shape-558-p61-4",
+      "bbox": [
+        41.33,
+        421.33,
+        374.67,
+        208
+      ],
+      "geometry": "rect",
+      "text": "快速查找\n搜尋｜編號／名稱、機種、工站或庫位\n顯示｜照片、庫存、關聯機種與責任人",
+      "textPreview": "快速查找 | 搜尋｜編號／名稱、機種、工站或庫位 | 顯示｜照片、庫存、關聯機種與責任人",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "快速查找"
+          },
+          {
+            "index": 2,
+            "text": "搜尋｜編號／名稱、機種、工站或庫位"
+          },
+          {
+            "index": 3,
+            "text": "顯示｜照片、庫存、關聯機種與責任人"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "快速查找\n搜尋｜編號／名稱、機種、工站或庫位\n顯示｜照片、庫存、關聯機種與責任人",
+          "lineSpacingPercent": 116000,
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "none",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "快速查找",
+              "fontSize": 30,
+              "typeface": "Microsoft JhengHei",
+              "color": "#111827",
+              "bold": true
+            },
+            {
+              "index": 2,
+              "text": "\n搜尋｜編號／名稱、機種、工站或庫位",
+              "fontSize": 22,
+              "typeface": "Microsoft JhengHei",
+              "color": "#4B5563"
+            },
+            {
+              "index": 3,
+              "text": "\n顯示｜照片、庫存、關聯機種與責任人",
+              "fontSize": 22,
+              "typeface": "Microsoft JhengHei",
+              "color": "#4B5563"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/7qp4be9c",
+      "id": "4",
+      "name": "Google-Shape-559-p61-5",
+      "bbox": [
+        453.33,
+        421.33,
+        374.67,
+        208
+      ],
+      "geometry": "rect",
+      "text": "庫存管理\n作業｜收料、退料、批次貼上、CSV 匯入\n狀態｜庫存摘要、低庫存／無庫存提示",
+      "textPreview": "庫存管理 | 作業｜收料、退料、批次貼上、CSV 匯入 | 狀態｜庫存摘要、低庫存／無庫存提示",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 4,
+        "lines": [
+          {
+            "index": 1,
+            "text": "庫存管理"
+          },
+          {
+            "index": 2,
+            "text": "作業｜收料、退料、批次貼上、CSV"
+          },
+          {
+            "index": 3,
+            "text": "匯入"
+          },
+          {
+            "index": 4,
+            "text": "狀態｜庫存摘要、低庫存／無庫存提示"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "庫存管理\n作業｜收料、退料、批次貼上、CSV 匯入\n狀態｜庫存摘要、低庫存／無庫存提示",
+          "lineSpacingPercent": 116000,
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "none",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "庫存管理",
+              "fontSize": 30,
+              "typeface": "Microsoft JhengHei",
+              "color": "#111827",
+              "bold": true
+            },
+            {
+              "index": 2,
+              "text": "\n作業｜收料、退料、批次貼上、CSV 匯入",
+              "fontSize": 22,
+              "typeface": "Microsoft JhengHei",
+              "color": "#4B5563"
+            },
+            {
+              "index": 3,
+              "text": "\n狀態｜庫存摘要、低庫存／無庫存提示",
+              "fontSize": 22,
+              "typeface": "Microsoft JhengHei",
+              "color": "#4B5563"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/65g3298r",
+      "id": "5",
+      "name": "Google-Shape-560-p61-6",
+      "bbox": [
+        864.28,
+        421.33,
+        374.67,
+        208
+      ],
+      "geometry": "rect",
+      "text": "產能規劃\n設定｜機種 × 工站 × 治具需求量\n計算｜取可支援數最小值，得到最大開站能力",
+      "textPreview": "產能規劃 | 設定｜機種 × 工站 × 治具需求量 | 計算｜取可支援數最小值，得到最大開站能力",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 4,
+        "lines": [
+          {
+            "index": 1,
+            "text": "產能規劃"
+          },
+          {
+            "index": 2,
+            "text": "設定｜機種 × 工站 × 治具需求量"
+          },
+          {
+            "index": 3,
+            "text": "計算｜取可支援數最小值，得到最大開"
+          },
+          {
+            "index": 4,
+            "text": "站能力"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "產能規劃\n設定｜機種 × 工站 × 治具需求量\n計算｜取可支援數最小值，得到最大開站能力",
+          "lineSpacingPercent": 116000,
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "none",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "產能規劃",
+              "fontSize": 30,
+              "typeface": "Microsoft JhengHei",
+              "color": "#111827",
+              "bold": true
+            },
+            {
+              "index": 2,
+              "text": "\n設定｜機種 × 工站 × 治具需求量",
+              "fontSize": 22,
+              "typeface": "Microsoft JhengHei",
+              "color": "#4B5563"
+            },
+            {
+              "index": 3,
+              "text": "\n計算｜取可支援數最小值，得到最大開站能力",
+              "fontSize": 22,
+              "typeface": "Microsoft JhengHei",
+              "color": "#4B5563"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ts7md4r2",
+      "id": "6",
+      "name": "Google-Shape-561-p61-7",
+      "bbox": [
+        449.33,
+        355.1,
+        33.13,
+        37.15
+      ],
+      "geometry": "custom",
+      "fillColor": "#000000"
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/sryl4zqx",
+      "id": "7",
+      "name": "Google-Shape-562-p61-8",
+      "bbox": [
+        42.14,
+        354.67,
+        34.34,
+        38.01
+      ],
+      "geometry": "custom",
+      "fillColor": "#000000"
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/fu94fe98",
+      "id": "8",
+      "name": "Google-Shape-563-p61-9",
+      "bbox": [
+        864.21,
+        357.67,
+        35.55,
+        28.44
+      ],
+      "geometry": "custom",
+      "fillColor": "#000000"
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/utg3698n",
+      "id": "9",
+      "name": "accent-rule",
+      "bbox": [
+        41.33,
+        136,
+        176,
+        5
+      ],
+      "geometry": "rect",
+      "fillColor": "#3D8DFF",
+      "lineColor": "#3D8DFF",
+      "lineWidth": 0
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wn6dc7eh",
+      "id": "10",
+      "name": "fixture-photo-search-frame",
+      "bbox": [
+        37.33,
+        170,
+        382.67,
+        156
+      ],
+      "geometry": "rect",
+      "fillColor": "#EDEDED",
+      "lineColor": "#D1D5DB",
+      "lineWidth": 1
+    },
+    {
+      "order": 11,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/wn6xcnut",
+      "id": "17",
+      "bbox": [
+        41.33,
+        174,
+        374.67,
+        148
+      ],
+      "contentType": "image/jpeg",
+      "imageCrop": {
+        "left": 0,
+        "top": 0.14901,
+        "right": 0,
+        "bottom": 0.14901
+      },
+      "asset": {
+        "assetId": "/ppt/media/image.jpeg",
+        "contentType": "image/jpeg",
+        "byteLength": 193310
+      },
+      "fillImage": {
+        "assetId": "/ppt/media/image.jpeg",
+        "contentType": "image/jpeg",
+        "byteLength": 193310
+      }
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ul4vaxgb",
+      "id": "12",
+      "name": "fixture-photo-inventory-frame",
+      "bbox": [
+        449.33,
+        170,
+        382.67,
+        156
+      ],
+      "geometry": "rect",
+      "fillColor": "#EDEDED",
+      "lineColor": "#D1D5DB",
+      "lineWidth": 1
+    },
+    {
+      "order": 13,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/nidwzydc",
+      "id": "18",
+      "bbox": [
+        453.33,
+        174,
+        374.67,
+        148
+      ],
+      "contentType": "image/jpeg",
+      "imageCrop": {
+        "left": 0,
+        "top": 0.30459,
+        "right": 0,
+        "bottom": 0.30459
+      },
+      "asset": {
+        "assetId": "/ppt/media/image2.jpeg",
+        "contentType": "image/jpeg",
+        "byteLength": 34405
+      },
+      "fillImage": {
+        "assetId": "/ppt/media/image2.jpeg",
+        "contentType": "image/jpeg",
+        "byteLength": 34405
+      }
+    },
+    {
+      "order": 14,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/4r6dg7et",
+      "id": "14",
+      "name": "fixture-photo-capacity-frame",
+      "bbox": [
+        860.28,
+        170,
+        382.67,
+        156
+      ],
+      "geometry": "rect",
+      "fillColor": "#EDEDED",
+      "lineColor": "#D1D5DB",
+      "lineWidth": 1
+    },
+    {
+      "order": 15,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/mh4v6dwr",
+      "id": "19",
+      "bbox": [
+        864.28,
+        174,
+        374.67,
+        148
+      ],
+      "contentType": "image/jpeg",
+      "imageCrop": {
+        "left": 0,
+        "top": 0.23666,
+        "right": 0,
+        "bottom": 0.23666
+      },
+      "asset": {
+        "assetId": "/ppt/media/image3.jpeg",
+        "contentType": "image/jpeg",
+        "byteLength": 1883316
+      },
+      "fillImage": {
+        "assetId": "/ppt/media/image3.jpeg",
+        "contentType": "image/jpeg",
+        "byteLength": 1883316
+      }
+    }
+  ],
+  "composeRuns": []
+}

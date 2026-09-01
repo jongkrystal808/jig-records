@@ -9,6 +9,10 @@ type SummaryCard = {
   meta?: string;
   tone?: SummaryCardTone | string;
   emphasis?: boolean;
+  action?: string;
+  selected?: boolean;
+  disabled?: boolean;
+  ariaLabel?: string;
 };
 
 const props = withDefaults(
@@ -27,6 +31,10 @@ const props = withDefaults(
   }
 );
 
+const emit = defineEmits<{
+  action: [action: string];
+}>();
+
 // Centralize summary-card rendering so pages only maintain data, not duplicate layout/CSS.
 const gridStyle = computed(() => ({
   "--summary-columns-desktop": `repeat(${props.desktopColumns}, minmax(0, 1fr))`,
@@ -37,11 +45,29 @@ const gridStyle = computed(() => ({
 
 <template>
   <section class="ui-summary-cards" :class="variant" :style="gridStyle">
-    <article v-for="card in cards" :key="card.label" class="summary-card" :class="[card.tone ?? 'normal', { emphasis: card.emphasis }]">
+    <component
+      :is="card.action ? 'button' : 'article'"
+      v-for="card in cards"
+      :key="card.label"
+      class="summary-card"
+      :class="[
+        card.tone ?? 'normal',
+        {
+          emphasis: card.emphasis,
+          actionable: Boolean(card.action),
+          selected: card.selected
+        }
+      ]"
+      :type="card.action ? 'button' : undefined"
+      :disabled="card.action ? card.disabled : undefined"
+      :aria-label="card.action ? card.ariaLabel ?? card.label : undefined"
+      :aria-pressed="card.action ? Boolean(card.selected) : undefined"
+      @click="card.action && emit('action', card.action)"
+    >
       <span>{{ card.label }}</span>
       <strong>{{ card.value }}</strong>
       <p v-if="card.meta">{{ card.meta }}</p>
-    </article>
+    </component>
   </section>
 </template>
 
@@ -61,6 +87,37 @@ const gridStyle = computed(() => ({
   display: grid;
   gap: 4px;
   min-width: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.summary-card.actionable {
+  width: 100%;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.summary-card.actionable:hover:not(:disabled) {
+  border-color: #8eb5ee;
+  box-shadow: 0 6px 16px rgba(43, 99, 177, 0.12);
+  transform: translateY(-1px);
+}
+
+.summary-card.actionable:focus-visible {
+  outline: 3px solid rgba(55, 122, 226, 0.24);
+  outline-offset: 2px;
+}
+
+.summary-card.actionable.selected {
+  border-color: #4e89e7;
+  background: #edf4ff;
+  box-shadow: inset 3px 0 0 #4e89e7;
+}
+
+.summary-card.actionable:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 .summary-card span {

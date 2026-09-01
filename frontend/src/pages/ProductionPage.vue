@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { onBeforeRouteLeave, useRoute, useRouter, type LocationQueryRaw } from "vue-router";
+import { useRoute, useRouter, type LocationQueryRaw } from "vue-router";
 
 import { api } from "@/api";
 import { authSession, globalFixtureKeyword, selectedCustomerId, setCustomerSwitchGuard } from "@/appState";
@@ -10,8 +10,9 @@ import ProductionHeaderSection from "@/components/production/ProductionHeaderSec
 import ProductionRequirementCopyModal from "@/components/production/ProductionRequirementCopyModal.vue";
 import { useProductionBatchImport } from "@/composables/useProductionBatchImport";
 import { useProductionEditorState } from "@/composables/useProductionEditorState";
+import { requestConfirmation } from "@/confirmState";
 import { pushToast } from "@/toastState";
-import type { Fixture, FixtureRequirementListItem, MachineModel, ModelQuery, ModelQueryStationRequirement, ModelStation, Station, StationCapacity, StockSummary } from "@/types";
+import type { Fixture, FixtureRequirementListItem, IdentifierStockSummary, MachineModel, ModelQuery, ModelQueryStationRequirement, ModelStation, Station, StationCapacity, StockSummary } from "@/types";
 import { formatLocalDate } from "@/utils/date";
 import { matchesFixtureKeywords, parseFixtureKeywords } from "@/utils/fixtureSearch";
 import { getAvailableRequirementStations } from "@/utils/productionStations";
@@ -27,6 +28,8 @@ const fixtures = ref<Fixture[]>([]);
 const mappings = ref<ModelStation[]>([]);
 const fixtureRequirements = ref<FixtureRequirementListItem[]>([]);
 const stockRows = ref<StockSummary[]>([]);
+const identifierStockRows = ref<IdentifierStockSummary[]>([]);
+let identifierStockRequestId = 0;
 const modelQuery = ref<ModelQuery | null>(null);
 const stationCapacity = ref<StationCapacity | null>(null);
 
@@ -38,6 +41,7 @@ const hasMounted = ref(false);
 const editorCustomerId = ref<number | null>(null);
 const showRequirementCopyModal = ref(false);
 const savingRequirementCopy = ref(false);
+const routeFixtureKeyword = ref("");
 
 function nowString(): string {
   return formatLocalDate(new Date());
@@ -57,7 +61,9 @@ const stockMap = computed(() => new Map(stockRows.value.map((row) => [row.fixtur
 const modelQueryStationMap = computed(
   () => new Map((modelQuery.value?.stations ?? []).map((row) => [row.station_id, row]))
 );
-const globalFixtureKeywords = computed(() => parseFixtureKeywords(globalFixtureKeyword.value));
+const globalFixtureKeywords = computed(() =>
+  parseFixtureKeywords(routeFixtureKeyword.value || globalFixtureKeyword.value)
+);
 const mappingRows = computed(() =>
   mappings.value.map((row) => {
     const station = stationRecordMap.value.get(row.station_id);
@@ -146,6 +152,8 @@ const {
   requirementStationId,
   fixtureId,
   requiredQty,
+  designatedMode,
+  designatedIdentifiers,
   mappingStationCodeInput,
   fixtureCodeInput,
   editingMappingId,
@@ -158,6 +166,8 @@ const {
   updateModelId,
   updateSelectedStationId,
   updateRequiredQty,
+  updateDesignatedMode,
+  updateDesignatedIdentifiers,
   openMappingStationAutocomplete,
   handleMappingStationInput,
   blurMappingStationAutocomplete,
@@ -185,10 +195,24 @@ const {
   selectedStation
 });
 
+const capacityPreviewStocks = computed(() => {
+  const byFixture = new Map(stockRows.value.map((row) => [row.fixture_id, row.stock_qty]));
+  for (const row of selectedStationQueryRows.value) byFixture.set(row.fixture_id, row.stock_qty);
+  if (fixtureId.value !== null && designatedMode.value) {
+    const selected = new Set(designatedIdentifiers.value);
+    byFixture.set(
+      fixtureId.value,
+      identifierStockRows.value
+        .filter((row) => selected.has(row.identifier))
+        .reduce((sum, row) => sum + row.stock_qty, 0)
+    );
+  }
+  return [...byFixture].map(([fixture_id, stock_qty]) => ({ fixture_id, stock_qty }));
+});
 const projectedCapacity = computed(() =>
   calculateProjectedStationCapacity({
     requirements: selectedStationAllRequirementRows.value,
-    stocks: stockRows.value,
+    stocks: capacityPreviewStocks.value,
     fixtureId: fixtureId.value,
     fixtureCode: fixtureCodeInput.value,
     requiredQty: requiredQty.value,
@@ -240,24 +264,35 @@ const {
   }
 });
 
-function parseRouteModelId(): number | null {
-  const raw = Array.isArray(route.query.model_id) ? route.query.model_id[0] : route.query.model_id;
+function parseRouteEntityId(key: "model_id" | "station_id" | "fixture_id"): number | null {
+  const value = route.query[key];
+  const raw = Array.isArray(value) ? value[0] : value;
   if (typeof raw !== "string" || raw.trim().length === 0) {
     return null;
   }
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : null;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-function applyRouteModelSelection(): void {
-  const routeModelId = parseRouteModelId();
-  if (routeModelId === null) {
-    return;
+function applyRouteProductionSelection(): void {
+  const routeModelId = parseRouteEntityId("model_id");
+  if (routeModelId !== null) {
+    const model = models.value.find((row) => row.id === routeModelId);
+    if (model) modelId.value = model.id;
   }
-  const match = models.value.find((row) => row.id === routeModelId);
-  if (match) {
-    modelId.value = match.id;
+
+  syncRequirementStationSelection();
+  const routeStationId = parseRouteEntityId("station_id");
+  if (
+    routeStationId !== null &&
+    availableRequirementStations.value.some((row) => row.id === routeStationId)
+  ) {
+    updateSelectedStationId(routeStationId);
   }
+
+  const routeFixtureId = parseRouteEntityId("fixture_id");
+  const fixture = fixtures.value.find((row) => row.id === routeFixtureId);
+  routeFixtureKeyword.value = fixture?.code ?? "";
 }
 
 function buildProductionRouteQuery(): LocationQueryRaw {
@@ -283,21 +318,7 @@ function hasUnsavedProductionChanges(): boolean {
   return hasUnsavedRequirementChanges.value || hasUnsavedMappingChanges.value;
 }
 
-function confirmLeaveProductionContext(message = "目前有未儲存的修改，離開後會遺失。要繼續嗎？"): boolean {
-  if (!hasUnsavedProductionChanges()) {
-    return true;
-  }
-  return window.confirm(message);
-}
-
 function openConfigurationPage(): void {
-  if (
-    detailMode.value !== "configure" &&
-    hasUnsavedProductionChanges() &&
-    !window.confirm("切換到產能設定後會沿用目前機種，未儲存的修改可能會捨棄。要繼續嗎？")
-  ) {
-    return;
-  }
   void router.push({ name: "production-mapping", query: buildProductionRouteQuery() });
 }
 
@@ -305,28 +326,21 @@ function closeDetailPage(): void {
   void router.push({ name: "production", query: buildProductionRouteQuery() });
 }
 
-function handleBackNavigation(): void {
-  if (!confirmLeaveProductionContext()) {
-    return;
-  }
+async function handleBackNavigation(): Promise<void> {
   void router.push(returnToPath.value);
 }
 
-function handleBeforeUnload(event: BeforeUnloadEvent): void {
-  if (!hasUnsavedProductionChanges()) {
-    return;
-  }
-  event.preventDefault();
-  event.returnValue = "";
-}
-
-function selectStationForRequirement(stationId: number): void {
+async function selectStationForRequirement(stationId: number): Promise<void> {
   if (stationId === requirementStationId.value) {
     return;
   }
   if (
     hasUnsavedRequirementChanges.value &&
-    !window.confirm("目前治具需求表單有未儲存的修改，切換站點後會遺失。要繼續嗎？")
+    !(await requestConfirmation("目前治具需求表單有未儲存的修改，切換站點後會遺失。要繼續嗎？", {
+      title: "切換站點？",
+      confirmLabel: "捨棄並切換",
+      tone: "danger"
+    }))
   ) {
     return;
   }
@@ -334,13 +348,17 @@ function selectStationForRequirement(stationId: number): void {
   resetRequirementEditorWithoutPrompt();
 }
 
-function selectModelForWorkspace(nextModelId: number | null): void {
+async function selectModelForWorkspace(nextModelId: number | null): Promise<void> {
   if (nextModelId === modelId.value) {
     return;
   }
   if (
     hasUnsavedProductionChanges() &&
-    !window.confirm("目前有未儲存的修改，切換機種後會遺失。要繼續嗎？")
+    !(await requestConfirmation("目前有未儲存的修改，切換機種後會遺失。要繼續嗎？", {
+      title: "切換機種？",
+      confirmLabel: "捨棄並切換",
+      tone: "danger"
+    }))
   ) {
     return;
   }
@@ -394,8 +412,7 @@ async function loadData(showLoading = true): Promise<void> {
     stockRows.value = inventoryRows;
 
     modelId.value = modelRows.find((row) => row.id === modelId.value)?.id ?? modelRows[0]?.id ?? null;
-    applyRouteModelSelection();
-    syncRequirementStationSelection();
+    applyRouteProductionSelection();
     if (
       shouldResetEditorContext ||
       (editingMappingId.value !== null && !mappingRows.some((row) => row.id === editingMappingId.value))
@@ -418,6 +435,23 @@ async function loadData(showLoading = true): Promise<void> {
     if (showLoading) {
       loading.value = false;
     }
+  }
+}
+
+async function loadIdentifierStocks(): Promise<void> {
+  const requestId = ++identifierStockRequestId;
+  const customerId = selectedCustomerId.value;
+  const currentFixtureId = fixtureId.value;
+  if (!customerId || currentFixtureId === null) {
+    identifierStockRows.value = [];
+    return;
+  }
+  try {
+    const rows = await api.listIdentifierStockSummary(customerId, currentFixtureId);
+    if (requestId === identifierStockRequestId) identifierStockRows.value = rows;
+  } catch (err) {
+    if (requestId === identifierStockRequestId) identifierStockRows.value = [];
+    pushToast(err instanceof Error ? err.message : "載入 identifier 庫存失敗", "error");
   }
 }
 
@@ -470,11 +504,17 @@ async function removeMapping(rowId: number): Promise<void> {
       ).length
     : 0;
   if (affectedRequirementCount > 0 && mapping) {
-    selectStationForRequirement(mapping.station_id);
+    await selectStationForRequirement(mapping.station_id);
     pushToast(`此站點仍有 ${affectedRequirementCount} 筆治具需求，請先從右側移除後再刪除站點。`, "warning");
     return;
   }
-  if (!window.confirm("此站點目前沒有治具需求。確定要刪除這筆站點設定嗎？")) return;
+  if (
+    !(await requestConfirmation("此站點目前沒有治具需求。確定要刪除這筆站點設定嗎？", {
+      title: "刪除站點設定？",
+      confirmLabel: "刪除",
+      tone: "danger"
+    }))
+  ) return;
   try {
     await api.deleteModelStation(rowId, selectedCustomerId.value);
     if (editingMappingId.value === rowId) resetMappingEditorWithoutPrompt();
@@ -514,7 +554,9 @@ async function saveRequirement(): Promise<void> {
       model_id: currentModelId,
       station_id: currentStationId,
       fixture_id: currentFixtureId,
-      required_qty: requiredQty.value
+      required_qty: requiredQty.value,
+      designated_mode: designatedMode.value,
+      designated_identifiers: designatedMode.value ? designatedIdentifiers.value : []
     };
     const existingRequirement = fixtureRequirements.value.find(
       (row) =>
@@ -553,7 +595,13 @@ async function removeRequirement(requirementId: number): Promise<void> {
     pushToast("請先選擇客戶。", "warning");
     return;
   }
-  if (!window.confirm("確定要刪除這筆站點治具需求嗎？")) return;
+  if (
+    !(await requestConfirmation("確定要刪除這筆站點治具需求嗎？", {
+      title: "刪除治具需求？",
+      confirmLabel: "刪除",
+      tone: "danger"
+    }))
+  ) return;
   try {
     await api.deleteFixtureRequirement(requirementId, selectedCustomerId.value);
     if (editingRequirementId.value === requirementId) resetRequirementEditorWithoutPrompt();
@@ -565,7 +613,7 @@ async function removeRequirement(requirementId: number): Promise<void> {
   }
 }
 
-function openRequirementCopyModal(): void {
+async function openRequirementCopyModal(): Promise<void> {
   if (!canEditProduction.value || modelId.value === null || requirementStationId.value === null) {
     return;
   }
@@ -575,7 +623,11 @@ function openRequirementCopyModal(): void {
   }
   if (
     hasUnsavedRequirementChanges.value &&
-    !window.confirm("開啟複製流程會清除目前未儲存的治具需求表單。要繼續嗎？")
+    !(await requestConfirmation("開啟複製流程會清除目前未儲存的治具需求表單。要繼續嗎？", {
+      title: "開啟複製流程？",
+      confirmLabel: "清除並繼續",
+      tone: "danger"
+    }))
   ) {
     return;
   }
@@ -771,6 +823,8 @@ watch(selectedCustomerId, async () => {
   await Promise.all([refreshCapacity(), refreshModelQuery()]);
 });
 
+watch([selectedCustomerId, fixtureId], loadIdentifierStocks, { immediate: true });
+
 watch(
   () => hasUnsavedProductionChanges(),
   (value) => {
@@ -780,9 +834,9 @@ watch(
 );
 
 watch(
-  () => route.query.model_id,
+  () => [route.query.model_id, route.query.station_id, route.query.fixture_id],
   async () => {
-    applyRouteModelSelection();
+    applyRouteProductionSelection();
     await Promise.all([refreshCapacity(), refreshModelQuery()]);
   }
 );
@@ -790,12 +844,10 @@ watch(
 onMounted(async () => {
   await loadData();
   await Promise.all([refreshCapacity(), refreshModelQuery()]);
-  window.addEventListener("beforeunload", handleBeforeUnload);
   hasMounted.value = true;
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener("beforeunload", handleBeforeUnload);
   setCustomerSwitchGuard("production-page", false, "產能頁有未儲存的修改");
 });
 
@@ -815,12 +867,6 @@ watch(
   }
 );
 
-onBeforeRouteLeave(() => {
-  if (!confirmLeaveProductionContext()) {
-    return false;
-  }
-  return true;
-});
 </script>
 
 <template>
@@ -887,6 +933,9 @@ onBeforeRouteLeave(() => {
       :mapping-station-code-input="mappingStationCodeInput"
       :fixture-code-input="fixtureCodeInput"
       :required-qty="requiredQty"
+      :designated-mode="designatedMode"
+      :designated-identifiers="designatedIdentifiers"
+      :identifier-stock-rows="identifierStockRows"
       :open-autocomplete-key="openAutocompleteKey"
       :filtered-station-suggestions="filteredStationSuggestions"
       :filtered-fixture-suggestions="filteredFixtureSuggestions"
@@ -913,6 +962,8 @@ onBeforeRouteLeave(() => {
       :on-fixture-blur="blurFixtureAutocomplete"
       :on-select-fixture-suggestion="selectFixtureSuggestion"
       :on-required-qty-change="updateRequiredQty"
+      :on-designated-mode-change="updateDesignatedMode"
+      :on-designated-identifiers-change="updateDesignatedIdentifiers"
     />
 
     <ProductionRequirementCopyModal
@@ -1094,212 +1145,5 @@ onBeforeRouteLeave(() => {
   </div>
 </template>
 
-<style scoped>
-.production-page {
-  height: 100%;
-  overflow: hidden;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 8px;
-  padding: 8px;
-  background: #fff;
-}
 
-.empty-cell {
-  padding: 12px 14px;
-  color: #56657f;
-  background: #f8fbff;
-  text-align: center;
-}
-
-.top-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-  min-height: 0;
-}
-
-.overview-capacity-panel {
-  min-width: 0;
-}
-
-.mapping-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  overflow: hidden;
-  min-width: 100%;
-  background: #fff;
-}
-
-.mapping-table th,
-.mapping-table td {
-  border-bottom: 1px solid var(--line);
-  border-right: 1px solid rgba(220, 227, 238, 0.9);
-  padding: 8px 10px;
-  text-align: left;
-  font-size: 12px;
-  vertical-align: middle;
-}
-
-.mapping-table th:last-child,
-.mapping-table td:last-child {
-  border-right: none;
-}
-
-.mapping-table tr:last-child td {
-  border-bottom: none;
-}
-
-.mapping-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: #f7f9fd;
-  color: #52607b;
-  font-weight: 700;
-}
-
-.mapping-table tbody tr:nth-child(even) {
-  background: #fcfdff;
-}
-
-.mapping-table tbody tr:hover {
-  background: #f3f7ff;
-}
-
-.primary-btn {
-  border: 1px solid var(--green);
-  border-radius: 8px;
-  background: linear-gradient(180deg, #4cc36b 0%, #2ea54e 100%);
-  color: #fff;
-  font-weight: 700;
-  padding: 8px 14px;
-  min-height: 36px;
-  box-shadow: 0 8px 18px rgba(46, 165, 78, 0.18);
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
-}
-
-.batch-preview-table {
-  min-width: 100%;
-}
-
-.batch-cell-stack {
-  display: grid;
-  gap: 6px;
-}
-
-.batch-status {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 64px;
-  width: fit-content;
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.batch-status.ready {
-  color: var(--green);
-  background: var(--green-soft);
-}
-
-.batch-status.warn {
-  color: var(--orange);
-  background: var(--orange-soft);
-}
-
-.batch-status.muted {
-  color: #66748d;
-  background: #edf1f7;
-}
-
-.batch-status.error {
-  color: var(--red);
-  background: var(--red-soft);
-}
-
-.batch-row-note {
-  color: #607089;
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.batch-row-actions {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.batch-action-btn {
-  width: auto;
-  min-height: 28px;
-  padding: 5px 10px;
-  font-size: 11px;
-  border-radius: 999px;
-}
-
-.batch-action-btn.primary-btn {
-  min-width: 84px;
-}
-
-.batch-action-btn.ghost-btn {
-  min-width: 72px;
-}
-
-.batch-inline-hint {
-  color: #74839b;
-  font-size: 11px;
-}
-
-.ghost-btn {
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  padding: 8px 12px;
-  min-height: 36px;
-  background: linear-gradient(180deg, #ffffff 0%, #f7f9fd 100%);
-  color: #5b677d;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, filter 0.15s ease;
-}
-
-.primary-btn:hover,
-.ghost-btn:hover {
-  transform: translateY(-1px);
-}
-
-.primary-btn:hover {
-  box-shadow: 0 10px 22px rgba(46, 165, 78, 0.24);
-  filter: brightness(1.02);
-}
-
-.ghost-btn:hover {
-  border-color: #c0cad9;
-  box-shadow: 0 4px 12px rgba(28, 47, 84, 0.08);
-}
-
-.ghost-btn:disabled,
-.primary-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
-.primary-btn:active,
-.ghost-btn:active {
-  transform: translateY(0);
-}
-
-@media (max-width: 640px) {
-  .top-grid {
-    gap: 10px;
-  }
-}
-</style>
+<style scoped src="@/styles/surfaces/production.css"></style>

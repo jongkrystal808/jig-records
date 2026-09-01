@@ -106,15 +106,25 @@ function stockTone(status: string): "normal" | "warn" | "danger" {
 
       <section v-if="visibleSections.requirements" class="ui-panel-card">
         <div class="ui-section-head"><h3>站點需求明細</h3><span class="section-meta">{{ queryData?.station_requirements.length ?? 0 }} 筆</span></div>
+        <p v-if="queryData?.station_requirements.some((row) => row.designated_mode)" class="designated-mode-note">
+          指定模式列的庫存與開站量只採計列出的 identifier。
+        </p>
         <table v-if="(queryData?.station_requirements.length ?? 0) > 0" class="ui-info-table">
           <thead>
-            <tr><th>站點</th><th>治具</th><th>需求</th><th>庫存</th><th>開站量</th></tr>
+            <tr><th>站點</th><th>治具</th><th>需求</th><th>使用模式</th><th>庫存</th><th>開站量</th></tr>
           </thead>
           <tbody>
             <tr v-for="row in queryData?.station_requirements ?? []" :key="`${row.station_id}-${row.fixture_id}`">
               <td>{{ row.station_code }}</td>
               <td>{{ row.fixture_code }}</td>
               <td>{{ formatCount(row.required_qty) }}</td>
+              <td>
+                <div v-if="row.designated_mode" class="designated-mode-cell">
+                  <span>指定模式</span>
+                  <small>{{ row.designated_identifiers.join("、") }}</small>
+                </div>
+                <span v-else>不限 identifier</span>
+              </td>
               <td>{{ formatCount(row.stock_qty) }}</td>
               <td>{{ formatCount(row.max_open_station_count) }}</td>
             </tr>
@@ -150,6 +160,35 @@ dt,
 
 p {
   margin: 4px 0 0;
+}
+
+.designated-mode-note {
+  margin: 8px 0 10px;
+  border: 1px solid #c9dbf7;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #f2f7ff;
+  color: #315f9f;
+}
+
+.designated-mode-cell {
+  display: grid;
+  gap: 3px;
+}
+
+.designated-mode-cell span {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: #e8f1ff;
+  color: #215fac;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.designated-mode-cell small {
+  color: #53627b;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 960px) {

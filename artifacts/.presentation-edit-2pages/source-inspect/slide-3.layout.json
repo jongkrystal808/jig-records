@@ -1,0 +1,2510 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/ofy9wn61",
+    "id": "ofy9wn61",
+    "slide": 3,
+    "layoutId": "/ppt/slideLayouts/slideLayout1.xml",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#E5E7EF",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 960
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "fontScheme": {
+      "name": "Office",
+      "majorFont": {
+        "latinTypeface": "Calibri Light",
+        "eastAsianTypeface": "Calibri Light",
+        "complexScriptTypeface": "Calibri Light"
+      },
+      "minorFont": {
+        "latinTypeface": "Calibri",
+        "eastAsianTypeface": "Calibri",
+        "complexScriptTypeface": "Calibri"
+      }
+    },
+    "typefaces": [
+      "Calibri",
+      "Calibri Light"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "/ppt/slideLayouts/slideLayout1.xml",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "/ppt/slideMasters/slideMaster1.xml",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/8zit4fix",
+      "id": "57",
+      "name": "left-accent-3",
+      "bbox": [
+        0,
+        103,
+        50,
+        69
+      ],
+      "geometry": "rect",
+      "fillColor": "#B43216",
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/cza94vmx",
+      "id": "2",
+      "name": "outer-3",
+      "bbox": [
+        48,
+        30,
+        1184,
+        812
+      ],
+      "geometry": "rect",
+      "fillColor": "#FFFFFF",
+      "lineColor": "#171717",
+      "lineWidth": 2
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/d0jax03i",
+      "id": "3",
+      "name": "owner-3",
+      "bbox": [
+        64,
+        76,
+        235,
+        30
+      ],
+      "geometry": "rect",
+      "text": "TE－專案改善",
+      "textPreview": "TE－專案改善",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "TE－專案改善"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "TE－專案改善",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "color": "#111827",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "TE－專案改善",
+              "fontSize": 18,
+              "color": "#111827",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/298ryl4v",
+      "id": "4",
+      "name": "title-3",
+      "bbox": [
+        300,
+        52,
+        680,
+        52
+      ],
+      "geometry": "rect",
+      "text": "可開站數改由完整需求的瓶頸決定",
+      "textPreview": "可開站數改由完整需求的瓶頸決定",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "可開站數改由完整需求的瓶頸決定"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "可開站數改由完整需求的瓶頸決定",
+          "resolvedTextStyle": {
+            "fontSize": 33,
+            "color": "#111827",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "可開站數改由完整需求的瓶頸決定",
+              "fontSize": 33,
+              "color": "#111827",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/3ah8rqlg",
+      "id": "5",
+      "name": "module-3",
+      "bbox": [
+        1010,
+        68,
+        190,
+        28
+      ],
+      "geometry": "rect",
+      "text": "生產能力",
+      "textPreview": "生產能力",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "生產能力"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "生產能力",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "color": "#1E3A8A",
+            "bold": true,
+            "alignment": "right"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "生產能力",
+              "fontSize": 14,
+              "color": "#1E3A8A",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/obq90bml",
+      "id": "6",
+      "name": "header-line-3",
+      "bbox": [
+        48,
+        121,
+        1184,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#171717",
+      "lineWidth": 2
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/pcjqtg36",
+      "id": "7",
+      "name": "reason-label-3",
+      "bbox": [
+        62,
+        151,
+        120,
+        30
+      ],
+      "geometry": "rect",
+      "text": "改善原因：",
+      "textPreview": "改善原因：",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "改善原因："
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "改善原因：",
+          "resolvedTextStyle": {
+            "fontSize": 19,
+            "color": "#111827",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "改善原因：",
+              "fontSize": 19,
+              "color": "#111827",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/m5cra54z",
+      "id": "8",
+      "name": "reason-3",
+      "bbox": [
+        178,
+        143,
+        1018,
+        50
+      ],
+      "geometry": "rect",
+      "text": "同一站點可被多個機種共用；若只依站點或單一治具庫存估算，會忽略機種別需求與真正的瓶頸治具。",
+      "textPreview": "同一站點可被多個機種共用；若只依站點或單一治具庫存估算，會忽略機種別需求與真正的瓶頸治具。",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "同一站點可被多個機種共用；若只依站點或單一治具庫存估算，會忽略機種別需求與真正的瓶頸治具。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "同一站點可被多個機種共用；若只依站點或單一治具庫存估算，會忽略機種別需求與真正的瓶頸治具。",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "color": "#111827",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "同一站點可被多個機種共用；若只依站點或單一治具庫存估算，會忽略機種別需求與真正的瓶頸治具。",
+              "fontSize": 18,
+              "color": "#111827"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/n6ls3alk",
+      "id": "9",
+      "name": "reason-line-3",
+      "bbox": [
+        48,
+        208,
+        1184,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#171717",
+      "lineWidth": 2
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/n2l4fq98",
+      "id": "10",
+      "name": "before-label-3",
+      "bbox": [
+        48,
+        214,
+        592,
+        30
+      ],
+      "geometry": "rect",
+      "text": "改善前",
+      "textPreview": "改善前",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "改善前"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "改善前",
+          "resolvedTextStyle": {
+            "fontSize": 21,
+            "color": "#111827",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "改善前",
+              "fontSize": 21,
+              "color": "#111827",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/m1c3mlsn",
+      "id": "11",
+      "name": "after-label-3",
+      "bbox": [
+        640,
+        214,
+        592,
+        30
+      ],
+      "geometry": "rect",
+      "text": "改善後",
+      "textPreview": "改善後",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "改善後"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "改善後",
+          "resolvedTextStyle": {
+            "fontSize": 21,
+            "color": "#111827",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "改善後",
+              "fontSize": 21,
+              "color": "#111827",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/943mhgre",
+      "id": "12",
+      "name": "panel-top-3",
+      "bbox": [
+        48,
+        252,
+        1184,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#171717",
+      "lineWidth": 2
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/83ulovat",
+      "id": "13",
+      "name": "panel-divider-3",
+      "bbox": [
+        640,
+        208,
+        0,
+        438
+      ],
+      "geometry": "line",
+      "lineColor": "#171717",
+      "lineWidth": 2
+    },
+    {
+      "order": 14,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/v6l4jq94",
+      "id": "14",
+      "name": "before-surface-3",
+      "bbox": [
+        49,
+        254,
+        591,
+        392
+      ],
+      "geometry": "rect",
+      "fillColor": "#FCFCFD",
+      "lineWidth": 0
+    },
+    {
+      "order": 15,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/a5c3ql8z",
+      "id": "15",
+      "name": "before-accent-3",
+      "bbox": [
+        72,
+        282,
+        8,
+        266
+      ],
+      "geometry": "rect",
+      "fillColor": "#B43216",
+      "lineWidth": 0
+    },
+    {
+      "order": 16,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/x8nml0ra",
+      "id": "16",
+      "name": "before-headline-3",
+      "bbox": [
+        98,
+        278,
+        500,
+        58
+      ],
+      "geometry": "rect",
+      "text": "站點共用造成產能誤判",
+      "textPreview": "站點共用造成產能誤判",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "站點共用造成產能誤判"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "站點共用造成產能誤判",
+          "resolvedTextStyle": {
+            "fontSize": 27,
+            "color": "#B43216",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "站點共用造成產能誤判",
+              "fontSize": 27,
+              "color": "#B43216",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 17,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/w7ulsvqp",
+      "id": "17",
+      "name": "before-bullets-3",
+      "bbox": [
+        98,
+        345,
+        492,
+        190
+      ],
+      "geometry": "rect",
+      "text": "• 由 station_id 單獨推測機種，需求範圍不完整\n\n• 只看部分治具庫存，可能高估可開站數\n\n• 需求數量異動缺少明確的衝突確認",
+      "textPreview": "• 由 station_id 單獨推測機種，需求範圍不完整 |  | • 只看部分治具庫存，可能高估可開站數 |  | • 需求數量異動缺少明確的衝突確認",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 5,
+        "lines": [
+          {
+            "index": 1,
+            "text": "• 由 station_id 單獨推測機種，需求範圍不完整"
+          },
+          {
+            "index": 2,
+            "text": ""
+          },
+          {
+            "index": 3,
+            "text": "• 只看部分治具庫存，可能高估可開站數"
+          },
+          {
+            "index": 4,
+            "text": ""
+          },
+          {
+            "index": 5,
+            "text": "• 需求數量異動缺少明確的衝突確認"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "• 由 station_id 單獨推測機種，需求範圍不完整",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "color": "#111827",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "• 由 station_id 單獨推測機種，需求範圍不完整",
+              "fontSize": 18,
+              "color": "#111827"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        },
+        {
+          "index": 3,
+          "text": "• 只看部分治具庫存，可能高估可開站數",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "color": "#111827",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "• 只看部分治具庫存，可能高估可開站數",
+              "fontSize": 18,
+              "color": "#111827"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        },
+        {
+          "index": 5,
+          "text": "• 需求數量異動缺少明確的衝突確認",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "color": "#111827",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "• 需求數量異動缺少明確的衝突確認",
+              "fontSize": 18,
+              "color": "#111827"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 18,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ja54na9g",
+      "id": "18",
+      "name": "before-keywords-bg-3",
+      "bbox": [
+        96,
+        566,
+        480,
+        48
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#FFF4EF",
+      "lineColor": "#F0B7A5",
+      "lineWidth": 1
+    },
+    {
+      "order": 19,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/i9w3u58v",
+      "id": "19",
+      "name": "before-keywords-3",
+      "bbox": [
+        108,
+        578,
+        456,
+        26
+      ],
+      "geometry": "rect",
+      "text": "範圍不清　｜　局部估算　｜　產能高估",
+      "textPreview": "範圍不清　｜　局部估算　｜　產能高估",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "範圍不清　｜　局部估算　｜　產能高估"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "範圍不清　｜　局部估算　｜　產能高估",
+          "resolvedTextStyle": {
+            "fontSize": 16,
+            "color": "#8C2B17",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "範圍不清　｜　局部估算　｜　產能高估",
+              "fontSize": 16,
+              "color": "#8C2B17",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 20,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/e10f2twf",
+      "id": "20",
+      "name": "after-surface-3",
+      "bbox": [
+        640,
+        254,
+        591,
+        392
+      ],
+      "geometry": "rect",
+      "fillColor": "#FFFFFF",
+      "lineWidth": 0
+    },
+    {
+      "order": 21,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/f29gbyx0",
+      "id": "21",
+      "name": "capacity-formula-bg-3",
+      "bbox": [
+        680,
+        284,
+        510,
+        126
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#EFF6FF",
+      "lineColor": "#9CB9F5",
+      "lineWidth": 1
+    },
+    {
+      "order": 22,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/03ix43e5",
+      "id": "22",
+      "name": "capacity-label-3",
+      "bbox": [
+        710,
+        298,
+        450,
+        30
+      ],
+      "geometry": "rect",
+      "text": "權威可開站數",
+      "textPreview": "權威可開站數",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "權威可開站數"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "權威可開站數",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "color": "#1E3A8A",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "權威可開站數",
+              "fontSize": 18,
+              "color": "#1E3A8A",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 23,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/14ryd8fq",
+      "id": "23",
+      "name": "capacity-formula-3",
+      "bbox": [
+        698,
+        338,
+        474,
+        52
+      ],
+      "geometry": "rect",
+      "text": "MIN  ⌊目前庫存 ÷ 單站需求量⌋",
+      "textPreview": "MIN  ⌊目前庫存 ÷ 單站需求量⌋",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "MIN  ⌊目前庫存 ÷ 單站需求量⌋"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "MIN  ⌊目前庫存 ÷ 單站需求量⌋",
+          "resolvedTextStyle": {
+            "fontSize": 28,
+            "color": "#2563EB",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "MIN  ⌊目前庫存 ÷ 單站需求量⌋",
+              "fontSize": 28,
+              "color": "#2563EB",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 24,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/6d0fytg3",
+      "id": "24",
+      "name": "capacity-scope-3",
+      "bbox": [
+        682,
+        425,
+        506,
+        38
+      ],
+      "geometry": "rect",
+      "text": "計算範圍：model_id + station_id 的完整治具需求集合",
+      "textPreview": "計算範圍：model_id + station_id 的完整治具需求集合",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "計算範圍：model_id + station_id 的完整治具需求集合"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "計算範圍：model_id + station_id 的完整治具需求集合",
+          "resolvedTextStyle": {
+            "fontSize": 17,
+            "color": "#111827",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "計算範圍：model_id + station_id 的完整治具需求集合",
+              "fontSize": 17,
+              "color": "#111827",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 25,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/re9g7yxo",
+      "id": "25",
+      "name": "capacity-points-3",
+      "bbox": [
+        704,
+        472,
+        466,
+        132
+      ],
+      "geometry": "rect",
+      "text": "✓ 同一站點可被多機種共用，但需求保持機種別\n\n✓ 不再從 station_id 單獨反推機種\n\n✓ 以瓶頸治具決定最大開站數",
+      "textPreview": "✓ 同一站點可被多機種共用，但需求保持機種別 |  | ✓ 不再從 station_id 單獨反推機種 |  | ✓ 以瓶頸治具決定最大開站數",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 5,
+        "lines": [
+          {
+            "index": 1,
+            "text": "✓ 同一站點可被多機種共用，但需求保持機種別"
+          },
+          {
+            "index": 2,
+            "text": ""
+          },
+          {
+            "index": 3,
+            "text": "✓ 不再從 station_id 單獨反推機種"
+          },
+          {
+            "index": 4,
+            "text": ""
+          },
+          {
+            "index": 5,
+            "text": "✓ 以瓶頸治具決定最大開站數"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "✓ 同一站點可被多機種共用，但需求保持機種別",
+          "resolvedTextStyle": {
+            "fontSize": 17,
+            "color": "#111827",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "✓ 同一站點可被多機種共用，但需求保持機種別",
+              "fontSize": 17,
+              "color": "#111827"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        },
+        {
+          "index": 3,
+          "text": "✓ 不再從 station_id 單獨反推機種",
+          "resolvedTextStyle": {
+            "fontSize": 17,
+            "color": "#111827",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "✓ 不再從 station_id 單獨反推機種",
+              "fontSize": 17,
+              "color": "#111827"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        },
+        {
+          "index": 5,
+          "text": "✓ 以瓶頸治具決定最大開站數",
+          "resolvedTextStyle": {
+            "fontSize": 17,
+            "color": "#111827",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "✓ 以瓶頸治具決定最大開站數",
+              "fontSize": 17,
+              "color": "#111827"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 26,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/sfix03y9",
+      "id": "26",
+      "name": "cost-cell-3-0-0",
+      "bbox": [
+        48,
+        646,
+        108,
+        38
+      ],
+      "geometry": "rect",
+      "fillColor": "#F1F4EE",
+      "lineColor": "#90A074",
+      "lineWidth": 1
+    },
+    {
+      "order": 27,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/tgry9ofu",
+      "id": "27",
+      "name": "cost-text-3-0-0",
+      "bbox": [
+        56,
+        654,
+        92,
+        26
+      ],
+      "geometry": "rect",
+      "text": "改善項目",
+      "textPreview": "改善項目",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "改善項目"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "改善項目",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "color": "#111827",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "改善項目",
+              "fontSize": 15,
+              "color": "#111827",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 28,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/a9kfadwn",
+      "id": "28",
+      "name": "cost-cell-3-0-1",
+      "bbox": [
+        156,
+        646,
+        538,
+        38
+      ],
+      "geometry": "rect",
+      "fillColor": "#F1F4EE",
+      "lineColor": "#90A074",
+      "lineWidth": 1
+    },
+    {
+      "order": 29,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/batgjixs",
+      "id": "29",
+      "name": "cost-text-3-0-1",
+      "bbox": [
+        164,
+        654,
+        522,
+        26
+      ],
+      "geometry": "rect",
+      "text": "改善前",
+      "textPreview": "改善前",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "改善前"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "改善前",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "color": "#111827",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "改善前",
+              "fontSize": 15,
+              "color": "#111827",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 30,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/l4fi9cza",
+      "id": "30",
+      "name": "cost-cell-3-0-2",
+      "bbox": [
+        694,
+        646,
+        538,
+        38
+      ],
+      "geometry": "rect",
+      "fillColor": "#F1F4EE",
+      "lineColor": "#90A074",
+      "lineWidth": 1
+    },
+    {
+      "order": 31,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/k3m1g7yp",
+      "id": "31",
+      "name": "cost-text-3-0-2",
+      "bbox": [
+        702,
+        654,
+        522,
+        26
+      ],
+      "geometry": "rect",
+      "text": "改善後",
+      "textPreview": "改善後",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "改善後"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "改善後",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "color": "#111827",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "改善後",
+              "fontSize": 15,
+              "color": "#111827",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 32,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/z2d07mh4",
+      "id": "32",
+      "name": "cost-cell-3-1-0",
+      "bbox": [
+        48,
+        684,
+        108,
+        52
+      ],
+      "geometry": "rect",
+      "fillColor": "#F1F4EE",
+      "lineColor": "#90A074",
+      "lineWidth": 1
+    },
+    {
+      "order": 33,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/y14jehgj",
+      "id": "33",
+      "name": "cost-text-3-1-0",
+      "bbox": [
+        56,
+        693,
+        92,
+        40
+      ],
+      "geometry": "rect",
+      "text": "人力成本",
+      "textPreview": "人力成本",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "人力成本"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "人力成本",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "color": "#263238",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "人力成本",
+              "fontSize": 14,
+              "color": "#263238",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 34,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/x0vi5czy",
+      "id": "34",
+      "name": "cost-cell-3-1-1",
+      "bbox": [
+        156,
+        684,
+        538,
+        52
+      ],
+      "geometry": "rect",
+      "fillColor": "#F1F4EE",
+      "lineColor": "#90A074",
+      "lineWidth": 1
+    },
+    {
+      "order": 35,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/czmhc7id",
+      "id": "35",
+      "name": "cost-text-3-1-1",
+      "bbox": [
+        164,
+        693,
+        522,
+        40
+      ],
+      "geometry": "rect",
+      "text": "人工逐一比對治具庫存與需求",
+      "textPreview": "人工逐一比對治具庫存與需求",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "人工逐一比對治具庫存與需求"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "人工逐一比對治具庫存與需求",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "color": "#263238",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "人工逐一比對治具庫存與需求",
+              "fontSize": 14,
+              "color": "#263238"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 36,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/byd032h8",
+      "id": "36",
+      "name": "cost-cell-3-1-2",
+      "bbox": [
+        694,
+        684,
+        538,
+        52
+      ],
+      "geometry": "rect",
+      "fillColor": "#F1F4EE",
+      "lineColor": "#90A074",
+      "lineWidth": 1
+    },
+    {
+      "order": 37,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ax4zax0n",
+      "id": "37",
+      "name": "cost-text-3-1-2",
+      "bbox": [
+        702,
+        693,
+        522,
+        40
+      ],
+      "geometry": "rect",
+      "text": "系統依 model＋station 自動計算瓶頸",
+      "textPreview": "系統依 model＋station 自動計算瓶頸",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "系統依 model＋station 自動計算瓶頸"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "系統依 model＋station 自動計算瓶頸",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "color": "#263238",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "系統依 model＋station 自動計算瓶頸",
+              "fontSize": 14,
+              "color": "#263238"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 38,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/hwzihwzi",
+      "id": "38",
+      "name": "cost-cell-3-2-0",
+      "bbox": [
+        48,
+        736,
+        108,
+        52
+      ],
+      "geometry": "rect",
+      "fillColor": "#F1F4EE",
+      "lineColor": "#90A074",
+      "lineWidth": 1
+    },
+    {
+      "order": 39,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wv61obyx",
+      "id": "39",
+      "name": "cost-text-3-2-0",
+      "bbox": [
+        56,
+        745,
+        92,
+        40
+      ],
+      "geometry": "rect",
+      "text": "錯誤成本",
+      "textPreview": "錯誤成本",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "錯誤成本"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "錯誤成本",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "color": "#263238",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "錯誤成本",
+              "fontSize": 14,
+              "color": "#263238",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 40,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/4nuhs7uh",
+      "id": "40",
+      "name": "cost-cell-3-2-1",
+      "bbox": [
+        156,
+        736,
+        538,
+        52
+      ],
+      "geometry": "rect",
+      "fillColor": "#F1F4EE",
+      "lineColor": "#90A074",
+      "lineWidth": 1
+    },
+    {
+      "order": 41,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/po3ilcvm",
+      "id": "41",
+      "name": "cost-text-3-2-1",
+      "bbox": [
+        164,
+        745,
+        522,
+        40
+      ],
+      "geometry": "rect",
+      "text": "機種與站點關係混用",
+      "textPreview": "機種與站點關係混用",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "機種與站點關係混用"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "機種與站點關係混用",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "color": "#263238",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "機種與站點關係混用",
+              "fontSize": 14,
+              "color": "#263238"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 42,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/21szqxcb",
+      "id": "42",
+      "name": "cost-cell-3-2-2",
+      "bbox": [
+        694,
+        736,
+        538,
+        52
+      ],
+      "geometry": "rect",
+      "fillColor": "#F1F4EE",
+      "lineColor": "#90A074",
+      "lineWidth": 1
+    },
+    {
+      "order": 43,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/32l0j2dw",
+      "id": "43",
+      "name": "cost-text-3-2-2",
+      "bbox": [
+        702,
+        745,
+        522,
+        40
+      ],
+      "geometry": "rect",
+      "text": "需求唯一範圍固定為 model＋station＋fixture",
+      "textPreview": "需求唯一範圍固定為 model＋station＋fixture",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "需求唯一範圍固定為 model＋station＋fixture"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "需求唯一範圍固定為 model＋station＋fixture",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "color": "#263238",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "需求唯一範圍固定為 model＋station＋fixture",
+              "fontSize": 14,
+              "color": "#263238"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 44,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/cruhwrud",
+      "id": "44",
+      "name": "cost-cell-3-3-0",
+      "bbox": [
+        48,
+        788,
+        108,
+        52
+      ],
+      "geometry": "rect",
+      "fillColor": "#F1F4EE",
+      "lineColor": "#90A074",
+      "lineWidth": 1
+    },
+    {
+      "order": 45,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ds3ipcvy",
+      "id": "45",
+      "name": "cost-text-3-3-0",
+      "bbox": [
+        56,
+        797,
+        92,
+        40
+      ],
+      "geometry": "rect",
+      "text": "操作成本",
+      "textPreview": "操作成本",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "操作成本"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "操作成本",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "color": "#263238",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "操作成本",
+              "fontSize": 14,
+              "color": "#263238",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 46,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/qpczuhc7",
+      "id": "46",
+      "name": "cost-cell-3-3-1",
+      "bbox": [
+        156,
+        788,
+        538,
+        52
+      ],
+      "geometry": "rect",
+      "fillColor": "#F1F4EE",
+      "lineColor": "#90A074",
+      "lineWidth": 1
+    },
+    {
+      "order": 47,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/rql0nmds",
+      "id": "47",
+      "name": "cost-text-3-3-1",
+      "bbox": [
+        164,
+        797,
+        522,
+        40
+      ],
+      "geometry": "rect",
+      "text": "匯入可能覆蓋既有設定",
+      "textPreview": "匯入可能覆蓋既有設定",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "匯入可能覆蓋既有設定"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "匯入可能覆蓋既有設定",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "color": "#263238",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "匯入可能覆蓋既有設定",
+              "fontSize": 14,
+              "color": "#263238"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 48,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/0ve10ru9",
+      "id": "48",
+      "name": "cost-cell-3-3-2",
+      "bbox": [
+        694,
+        788,
+        538,
+        52
+      ],
+      "geometry": "rect",
+      "fillColor": "#F1F4EE",
+      "lineColor": "#90A074",
+      "lineWidth": 1
+    },
+    {
+      "order": 49,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/1wnitwvu",
+      "id": "49",
+      "name": "cost-text-3-3-2",
+      "bbox": [
+        702,
+        797,
+        522,
+        40
+      ],
+      "geometry": "rect",
+      "text": "預覽衝突，需明確確認才覆寫",
+      "textPreview": "預覽衝突，需明確確認才覆寫",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "預覽衝突，需明確確認才覆寫"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "預覽衝突，需明確確認才覆寫",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "color": "#263238",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "預覽衝突，需明確確認才覆寫",
+              "fontSize": 14,
+              "color": "#263238"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 50,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/v29cfu18",
+      "id": "50",
+      "name": "footer-3",
+      "bbox": [
+        0,
+        858,
+        1280,
+        102
+      ],
+      "geometry": "rect",
+      "fillColor": "#D8D9DE",
+      "lineWidth": 0
+    },
+    {
+      "order": 51,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/a10b6p03",
+      "id": "51",
+      "name": "footer-band-3",
+      "bbox": [
+        355,
+        886,
+        810,
+        36
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#BFC2CA",
+      "lineWidth": 0
+    },
+    {
+      "order": 52,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/xoruhkje",
+      "id": "52",
+      "name": "footer-logo-3",
+      "bbox": [
+        48,
+        875,
+        64,
+        50
+      ],
+      "geometry": "rect",
+      "fillColor": "#FFFFFF",
+      "lineWidth": 0
+    },
+    {
+      "order": 53,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/w3it8zit",
+      "id": "53",
+      "name": "footer-logo-text-3",
+      "bbox": [
+        51,
+        888,
+        58,
+        26
+      ],
+      "geometry": "rect",
+      "text": "FM",
+      "textPreview": "FM",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "FM"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "FM",
+          "resolvedTextStyle": {
+            "fontSize": 19,
+            "color": "#2563EB",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "FM",
+              "fontSize": 19,
+              "color": "#2563EB",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 54,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/nypcba1c",
+      "id": "54",
+      "name": "footer-brand-3",
+      "bbox": [
+        124,
+        874,
+        220,
+        34
+      ],
+      "geometry": "rect",
+      "text": "Fixture-M Lite",
+      "textPreview": "Fixture-M Lite",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Fixture-M Lite"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Fixture-M Lite",
+          "resolvedTextStyle": {
+            "fontSize": 22,
+            "color": "#111827",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Fixture-M Lite",
+              "fontSize": 22,
+              "color": "#111827",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 55,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/mxgb250r",
+      "id": "55",
+      "name": "footer-sub-3",
+      "bbox": [
+        126,
+        907,
+        220,
+        20
+      ],
+      "geometry": "rect",
+      "text": "治具庫存與產能管理平台",
+      "textPreview": "治具庫存與產能管理平台",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "治具庫存與產能管理平台"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "治具庫存與產能管理平台",
+          "resolvedTextStyle": {
+            "fontSize": 11,
+            "color": "#64748B",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "治具庫存與產能管理平台",
+              "fontSize": 11,
+              "color": "#64748B"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 56,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/90rudkji",
+      "id": "56",
+      "name": "footer-page-3",
+      "bbox": [
+        1180,
+        889,
+        56,
+        28
+      ],
+      "geometry": "rect",
+      "text": "03",
+      "textPreview": "03",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "03"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "03",
+          "resolvedTextStyle": {
+            "fontSize": 16,
+            "color": "#4B5563",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "03",
+              "fontSize": 16,
+              "color": "#4B5563",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    }
+  ],
+  "composeRuns": []
+}

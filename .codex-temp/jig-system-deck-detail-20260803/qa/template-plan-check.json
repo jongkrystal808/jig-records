@@ -1,0 +1,131 @@
+{
+  "status": "fail",
+  "checkedAt": "2026-08-03T01:50:39.743Z",
+  "workspace": "C:\\Users\\user\\PycharmProjects\\jig-record\\.codex-temp\\jig-system-deck-detail-20260803",
+  "mapPath": "C:\\Users\\user\\PycharmProjects\\jig-record\\.codex-temp\\jig-system-deck-detail-20260803\\template-frame-map.json",
+  "inspectPath": "C:\\Users\\user\\PycharmProjects\\jig-record\\.codex-temp\\jig-system-deck-detail-20260803\\template-inspect\\template-inspect.ndjson",
+  "sourceSlideCount": 3,
+  "issueCount": 12,
+  "issues": [
+    {
+      "severity": "fail",
+      "id": "unhandled-placeholder",
+      "message": "source text \"02 / 03\" must be assigned rewrite/rewrite-and-reposition/replace/delete/fill-placeholder in editTargets; keep and add do not satisfy inherited placeholder handling.",
+      "outputSlide": 2,
+      "sourceSlide": 2,
+      "shapeIds": [
+        "sh/2t4n6tgj"
+      ]
+    },
+    {
+      "severity": "fail",
+      "id": "unhandled-placeholder",
+      "message": "source text \"開工前備料 | 搜尋治具與庫位，確認庫存與責任人，快速備齊現場需求。\" must be assigned rewrite/rewrite-and-reposition/replace/delete/fill-placeholder in editTargets; keep and add do not satisfy inherited placeholder handling.",
+      "outputSlide": 2,
+      "sourceSlide": 2,
+      "shapeIds": [
+        "sh/7mt47ehw"
+      ]
+    },
+    {
+      "severity": "fail",
+      "id": "unhandled-placeholder",
+      "message": "source text \"缺料異常處理 | 遇到低庫存或缺料，追溯收退料明細，補料與責任歸屬更清楚。\" must be assigned rewrite/rewrite-and-reposition/replace/delete/fill-placeholder in editTargets; keep and add do not satisfy inherited placeholder handling.",
+      "outputSlide": 2,
+      "sourceSlide": 2,
+      "shapeIds": [
+        "sh/8juxgjml"
+      ]
+    },
+    {
+      "severity": "fail",
+      "id": "unhandled-placeholder",
+      "message": "source text \"生產排程確認 | 選定機種與工站，依需求量與現有庫存估算最大可開站數。\" must be assigned rewrite/rewrite-and-reposition/replace/delete/fill-placeholder in editTargets; keep and add do not satisfy inherited placeholder handling.",
+      "outputSlide": 2,
+      "sourceSlide": 2,
+      "shapeIds": [
+        "sh/mhcfe9of"
+      ]
+    },
+    {
+      "severity": "fail",
+      "id": "unhandled-placeholder",
+      "message": "source text \"02｜缺料應變\" must be assigned rewrite/rewrite-and-reposition/replace/delete/fill-placeholder in editTargets; keep and add do not satisfy inherited placeholder handling.",
+      "outputSlide": 2,
+      "sourceSlide": 2,
+      "shapeIds": [
+        "sh/nilg7e50"
+      ]
+    },
+    {
+      "severity": "fail",
+      "id": "unhandled-placeholder",
+      "message": "source text \"01｜班前準備\" must be assigned rewrite/rewrite-and-reposition/replace/delete/fill-placeholder in editTargets; keep and add do not satisfy inherited placeholder handling.",
+      "outputSlide": 2,
+      "sourceSlide": 2,
+      "shapeIds": [
+        "sh/0faxcz69"
+      ]
+    },
+    {
+      "severity": "fail",
+      "id": "unhandled-placeholder",
+      "message": "source text \"03｜排程確認\" must be assigned rewrite/rewrite-and-reposition/replace/delete/fill-placeholder in editTargets; keep and add do not satisfy inherited placeholder handling.",
+      "outputSlide": 2,
+      "sourceSlide": 2,
+      "shapeIds": [
+        "sh/lgjy54nu"
+      ]
+    },
+    {
+      "severity": "fail",
+      "id": "unhandled-placeholder",
+      "message": "source text \"查找｜圖片與庫位\" must be assigned rewrite/rewrite-and-reposition/replace/delete/fill-placeholder in editTargets; keep and add do not satisfy inherited placeholder handling.",
+      "outputSlide": 3,
+      "sourceSlide": 3,
+      "shapeIds": [
+        "sh/d4z6pkfu"
+      ]
+    },
+    {
+      "severity": "fail",
+      "id": "unhandled-placeholder",
+      "message": "source text \"預警｜低庫存提示\" must be assigned rewrite/rewrite-and-reposition/replace/delete/fill-placeholder in editTargets; keep and add do not satisfy inherited placeholder handling.",
+      "outputSlide": 3,
+      "sourceSlide": 3,
+      "shapeIds": [
+        "sh/q1o7e5wj"
+      ]
+    },
+    {
+      "severity": "fail",
+      "id": "unhandled-placeholder",
+      "message": "source text \"規劃｜可開站試算\" must be assigned rewrite/rewrite-and-reposition/replace/delete/fill-placeholder in editTargets; keep and add do not satisfy inherited placeholder handling.",
+      "outputSlide": 3,
+      "sourceSlide": 3,
+      "shapeIds": [
+        "sh/07qpkfel"
+      ]
+    },
+    {
+      "severity": "fail",
+      "id": "unhandled-placeholder",
+      "message": "source text \"權責｜角色與稽核\" must be assigned rewrite/rewrite-and-reposition/replace/delete/fill-placeholder in editTargets; keep and add do not satisfy inherited placeholder handling.",
+      "outputSlide": 3,
+      "sourceSlide": 3,
+      "shapeIds": [
+        "sh/bitgnexw"
+      ]
+    },
+    {
+      "severity": "fail",
+      "id": "unhandled-placeholder",
+      "message": "source text \"資料｜批次匯入匯出\" must be assigned rewrite/rewrite-and-reposition/replace/delete/fill-placeholder in editTargets; keep and add do not satisfy inherited placeholder handling.",
+      "outputSlide": 3,
+      "sourceSlide": 3,
+      "shapeIds": [
+        "sh/x4bypofm"
+      ]
+    }
+  ]
+}

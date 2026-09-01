@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 
+import UiModalShell from "@/components/common/UiModalShell.vue";
 import type { FixtureRequirementListItem, MachineModel, ModelStation, Station } from "@/types";
 import { calculateRequirementCopyPreview } from "@/utils/productionCopy";
 
@@ -117,6 +118,10 @@ function submitCopy(): void {
   });
 }
 
+function closeModal(): void {
+  if (!props.saving) emit("close");
+}
+
 watch(
   () => props.open,
   (open) => {
@@ -126,21 +131,20 @@ watch(
 </script>
 
 <template>
-  <teleport to="body">
-    <div v-if="open" class="ui-modal-backdrop" @click.self="!saving && emit('close')">
-      <section
-        class="ui-modal-card copy-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="production-copy-title"
-      >
+  <UiModalShell
+    :open="open"
+    labelled-by="production-copy-title"
+    dialog-class="copy-modal"
+    :close-on-backdrop="!saving"
+    @close="closeModal"
+  >
         <header class="copy-head">
           <div>
             <span class="mode-label">{{ copyModeLabel }}</span>
             <h2 id="production-copy-title">複製站點治具需求</h2>
             <p>從目前站點複製全部治具與每站需求量；預設不覆蓋目標既有資料。</p>
           </div>
-          <button class="outline-btn" type="button" :disabled="saving" @click="emit('close')">關閉</button>
+          <button class="outline-btn" type="button" :disabled="saving" @click="closeModal">關閉</button>
         </header>
 
         <div class="copy-route">
@@ -160,7 +164,7 @@ watch(
         <div class="copy-fields">
           <label>
             <span>目標機種</span>
-            <select :value="targetModelId ?? ''" :disabled="saving" @change="handleTargetModelChange">
+            <select :value="targetModelId ?? ''" :disabled="saving" data-modal-initial-focus @change="handleTargetModelChange">
               <option value="" disabled>請選擇機種</option>
               <option v-for="model in models" :key="model.id" :value="model.id">
                 {{ model.code }} - {{ model.name }}
@@ -223,18 +227,16 @@ watch(
         </p>
 
         <footer class="copy-actions">
-          <button class="outline-btn" type="button" :disabled="saving" @click="emit('close')">取消</button>
+          <button class="outline-btn" type="button" :disabled="saving" @click="closeModal">取消</button>
           <button class="primary-btn" type="button" :disabled="!canSubmit" @click="submitCopy">
             {{ saving ? "複製中..." : `複製 ${writeCount} 筆需求` }}
           </button>
         </footer>
-      </section>
-    </div>
-  </teleport>
+  </UiModalShell>
 </template>
 
 <style scoped>
-.copy-modal {
+:global(.copy-modal) {
   width: min(720px, calc(100vw - 24px));
 }
 

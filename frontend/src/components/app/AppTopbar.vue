@@ -43,6 +43,7 @@ const props = defineProps<{
   menuEntries: MenuEntry[];
   moreMenuOpen: boolean;
   formatHoverDate: (value: string) => string;
+  onboardingLabel?: string;
 }>();
 
 const emit = defineEmits<{
@@ -50,6 +51,7 @@ const emit = defineEmits<{
   openBatch: [fixtureCode?: string];
   openExport: [];
   openOnboarding: [];
+  openPassword: [];
   "update:selectedCustomerId": [value: number | null];
   toggleMoreMenu: [];
   openMenuRoute: [path: string, disabled: boolean];
@@ -106,7 +108,10 @@ onBeforeUnmount(() => {
 <template>
   <header class="topbar">
     <div class="topbar-main">
-      <button class="outline-btn mobile-trigger" type="button" @click="emit('toggleMobileMenu')">選單</button>
+      <button class="outline-btn mobile-trigger" type="button" @click="emit('toggleMobileMenu')">
+        <span class="menu-icon" aria-hidden="true">☰</span>
+        <span>選單</span>
+      </button>
       <RouterLink class="brand-link" data-tour="detailed-home-button" to="/search">
         <span class="brand-mark">JR</span>
         <span class="brand-copy">
@@ -125,14 +130,19 @@ onBeforeUnmount(() => {
         type="button"
         @click="emit('openBatch')"
       >
-        治具收/退料
+        <span class="full-inventory-label">治具收/退料</span>
+        <span class="compact-inventory-label">收／退料</span>
       </button>
-      <button class="primary-btn action-btn compact-primary-btn" data-tour="inventory-export-entry-trigger" type="button" @click="emit('openExport')">
+      <button class="primary-btn action-btn compact-primary-btn secondary-primary-action" data-tour="inventory-export-entry-trigger" type="button" @click="emit('openExport')">
         匯出中心
       </button>
-      <button class="outline-btn action-btn compact-outline-btn" data-tour="search-onboarding-entry" type="button" @click="emit('openOnboarding')">
-        新手教學
+      <button class="outline-btn action-btn compact-outline-btn secondary-primary-action" data-tour="search-onboarding-entry" type="button" @click="emit('openOnboarding')">
+        {{ onboardingLabel || "Modern UI 教學" }}
       </button>
+    </div>
+
+    <div class="topbar-ui-switcher">
+      <slot name="ui-switcher" />
     </div>
 
     <div class="topbar-actions">
@@ -208,30 +218,33 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <label class="customer-picker" data-tour="global-customer-picker">
-        <select :value="selectedCustomerId ?? undefined" aria-label="選擇客戶" @change="handleCustomerChange">
-          <option v-for="customer in customers" :key="customer.id" :value="customer.id">{{ customer.code }} - {{ customer.name }}</option>
-        </select>
-      </label>
+      <div class="topbar-context-actions">
+        <label class="customer-picker" data-tour="global-customer-picker">
+          <select :value="selectedCustomerId ?? undefined" aria-label="選擇客戶" @change="handleCustomerChange">
+            <option v-for="customer in customers" :key="customer.id" :value="customer.id">{{ customer.code }} - {{ customer.name }}</option>
+          </select>
+        </label>
 
-      <div class="more-menu">
-        <button class="outline-btn action-btn" data-tour="home-more-menu-trigger" type="button" :aria-expanded="moreMenuOpen" @click="emit('toggleMoreMenu')">更多功能</button>
-        <div v-if="moreMenuOpen" class="more-menu-panel">
-          <button
-            v-for="entry in menuEntries"
-            :key="entry.to"
-            class="more-menu-item"
-            :data-tour="entry.to === '/inventory/overview' ? 'home-overview-entry' : entry.to === '/master' ? 'home-master-entry' : entry.to === '/production' ? 'home-production-entry' : undefined"
-            :disabled="entry.disabled"
-            type="button"
-            @click="emit('openMenuRoute', entry.to, entry.disabled)"
-          >
-            {{ entry.label }}
-          </button>
+        <div class="more-menu">
+          <button class="outline-btn action-btn" data-tour="home-more-menu-trigger" type="button" :aria-expanded="moreMenuOpen" @click="emit('toggleMoreMenu')">更多</button>
+          <div v-if="moreMenuOpen" class="more-menu-panel">
+            <button v-if="canOperateInventory" class="more-menu-item" type="button" @click="emit('openPassword'); emit('toggleMoreMenu')">修改密碼</button>
+            <button
+              v-for="entry in menuEntries"
+              :key="entry.to"
+              class="more-menu-item"
+              :data-tour="entry.to === '/inventory/overview' ? 'home-overview-entry' : entry.to === '/master' ? 'home-master-entry' : entry.to === '/production' ? 'home-production-entry' : undefined"
+              :disabled="entry.disabled"
+              type="button"
+              @click="emit('openMenuRoute', entry.to, entry.disabled)"
+            >
+              {{ entry.label }}
+            </button>
+          </div>
         </div>
-      </div>
 
-      <button class="outline-btn action-btn" data-tour="detailed-logout-button" type="button" @click="emit('logout')">登出</button>
+        <button class="outline-btn action-btn logout-btn" data-tour="detailed-logout-button" type="button" @click="emit('logout')">登出</button>
+      </div>
     </div>
   </header>
 </template>
@@ -242,10 +255,11 @@ onBeforeUnmount(() => {
   top: 0;
   z-index: 30;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
+  gap: clamp(10px, 0.85vw, 16px);
+  min-height: 64px;
+  padding: 9px 14px;
   border-bottom: 1px solid rgba(221, 229, 240, 0.94);
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(16px);
@@ -262,15 +276,35 @@ onBeforeUnmount(() => {
 
 .topbar-primary-action {
   flex: 0 0 auto;
-  margin-inline: 12px 18px;
-  gap: 8px;
-  flex-wrap: wrap;
+  margin-inline: 4px;
+  gap: 6px;
+  flex-wrap: nowrap;
 }
 
 .topbar-actions {
+  min-width: 0;
   margin-left: auto;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
+  gap: 8px;
+}
+
+.topbar-info,
+.topbar-context-actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+}
+
+.topbar-info {
+  gap: 6px;
+}
+
+.topbar-context-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-left: 10px;
+  border-left: 1px solid #dfe7f2;
 }
 
 .brand-link {
@@ -281,9 +315,9 @@ onBeforeUnmount(() => {
 }
 
 .brand-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
   background: linear-gradient(180deg, #183055 0%, #0f213e 100%);
@@ -298,7 +332,7 @@ onBeforeUnmount(() => {
 
 .brand-copy strong {
   color: #1a2945;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .brand-copy small {
@@ -309,18 +343,18 @@ onBeforeUnmount(() => {
 .pill {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
-  padding: 8px 12px;
+  min-height: 40px;
+  padding: 7px 10px;
   border: 1px solid #d7e2f5;
   border-radius: 999px;
   background: #f7faff;
   color: #35527d;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .pill-number {
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
 }
 
@@ -441,14 +475,15 @@ onBeforeUnmount(() => {
 .customer-picker {
   display: grid;
   gap: 6px;
+  width: clamp(155px, 11vw, 205px);
 }
 
 select {
   width: 100%;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
-  min-height: 44px;
-  padding: 10px 12px;
+  min-height: 40px;
+  padding: 8px 10px;
   background: #fff;
   color: var(--text);
   font-size: 14px;
@@ -461,26 +496,52 @@ select {
 .compact-primary-btn {
   border-color: #2f6ee5;
   background: linear-gradient(180deg, #4b89ff 0%, #2f6ee5 100%);
-  min-height: 44px;
-  padding: 10px 18px;
-  font-size: 14px;
+  min-height: 40px;
+  padding: 8px 14px;
+  font-size: 13px;
   font-weight: 800;
 }
 
 .compact-outline-btn {
-  min-height: 44px;
-  padding: 10px 14px;
-  font-size: 14px;
+  min-height: 40px;
+  padding: 8px 12px;
+  font-size: 13px;
   font-weight: 800;
 }
 
 .mobile-trigger,
-.mobile-customer {
+.mobile-customer,
+.compact-inventory-label {
   display: none;
+}
+
+.topbar-ui-switcher {
+  flex: 0 0 auto;
+}
+
+.mobile-trigger {
+  gap: 7px;
+}
+
+.menu-icon {
+  font-size: 17px;
+  line-height: 1;
 }
 
 .more-menu {
   position: relative;
+}
+
+.topbar-context-actions > .action-btn,
+.more-menu > .action-btn {
+  min-height: 40px;
+  padding: 8px 11px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.logout-btn {
+  color: #5b6b82;
 }
 
 .more-menu-panel {
@@ -514,7 +575,7 @@ select {
   cursor: not-allowed;
 }
 
-@media (max-width: 1366px) {
+@media (max-width: 1600px) {
   .mobile-trigger,
   .mobile-customer {
     display: inline-flex;
@@ -547,17 +608,55 @@ select {
   }
 
   .topbar-primary-action {
-    flex: 1 0 100%;
-    width: 100%;
+    flex: 0 0 auto;
+    width: auto;
     margin: 0;
     justify-content: flex-start;
   }
 
-  .topbar-primary-action,
-  .topbar-info,
-  .customer-picker,
-  .more-menu,
-  .topbar-actions > .outline-btn {
+  .secondary-primary-action,
+  .topbar-actions {
+    display: none;
+  }
+
+  .full-inventory-label {
+    display: none;
+  }
+
+  .compact-inventory-label {
+    display: inline;
+  }
+}
+
+@media (max-width: 1023px) {
+  .topbar-primary-action {
+    display: none;
+  }
+
+  .mobile-customer {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .mobile-trigger > span:last-child,
+  .brand-copy {
+    display: none;
+  }
+
+  .topbar-main {
+    gap: 6px;
+  }
+
+  .brand-mark {
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+  }
+}
+
+@media (max-width: 360px) {
+  .brand-link {
     display: none;
   }
 }

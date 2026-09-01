@@ -29,7 +29,7 @@ def bootstrap_application(*, run_migrations: bool = True, ensure_default_user: b
 def main() -> None:
     parser = argparse.ArgumentParser(description="Bootstrap the Jig Record backend runtime")
     parser.add_argument("--skip-migrations", action="store_true", help="Do not run Alembic migrations")
-    parser.add_argument("--skip-default-user", action="store_true", help="Do not ensure the default admin user exists")
+    parser.add_argument("--skip-default-user", action="store_true", help="Do not ensure the default Super Admin user exists")
     args = parser.parse_args()
 
     bootstrap_application(

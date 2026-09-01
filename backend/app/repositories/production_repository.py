@@ -1,9 +1,20 @@
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from collections.abc import Iterator
 
-from backend.app.models.inventory import FixtureStockLevel, FixtureStockSummary
+from sqlalchemy import case, func, or_, select
+from sqlalchemy.orm import Session, selectinload
+
+from backend.app.models.inventory import (
+    FixtureStockLevel,
+    FixtureStockSummary,
+    MaterialTransaction,
+    MaterialTransactionItem,
+)
 from backend.app.models.master import Fixture, MachineModel, ModelStation, Station
-from backend.app.models.production import FixtureRequirement, MachineCapacitySummary
+from backend.app.models.production import (
+    FixtureRequirement,
+    FixtureRequirementIdentifier,
+    MachineCapacitySummary,
+)
 
 
 class ProductionRepository:
@@ -31,6 +42,82 @@ class ProductionRepository:
                 .where(MachineModel.customer_id == customer_id, Station.customer_id == customer_id)
             )
         return list(self.db.scalars(stmt))
+
+    def list_model_stations_page(
+        self,
+        *,
+        customer_id: int,
+        page: int,
+        page_size: int,
+        model_id: int | None = None,
+        station_id: int | None = None,
+        keyword: str = "",
+    ) -> tuple[list[dict], int]:
+        stmt = (
+            select(
+                ModelStation.id.label("id"),
+                ModelStation.model_id.label("model_id"),
+                ModelStation.station_id.label("station_id"),
+                MachineModel.code.label("model_code"),
+                MachineModel.name.label("model_name"),
+                Station.code.label("station_code"),
+                Station.name.label("station_name"),
+            )
+            .join(MachineModel, MachineModel.id == ModelStation.model_id)
+            .join(Station, Station.id == ModelStation.station_id)
+            .where(MachineModel.customer_id == customer_id, Station.customer_id == customer_id)
+        )
+        if model_id is not None:
+            stmt = stmt.where(ModelStation.model_id == model_id)
+        if station_id is not None:
+            stmt = stmt.where(ModelStation.station_id == station_id)
+        normalized = keyword.strip()
+        if normalized:
+            pattern = f"%{normalized}%"
+            stmt = stmt.where(or_(MachineModel.code.ilike(pattern), MachineModel.name.ilike(pattern), Station.code.ilike(pattern), Station.name.ilike(pattern)))
+        total = int(self.db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0)
+        rows = self.db.execute(stmt.order_by(MachineModel.code, Station.code).offset((page - 1) * page_size).limit(page_size)).all()
+        return [dict(row._mapping) for row in rows], total
+
+    def iter_model_station_rows(
+        self,
+        *,
+        customer_id: int,
+        model_id: int | None = None,
+        station_id: int | None = None,
+        keyword: str = "",
+    ) -> Iterator[dict]:
+        stmt = (
+            select(
+                MachineModel.code.label("model_code"),
+                MachineModel.name.label("model_name"),
+                Station.code.label("station_code"),
+                Station.name.label("station_name"),
+            )
+            .join(ModelStation, ModelStation.model_id == MachineModel.id)
+            .join(Station, Station.id == ModelStation.station_id)
+            .where(MachineModel.customer_id == customer_id, Station.customer_id == customer_id)
+        )
+        if model_id is not None:
+            stmt = stmt.where(ModelStation.model_id == model_id)
+        if station_id is not None:
+            stmt = stmt.where(ModelStation.station_id == station_id)
+        normalized = keyword.strip()
+        if normalized:
+            pattern = f"%{normalized}%"
+            stmt = stmt.where(
+                or_(
+                    MachineModel.code.ilike(pattern),
+                    MachineModel.name.ilike(pattern),
+                    Station.code.ilike(pattern),
+                    Station.name.ilike(pattern),
+                )
+            )
+        rows = self.db.execute(
+            stmt.order_by(MachineModel.code, Station.code).execution_options(yield_per=500)
+        )
+        for row in rows:
+            yield dict(row._mapping)
 
     def get_model_station(self, model_id: int, station_id: int, customer_id: int | None = None) -> ModelStation | None:
         stmt = select(ModelStation).where(ModelStation.model_id == model_id, ModelStation.station_id == station_id)
@@ -95,8 +182,30 @@ class ProductionRepository:
             stmt = stmt.where(MachineModel.customer_id == customer_id)
         return self.db.scalar(stmt)
 
-    def create_or_update_requirement(self, *, model_id: int, station_id: int, fixture_id: int, required_qty: int) -> FixtureRequirement:
-        stmt = select(FixtureRequirement).where(
+    @staticmethod
+    def _replace_designated_identifiers(
+        requirement: FixtureRequirement,
+        *,
+        designated_mode: bool,
+        designated_identifiers: list[str],
+    ) -> None:
+        requirement.designated_mode = designated_mode
+        requirement.designated_identifier_rows = [
+            FixtureRequirementIdentifier(identifier=identifier)
+            for identifier in designated_identifiers
+        ] if designated_mode else []
+
+    def create_or_update_requirement(
+        self,
+        *,
+        model_id: int,
+        station_id: int,
+        fixture_id: int,
+        required_qty: int,
+        designated_mode: bool | None = None,
+        designated_identifiers: list[str] | None = None,
+    ) -> FixtureRequirement:
+        stmt = select(FixtureRequirement).options(selectinload(FixtureRequirement.designated_identifier_rows)).where(
             FixtureRequirement.model_id == model_id,
             FixtureRequirement.station_id == station_id,
             FixtureRequirement.fixture_id == fixture_id,
@@ -104,6 +213,12 @@ class ProductionRepository:
         requirement = self.db.scalar(stmt)
         if requirement:
             requirement.required_qty = required_qty
+            if designated_mode is not None:
+                self._replace_designated_identifiers(
+                    requirement,
+                    designated_mode=designated_mode,
+                    designated_identifiers=designated_identifiers or [],
+                )
             self.db.flush()
             return requirement
 
@@ -112,13 +227,20 @@ class ProductionRepository:
             station_id=station_id,
             fixture_id=fixture_id,
             required_qty=required_qty,
+            designated_mode=False,
         )
+        if designated_mode:
+            self._replace_designated_identifiers(
+                requirement,
+                designated_mode=True,
+                designated_identifiers=designated_identifiers or [],
+            )
         self.db.add(requirement)
         self.db.flush()
         return requirement
 
     def get_requirement(self, *, model_id: int, station_id: int, fixture_id: int) -> FixtureRequirement | None:
-        stmt = select(FixtureRequirement).where(
+        stmt = select(FixtureRequirement).options(selectinload(FixtureRequirement.designated_identifier_rows)).where(
             FixtureRequirement.model_id == model_id,
             FixtureRequirement.station_id == station_id,
             FixtureRequirement.fixture_id == fixture_id,
@@ -133,16 +255,24 @@ class ProductionRepository:
         station_id: int,
         fixture_id: int,
         required_qty: int,
+        designated_mode: bool | None = None,
+        designated_identifiers: list[str] | None = None,
     ) -> FixtureRequirement:
         requirement.model_id = model_id
         requirement.station_id = station_id
         requirement.fixture_id = fixture_id
         requirement.required_qty = required_qty
+        if designated_mode is not None:
+            self._replace_designated_identifiers(
+                requirement,
+                designated_mode=designated_mode,
+                designated_identifiers=designated_identifiers or [],
+            )
         self.db.flush()
         return requirement
 
     def get_requirement_by_id(self, requirement_id: int, customer_id: int | None = None) -> FixtureRequirement | None:
-        stmt = select(FixtureRequirement).where(FixtureRequirement.id == requirement_id)
+        stmt = select(FixtureRequirement).options(selectinload(FixtureRequirement.designated_identifier_rows)).where(FixtureRequirement.id == requirement_id)
         if customer_id is not None:
             stmt = stmt.join(Station, Station.id == FixtureRequirement.station_id).where(Station.customer_id == customer_id)
         return self.db.scalar(stmt)
@@ -158,7 +288,7 @@ class ProductionRepository:
         model_id: int | None = None,
         customer_id: int | None = None,
     ) -> list[FixtureRequirement]:
-        stmt = select(FixtureRequirement).where(FixtureRequirement.station_id == station_id)
+        stmt = select(FixtureRequirement).options(selectinload(FixtureRequirement.designated_identifier_rows)).where(FixtureRequirement.station_id == station_id)
         if model_id is not None:
             stmt = stmt.where(FixtureRequirement.model_id == model_id)
         if customer_id is not None:
@@ -170,7 +300,7 @@ class ProductionRepository:
         return list(self.db.scalars(stmt))
 
     def list_all_requirements(self, customer_id: int | None = None) -> list[FixtureRequirement]:
-        stmt = select(FixtureRequirement).order_by(
+        stmt = select(FixtureRequirement).options(selectinload(FixtureRequirement.designated_identifier_rows)).order_by(
             FixtureRequirement.model_id,
             FixtureRequirement.station_id,
             FixtureRequirement.fixture_id,
@@ -212,7 +342,148 @@ class ProductionRepository:
                 Station.customer_id == customer_id,
                 Fixture.customer_id == customer_id,
             )
-        return [dict(row._mapping) for row in self.db.execute(stmt).all()]
+        return self._attach_designated_identifiers([dict(row._mapping) for row in self.db.execute(stmt).all()])
+
+    def list_requirement_rows_page(
+        self,
+        *,
+        customer_id: int,
+        page: int,
+        page_size: int,
+        model_id: int | None = None,
+        station_id: int | None = None,
+        keyword: str = "",
+    ) -> tuple[list[dict], int]:
+        stmt = (
+            select(
+                FixtureRequirement.id.label("id"),
+                FixtureRequirement.model_id.label("model_id"),
+                MachineModel.code.label("model_code"),
+                FixtureRequirement.station_id.label("station_id"),
+                Station.code.label("station_code"),
+                FixtureRequirement.fixture_id.label("fixture_id"),
+                Fixture.code.label("fixture_code"),
+                Fixture.name.label("fixture_name"),
+                FixtureRequirement.required_qty.label("required_qty"),
+                FixtureRequirement.designated_mode.label("designated_mode"),
+                func.coalesce(FixtureStockSummary.stock_qty, 0).label("stock_qty"),
+            )
+            .join(MachineModel, MachineModel.id == FixtureRequirement.model_id)
+            .join(Station, Station.id == FixtureRequirement.station_id)
+            .join(Fixture, Fixture.id == FixtureRequirement.fixture_id)
+            .outerjoin(FixtureStockSummary, FixtureStockSummary.fixture_id == FixtureRequirement.fixture_id)
+            .where(
+                MachineModel.customer_id == customer_id,
+                Station.customer_id == customer_id,
+                Fixture.customer_id == customer_id,
+            )
+        )
+        if model_id is not None:
+            stmt = stmt.where(FixtureRequirement.model_id == model_id)
+        if station_id is not None:
+            stmt = stmt.where(FixtureRequirement.station_id == station_id)
+        normalized = keyword.strip()
+        if normalized:
+            pattern = f"%{normalized}%"
+            stmt = stmt.where(or_(MachineModel.code.ilike(pattern), Station.code.ilike(pattern), Fixture.code.ilike(pattern), Fixture.name.ilike(pattern)))
+        total = int(self.db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0)
+        rows = self.db.execute(stmt.order_by(MachineModel.code, Station.code, Fixture.code).offset((page - 1) * page_size).limit(page_size)).all()
+        return self._attach_designated_identifiers([dict(row._mapping) for row in rows]), total
+
+    def _attach_designated_identifiers(self, rows: list[dict]) -> list[dict]:
+        requirement_ids = [int(row["id"]) for row in rows]
+        requirements = {
+            requirement.id: requirement
+            for requirement in self.db.scalars(
+                select(FixtureRequirement)
+                .options(selectinload(FixtureRequirement.designated_identifier_rows))
+                .where(FixtureRequirement.id.in_(requirement_ids))
+            )
+        } if requirement_ids else {}
+        for row in rows:
+            requirement_id = int(row["id"])
+            requirement = requirements.get(requirement_id)
+            row["designated_mode"] = bool(requirement and requirement.designated_mode)
+            row["designated_identifiers"] = [] if requirement is None else requirement.designated_identifiers
+            if requirement is not None and requirement.designated_mode and "stock_qty" in row:
+                row["stock_qty"] = self.get_requirement_stock_qty(requirement)
+        return rows
+
+    def iter_requirement_export_rows(
+        self,
+        *,
+        customer_id: int,
+        model_id: int | None = None,
+        station_id: int | None = None,
+        keyword: str = "",
+    ) -> Iterator[dict]:
+        signed_qty = case(
+            (MaterialTransaction.transaction_type == "receipt", MaterialTransactionItem.quantity),
+            else_=-MaterialTransactionItem.quantity,
+        )
+        designated_stock_qty = (
+            select(func.coalesce(func.sum(signed_qty), 0))
+            .select_from(FixtureRequirementIdentifier)
+            .join(
+                MaterialTransactionItem,
+                (MaterialTransactionItem.fixture_id == FixtureRequirement.fixture_id)
+                & (MaterialTransactionItem.identifier == FixtureRequirementIdentifier.identifier),
+            )
+            .join(MaterialTransaction, MaterialTransaction.id == MaterialTransactionItem.transaction_id)
+            .where(FixtureRequirementIdentifier.requirement_id == FixtureRequirement.id)
+            .correlate(FixtureRequirement)
+            .scalar_subquery()
+        )
+        designated_identifier_text = (
+            select(func.group_concat(FixtureRequirementIdentifier.identifier))
+            .where(FixtureRequirementIdentifier.requirement_id == FixtureRequirement.id)
+            .correlate(FixtureRequirement)
+            .scalar_subquery()
+        )
+        stmt = (
+            select(
+                MachineModel.code.label("model_code"),
+                Station.code.label("station_code"),
+                Fixture.code.label("fixture_code"),
+                Fixture.name.label("fixture_name"),
+                FixtureRequirement.required_qty.label("required_qty"),
+                FixtureRequirement.designated_mode.label("designated_mode"),
+                func.coalesce(designated_identifier_text, "").label("designated_identifiers"),
+                case(
+                    (FixtureRequirement.designated_mode.is_(True), designated_stock_qty),
+                    else_=func.coalesce(FixtureStockSummary.stock_qty, 0),
+                ).label("stock_qty"),
+            )
+            .join(MachineModel, MachineModel.id == FixtureRequirement.model_id)
+            .join(Station, Station.id == FixtureRequirement.station_id)
+            .join(Fixture, Fixture.id == FixtureRequirement.fixture_id)
+            .outerjoin(FixtureStockSummary, FixtureStockSummary.fixture_id == FixtureRequirement.fixture_id)
+            .where(
+                MachineModel.customer_id == customer_id,
+                Station.customer_id == customer_id,
+                Fixture.customer_id == customer_id,
+            )
+        )
+        if model_id is not None:
+            stmt = stmt.where(FixtureRequirement.model_id == model_id)
+        if station_id is not None:
+            stmt = stmt.where(FixtureRequirement.station_id == station_id)
+        normalized = keyword.strip()
+        if normalized:
+            pattern = f"%{normalized}%"
+            stmt = stmt.where(
+                or_(
+                    MachineModel.code.ilike(pattern),
+                    Station.code.ilike(pattern),
+                    Fixture.code.ilike(pattern),
+                    Fixture.name.ilike(pattern),
+                )
+            )
+        rows = self.db.execute(
+            stmt.order_by(MachineModel.code, Station.code, Fixture.code).execution_options(yield_per=500)
+        )
+        for row in rows:
+            yield dict(row._mapping)
 
     def list_requirement_rows_by_fixture(self, fixture_id: int, customer_id: int | None = None) -> list[dict]:
         stmt = (
@@ -293,6 +564,26 @@ class ProductionRepository:
     def get_stock_qty(self, fixture_id: int) -> int:
         summary = self.db.get(FixtureStockSummary, fixture_id)
         return 0 if summary is None else summary.stock_qty
+
+    def get_requirement_stock_qty(self, requirement: FixtureRequirement) -> int:
+        if not requirement.designated_mode:
+            return self.get_stock_qty(requirement.fixture_id)
+        signed_qty = case(
+            (MaterialTransaction.transaction_type == "receipt", MaterialTransactionItem.quantity),
+            else_=-MaterialTransactionItem.quantity,
+        )
+        stock_qty = self.db.scalar(
+            select(func.coalesce(func.sum(signed_qty), 0))
+            .select_from(FixtureRequirementIdentifier)
+            .join(
+                MaterialTransactionItem,
+                (MaterialTransactionItem.fixture_id == requirement.fixture_id)
+                & (MaterialTransactionItem.identifier == FixtureRequirementIdentifier.identifier),
+            )
+            .join(MaterialTransaction, MaterialTransaction.id == MaterialTransactionItem.transaction_id)
+            .where(FixtureRequirementIdentifier.requirement_id == requirement.id)
+        )
+        return int(stock_qty or 0)
 
     def upsert_station_capacity(self, *, station_id: int, max_count: int, bottleneck_fixture_code: str | None) -> None:
         summary = self.db.get(MachineCapacitySummary, station_id)

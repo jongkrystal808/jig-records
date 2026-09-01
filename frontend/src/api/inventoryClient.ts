@@ -1,4 +1,7 @@
 import type {
+  ConfigurationReportOptions,
+  ConfigurationReportPage,
+  ConfigurationReportQuery,
   InventoryDashboardSummary,
   InventoryRecalculateResult,
   IdentifierStockSummary,
@@ -11,7 +14,7 @@ import type {
   TransactionQueryFilters
 } from "@/types";
 
-import { request, requestBlob, requestText, setOptionalParam } from "@/api/core";
+import { request, requestBlob, requestText, setOptionalParam, setOptionalParams } from "@/api/core";
 
 type AlertRow = {
   fixture_id: number;
@@ -40,8 +43,8 @@ function appendTransactionFilterParams(
   filters?: TransactionQueryFilters
 ): URLSearchParams {
   setOptionalParam(params, "customer_id", customerId);
-  setOptionalParam(params, "transaction_type", filters?.transaction_type);
-  setOptionalParam(params, "ownership_type", filters?.ownership_type);
+  setOptionalParams(params, "transaction_type", filters?.transaction_type);
+  setOptionalParams(params, "ownership_type", filters?.ownership_type);
   setOptionalParam(params, "date_from", filters?.date_from);
   setOptionalParam(params, "date_to", filters?.date_to);
   setOptionalParam(params, "fixture_code", filters?.fixture_code);
@@ -51,7 +54,53 @@ function appendTransactionFilterParams(
   return params;
 }
 
+function buildConfigurationReportParams(params: ConfigurationReportQuery): URLSearchParams {
+  const search = new URLSearchParams({ customer_id: String(params.customer_id) });
+  setOptionalParam(search, "page", params.page);
+  setOptionalParam(search, "page_size", params.page_size);
+  setOptionalParam(search, "keyword", params.keyword);
+  setOptionalParams(search, "fixture_status", params.fixture_status);
+  setOptionalParam(search, "fixture_id", params.fixture_id);
+  setOptionalParam(search, "model_id", params.model_id);
+  setOptionalParam(search, "station_id", params.station_id);
+  setOptionalParams(search, "water_status", params.water_status);
+  setOptionalParam(search, "storage", params.storage);
+  setOptionalParams(search, "configuration_status", params.configuration_status);
+  setOptionalParams(search, "transaction_type", params.transaction_type);
+  setOptionalParams(search, "ownership_type", params.ownership_type);
+  setOptionalParam(search, "date_from", params.date_from);
+  setOptionalParam(search, "date_to", params.date_to);
+  setOptionalParam(search, "sort_by", params.sort_by);
+  setOptionalParam(search, "sort_direction", params.sort_direction);
+  setOptionalParam(search, "priority", params.priority);
+  if (params.include_transaction_details) {
+    search.set("include_transaction_details", "true");
+  }
+  return search;
+}
+
 export const inventoryApi = {
+  getConfigurationReport(params: ConfigurationReportQuery) {
+    return request<ConfigurationReportPage>(
+      `/inventory/configuration-report?${buildConfigurationReportParams(params).toString()}`
+    );
+  },
+  getConfigurationReportOptions(params: ConfigurationReportQuery) {
+    return request<ConfigurationReportOptions>(
+      `/inventory/configuration-report/options?${buildConfigurationReportParams(params).toString()}`
+    );
+  },
+  exportConfigurationReport(
+    params: ConfigurationReportQuery & {
+      file_format: "csv" | "xlsx";
+      columns: string[];
+    }
+  ) {
+    const search = buildConfigurationReportParams(params);
+    search.set("file_format", params.file_format);
+    if (params.columns.length) search.set("columns", params.columns.join(","));
+    return requestBlob(`/inventory/configuration-report/export?${search.toString()}`);
+  },
   listStock(customerId?: number) {
     const params = new URLSearchParams();
     setOptionalParam(params, "customer_id", customerId);
@@ -70,9 +119,10 @@ export const inventoryApi = {
     const suffix = params.size ? `?${params.toString()}` : "";
     return request<InventoryDashboardSummary>(`/inventory/dashboard-summary${suffix}`);
   },
-  listIdentifierStockSummary(customerId?: number) {
+  listIdentifierStockSummary(customerId?: number, fixtureId?: number) {
     const params = new URLSearchParams();
     setOptionalParam(params, "customer_id", customerId);
+    setOptionalParam(params, "fixture_id", fixtureId);
     const suffix = params.size ? `?${params.toString()}` : "";
     return request<IdentifierStockSummary[]>(`/inventory/identifier-stock-summary${suffix}`);
   },
@@ -89,19 +139,21 @@ export const inventoryApi = {
       `/inventory/transactions/overview?${buildTransactionOverviewParams(page, pageSize, customerId, filters).toString()}`
     );
   },
-  exportTransactionsCsv(limit = 200, customerId?: number, filters?: TransactionQueryFilters) {
-    return requestText(`/inventory/transactions/export?${buildTransactionParams(limit, customerId, filters).toString()}`);
+  exportTransactionsCsv(customerId?: number, filters?: TransactionQueryFilters) {
+    const search = new URLSearchParams();
+    appendTransactionFilterParams(search, customerId, filters);
+    return requestBlob(`/inventory/transactions/export?${search.toString()}`);
   },
   exportTransactionReport(params: {
     customer_id: number;
     report_type: "summary" | "detail";
     file_format: "xlsx" | "txt";
-    transaction_type?: "receipt" | "return";
+    transaction_type?: Array<"receipt" | "return">;
     date_from?: string;
     date_to?: string;
     fixture_code?: string;
     transaction_no?: string;
-    ownership_type?: "customer_supplied" | "self_purchased";
+    ownership_type?: Array<"customer_supplied" | "self_purchased">;
     identifier?: string;
   }) {
     const search = new URLSearchParams({
@@ -109,36 +161,36 @@ export const inventoryApi = {
       report_type: params.report_type,
       file_format: params.file_format
     });
-    setOptionalParam(search, "transaction_type", params.transaction_type);
+    setOptionalParams(search, "transaction_type", params.transaction_type);
     setOptionalParam(search, "date_from", params.date_from);
     setOptionalParam(search, "date_to", params.date_to);
     setOptionalParam(search, "fixture_code", params.fixture_code);
     setOptionalParam(search, "transaction_no", params.transaction_no);
-    setOptionalParam(search, "ownership_type", params.ownership_type);
+    setOptionalParams(search, "ownership_type", params.ownership_type);
     setOptionalParam(search, "identifier", params.identifier);
     return requestBlob(`/inventory/transactions/export-report?${search.toString()}`);
   },
   previewTransactionReportExport(params: {
     customer_id: number;
     report_type: "summary" | "detail";
-    transaction_type?: "receipt" | "return";
+    transaction_type?: Array<"receipt" | "return">;
     date_from?: string;
     date_to?: string;
     fixture_code?: string;
     transaction_no?: string;
-    ownership_type?: "customer_supplied" | "self_purchased";
+    ownership_type?: Array<"customer_supplied" | "self_purchased">;
     identifier?: string;
   }) {
     const search = new URLSearchParams({
       customer_id: String(params.customer_id),
       report_type: params.report_type
     });
-    setOptionalParam(search, "transaction_type", params.transaction_type);
+    setOptionalParams(search, "transaction_type", params.transaction_type);
     setOptionalParam(search, "date_from", params.date_from);
     setOptionalParam(search, "date_to", params.date_to);
     setOptionalParam(search, "fixture_code", params.fixture_code);
     setOptionalParam(search, "transaction_no", params.transaction_no);
-    setOptionalParam(search, "ownership_type", params.ownership_type);
+    setOptionalParams(search, "ownership_type", params.ownership_type);
     setOptionalParam(search, "identifier", params.identifier);
     return request<{ report_type: "summary" | "detail"; column_count: number; raw_item_count: number; export_row_count: number }>(
       `/inventory/transactions/export-report/preview?${search.toString()}`

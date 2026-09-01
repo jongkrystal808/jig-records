@@ -1,0 +1,9 @@
+Source deck: Fixture-M_Lite_治具系統改善簡報.pptx
+Slide count: 5
+Canvas: 1280 x 960, 4:3
+Structure: all slides share the same improvement-report frame with header, reason row, before/after split, qualitative cost table, and Fixture-M Lite footer.
+Typography: Microsoft JhengHei; one-line centered title; 18 px body copy; 14 px table copy.
+Reusable slide types: slides 1, 2, 4, and 5 use an after-state screenshot; slide 3 uses a formula panel.
+Selected source slides: source slide 2 for output slide 1; source slide 4 for output slide 2.
+Inherited placeholders: none reported by artifact-tool inspect. Master and layout are retained without global edits.
+Insertion contract: duplicate selected slides, rewrite only mapped text objects and notes, keep all existing image frames and source screenshots.

@@ -47,8 +47,8 @@ const overviewPageSize = ref(OVERVIEW_DEFAULT_PAGE_SIZE);
 
 function createOverviewFilters() {
   return {
-    transaction_type: "" as "" | "receipt" | "return",
-    ownership_type: "" as "" | "customer_supplied" | "self_purchased",
+    transaction_type: [] as Array<"receipt" | "return">,
+    ownership_type: [] as Array<"customer_supplied" | "self_purchased">,
     date_from: "",
     date_to: "",
     fixture_code: "",
@@ -168,14 +168,10 @@ function parseOverviewPageSize(value: string): number {
 }
 
 function applyOverviewStateFromRoute(query: LocationQuery): boolean {
-  const transactionType = (() => {
-    const value = readQueryString(query.transaction_type);
-    return value === "receipt" || value === "return" ? value : "";
-  })() as "" | "receipt" | "return";
-  const ownershipType = (() => {
-    const value = readQueryString(query.ownership_type);
-    return value === "customer_supplied" || value === "self_purchased" ? value : "";
-  })() as "" | "customer_supplied" | "self_purchased";
+  const transactionType = (Array.isArray(query.transaction_type) ? query.transaction_type : [query.transaction_type])
+    .filter((value): value is "receipt" | "return" => value === "receipt" || value === "return");
+  const ownershipType = (Array.isArray(query.ownership_type) ? query.ownership_type : [query.ownership_type])
+    .filter((value): value is "customer_supplied" | "self_purchased" => value === "customer_supplied" || value === "self_purchased");
   const nextFilters: typeof overviewFilters.value = {
     transaction_type: transactionType,
     ownership_type: ownershipType,
@@ -190,8 +186,8 @@ function applyOverviewStateFromRoute(query: LocationQuery): boolean {
   const nextPageSize = parseOverviewPageSize(readQueryString(query.page_size));
 
   const changed =
-    overviewFilters.value.transaction_type !== nextFilters.transaction_type ||
-    overviewFilters.value.ownership_type !== nextFilters.ownership_type ||
+    overviewFilters.value.transaction_type.join(",") !== nextFilters.transaction_type.join(",") ||
+    overviewFilters.value.ownership_type.join(",") !== nextFilters.ownership_type.join(",") ||
     overviewFilters.value.date_from !== nextFilters.date_from ||
     overviewFilters.value.date_to !== nextFilters.date_to ||
     overviewFilters.value.fixture_code !== nextFilters.fixture_code ||
@@ -214,8 +210,8 @@ function applyOverviewStateFromRoute(query: LocationQuery): boolean {
 function buildOverviewRouteQuery(): LocationQueryRaw {
   const preservedEntries = Object.entries(route.query).filter(([key]) => !OVERVIEW_QUERY_KEYS.includes(key as (typeof OVERVIEW_QUERY_KEYS)[number]));
   const query: LocationQueryRaw = Object.fromEntries(preservedEntries);
-  if (overviewFilters.value.transaction_type) query.transaction_type = overviewFilters.value.transaction_type;
-  if (overviewFilters.value.ownership_type) query.ownership_type = overviewFilters.value.ownership_type;
+  if (overviewFilters.value.transaction_type.length) query.transaction_type = overviewFilters.value.transaction_type;
+  if (overviewFilters.value.ownership_type.length) query.ownership_type = overviewFilters.value.ownership_type;
   if (overviewFilters.value.date_from) query.date_from = overviewFilters.value.date_from;
   if (overviewFilters.value.date_to) query.date_to = overviewFilters.value.date_to;
   if (overviewFilters.value.fixture_code.trim()) query.fixture_code = overviewFilters.value.fixture_code.trim();
@@ -283,8 +279,8 @@ function buildOverviewFilters(): TransactionQueryFilters {
     fixtureKeywords.unshift(directFixtureFilter);
   }
   return {
-    transaction_type: overviewFilters.value.transaction_type || undefined,
-    ownership_type: overviewFilters.value.ownership_type || undefined,
+    transaction_type: overviewFilters.value.transaction_type.length ? [...overviewFilters.value.transaction_type] : undefined,
+    ownership_type: overviewFilters.value.ownership_type.length ? [...overviewFilters.value.ownership_type] : undefined,
     date_from: overviewFilters.value.date_from || undefined,
     date_to: overviewFilters.value.date_to || undefined,
     fixture_code: fixtureKeywords.length > 0 ? fixtureKeywords.join(",") : undefined,

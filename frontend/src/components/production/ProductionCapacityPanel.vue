@@ -156,7 +156,7 @@ watch(
           <tr>
             <th>Fixture</th>
             <th>需求數 (Req)</th>
-            <th>可開站數 (Cap)</th>
+            <th>此治具可支援站數</th>
             <th>瓶頸狀態</th>
             <th>備註</th>
           </tr>

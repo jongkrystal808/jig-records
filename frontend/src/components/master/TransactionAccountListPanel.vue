@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiSectionHeader from "@/components/UiSectionHeader.vue";
+import UiMultiSelect from "@/components/common/UiMultiSelect.vue";
 import type { MaterialTransaction } from "@/types";
 import { formatLocalDate } from "@/utils/date";
 
@@ -10,15 +11,17 @@ const props = defineProps<{
   transactionNo: string;
   createdBy: string;
   fixtureCode: string;
-  transactionType: "all" | "receipt" | "return";
+  transactionType: Array<"receipt" | "return">;
   page: number;
   pageSize: number;
   totalPages: number;
   total: number;
+  embeddedForm?: boolean;
+  embeddedWorkbench?: boolean;
   onTransactionNoChange: (value: string) => void;
   onCreatedByChange: (value: string) => void;
   onFixtureCodeChange: (value: string) => void;
-  onTransactionTypeChange: (value: "all" | "receipt" | "return") => void;
+  onTransactionTypeChange: (value: Array<"receipt" | "return">) => void;
   onPageSizeChange: (value: number) => void;
   onSelectRow: (id: number) => void;
   onPreviousPage: () => void;
@@ -35,10 +38,10 @@ function displayTransactionNo(value: string | null): string {
 </script>
 
 <template>
-  <article class="panel list-panel" data-tour="master-ledger-list">
-    <UiSectionHeader class="panel-head" title="收退料帳目管理" :description="`共 ${total} 筆案件`" />
+  <article class="panel list-panel" :class="{ 'form-list-panel': embeddedForm, 'workbench-ledger-list': embeddedWorkbench }" data-tour="master-ledger-list">
+    <UiSectionHeader v-if="!embeddedForm && !embeddedWorkbench" class="panel-head" title="收退料帳目管理" :description="`共 ${total} 筆案件`" />
 
-    <div v-if="total > 0" class="list-footer">
+    <div v-if="!embeddedForm && !embeddedWorkbench && total > 0" class="list-footer">
       <span>第 {{ page }} / {{ totalPages }} 頁，共 {{ total }} 筆案件</span>
       <div class="pager-actions">
         <label class="page-size-field">
@@ -58,7 +61,7 @@ function displayTransactionNo(value: string | null): string {
       </div>
     </div>
 
-    <div class="list-toolbar" data-tour="master-ledger-filters">
+    <div v-if="!embeddedForm && !embeddedWorkbench" class="list-toolbar" data-tour="master-ledger-filters">
       <input
         :value="transactionNo"
         placeholder="搜尋單號"
@@ -77,21 +80,13 @@ function displayTransactionNo(value: string | null): string {
         :disabled="loading"
         @input="onFixtureCodeChange(($event.target as HTMLInputElement).value)"
       />
-      <select
-        :value="transactionType"
-        :disabled="loading"
-        @change="onTransactionTypeChange(($event.target as HTMLSelectElement).value as 'all' | 'receipt' | 'return')"
-      >
-        <option value="all">全部帳目</option>
-        <option value="receipt">只看收料</option>
-        <option value="return">只看退料</option>
-      </select>
+      <UiMultiSelect :model-value="transactionType" label="類型" placeholder="全部帳目" :disabled="loading" :options="[{ value: 'receipt', label: '收料' }, { value: 'return', label: '退料' }]" @update:model-value="onTransactionTypeChange($event as Array<'receipt' | 'return'>)" />
     </div>
 
     <div v-if="loading" class="loading-banner">帳目資料載入中...</div>
 
     <div class="table-scroll">
-      <table class="data-table">
+      <table class="data-table" :class="{ 'form-data-table': embeddedForm, 'workbench-ledger-table': embeddedWorkbench }">
         <thead>
           <tr>
             <th>單號</th>
@@ -107,7 +102,11 @@ function displayTransactionNo(value: string | null): string {
             v-for="row in rows"
             :key="row.id"
             :class="{ selected: selectedTransactionId === row.id }"
+            :aria-selected="selectedTransactionId === row.id"
+            tabindex="0"
             @click="onSelectRow(row.id)"
+            @keydown.enter.prevent="onSelectRow(row.id)"
+            @keydown.space.prevent="onSelectRow(row.id)"
           >
             <td>{{ displayTransactionNo(row.transaction_no) }}</td>
             <td>
@@ -212,6 +211,74 @@ select {
 
 .data-table tbody tr.selected {
   background: #edf3ff;
+}
+
+.data-table tbody tr:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--blue) 62%, white);
+  outline-offset: -2px;
+}
+
+.form-list-panel {
+  display: block;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.form-list-panel .loading-banner {
+  border-top: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.form-list-panel .table-scroll {
+  width: 100%;
+  overflow: auto;
+}
+
+.form-data-table {
+  min-width: 680px;
+  border: 0;
+  border-radius: 0;
+}
+
+.form-data-table th,
+.form-data-table td {
+  padding: 7px 9px;
+  border-right: 1px solid var(--line);
+  font-size: 0.75rem;
+}
+
+.form-data-table th:last-child,
+.form-data-table td:last-child {
+  border-right: 0;
+}
+
+.form-data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: #314e73;
+  background: #dce9f8;
+  font-weight: 800;
+}
+
+.form-data-table tbody tr:nth-child(even) {
+  background: #f7faff;
+}
+
+.form-data-table tbody tr:hover {
+  background: #edf4fc;
+}
+
+.form-data-table tbody tr.selected {
+  background: #e1edfb;
+  box-shadow: inset 3px 0 #4b79b8;
+}
+
+.form-data-table .type-pill {
+  min-width: 46px;
+  border-radius: 4px;
 }
 
 .type-pill {

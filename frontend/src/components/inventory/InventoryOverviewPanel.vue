@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 
+import UiMultiSelect from "@/components/common/UiMultiSelect.vue";
 import { ownershipLabel } from "@/utils/display";
 import { formatLocalDate } from "@/utils/date";
 
 const props = defineProps<{
   filters: {
-    transaction_type: "" | "receipt" | "return";
-    ownership_type: "" | "customer_supplied" | "self_purchased";
+    transaction_type: Array<"receipt" | "return">;
+    ownership_type: Array<"customer_supplied" | "self_purchased">;
     date_from: string;
     date_to: string;
     fixture_code: string;
@@ -56,7 +57,7 @@ const showAdvancedFilters = ref(false);
 const advancedFilterCount = computed(
   () =>
     [
-      props.filters.ownership_type,
+      props.filters.ownership_type.length ? "ownership" : "",
       props.filters.transaction_no.trim(),
       props.filters.tracking_code.trim(),
       props.filters.created_by.trim()
@@ -111,14 +112,7 @@ function displayTransactionNo(value: string | null): string {
 
     <form class="overview-form" data-tour="overview-filter-form" @submit.prevent="emit('search')">
       <div class="overview-fields">
-        <label>
-          <span>類型</span>
-          <select :value="filters.transaction_type" @change="updateFilter('transaction_type', ($event.target as HTMLSelectElement).value as '' | 'receipt' | 'return')">
-            <option value="">全部</option>
-            <option value="receipt">收料</option>
-            <option value="return">退料</option>
-          </select>
-        </label>
+        <UiMultiSelect :model-value="filters.transaction_type" label="類型" placeholder="全部類型" :options="[{ value: 'receipt', label: '收料' }, { value: 'return', label: '退料' }]" @update:model-value="updateFilter('transaction_type', $event as Array<'receipt' | 'return'>)" />
         <label>
           <span>起始日期</span>
           <input :value="filters.date_from" type="date" @input="updateFilter('date_from', ($event.target as HTMLInputElement).value)" />
@@ -145,17 +139,7 @@ function displayTransactionNo(value: string | null): string {
         </button>
       </div>
       <div v-if="showAdvancedFilters" id="overview-advanced-filters" class="overview-fields overview-fields-advanced">
-        <label>
-          <span>來源</span>
-          <select
-            :value="filters.ownership_type"
-            @change="updateFilter('ownership_type', ($event.target as HTMLSelectElement).value as '' | 'customer_supplied' | 'self_purchased')"
-          >
-            <option value="">全部</option>
-            <option value="customer_supplied">客供</option>
-            <option value="self_purchased">自購</option>
-          </select>
-        </label>
+        <UiMultiSelect :model-value="filters.ownership_type" label="來源" placeholder="全部來源" :options="[{ value: 'customer_supplied', label: '客供' }, { value: 'self_purchased', label: '自購' }]" @update:model-value="updateFilter('ownership_type', $event as Array<'customer_supplied' | 'self_purchased'>)" />
         <label>
           <span>單號</span>
           <input :value="filters.transaction_no" placeholder="RCV-20260526-000001" @input="updateFilter('transaction_no', ($event.target as HTMLInputElement).value)" />

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-defineProps<{
+import UiModalShell from "@/components/common/UiModalShell.vue";
+
+const props = defineProps<{
   open: boolean;
   title: string;
   description: string;
@@ -20,23 +22,33 @@ const emit = defineEmits<{
 }>();
 
 // Keep the shared batch-import modal shell outside ProductionPage so UI chrome stays separate from composable batch domain logic.
+
+function closeModal(): void {
+  if (!props.saving) emit("close");
+}
 </script>
 
 <template>
-  <teleport to="body">
-    <div v-if="open" class="ui-modal-backdrop" @click.self="emit('close')">
-      <div class="ui-modal-card ui-modal-card--compact">
+  <UiModalShell
+    :open="open"
+    labelled-by="production-batch-import-title"
+    described-by="production-batch-import-description"
+    dialog-class="ui-modal-card--compact production-batch-import-dialog"
+    :close-on-backdrop="!saving"
+    @close="closeModal"
+  >
         <div class="ui-section-head">
           <div>
-            <h2>{{ title }}</h2>
-            <p>{{ description }}</p>
+            <h2 id="production-batch-import-title">{{ title }}</h2>
+            <p id="production-batch-import-description">{{ description }}</p>
           </div>
-          <button class="outline-btn" type="button" @click="emit('close')">關閉</button>
+          <button class="outline-btn" type="button" :disabled="saving" @click="closeModal">關閉</button>
         </div>
         <textarea
           :value="text"
           class="batch-paste-box"
           :placeholder="placeholder"
+          data-modal-initial-focus
           @input="emit('update:text', ($event.target as HTMLTextAreaElement).value)"
         ></textarea>
         <div class="batch-modal-actions">
@@ -49,9 +61,7 @@ const emit = defineEmits<{
         <div class="batch-table-wrap">
           <slot />
         </div>
-      </div>
-    </div>
-  </teleport>
+  </UiModalShell>
 </template>
 
 <style scoped>

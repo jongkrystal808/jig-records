@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiSectionHeader from "@/components/UiSectionHeader.vue";
+import UiMultiSelect from "@/components/common/UiMultiSelect.vue";
 import type { AppUser, Customer, Fixture, MachineModel, Station } from "@/types";
 import { fallbackText } from "@/utils/display";
 
@@ -12,7 +13,7 @@ const props = defineProps<{
   keyword: string;
   searchPlaceholder: string;
   loading: boolean;
-  statusFilter: "all" | "active" | "inactive";
+  statusFilter: Array<"active" | "inactive">;
   canCreate: boolean;
   emptyStateMessage: string;
   listPage: number;
@@ -28,7 +29,7 @@ const props = defineProps<{
   selectedCustomerRowId: number | null;
   selectedUserId: number | null;
   onKeywordChange: (value: string) => void;
-  onStatusFilterChange: (value: "all" | "active" | "inactive") => void;
+  onStatusFilterChange: (value: Array<"active" | "inactive">) => void;
   onStartCreate: () => void;
   onSelectRow: (id: number) => void;
   onPreviousPage: () => void;
@@ -58,11 +59,7 @@ function handleRowKeydown(event: KeyboardEvent, id: number): void {
 
     <div class="list-toolbar" data-tour="master-list-toolbar">
       <input :value="keyword" :placeholder="searchPlaceholder" :disabled="loading" @input="onKeywordChange(($event.target as HTMLInputElement).value)" />
-      <select v-if="activeTab !== 'customer'" :value="statusFilter" @change="onStatusFilterChange(($event.target as HTMLSelectElement).value as 'all' | 'active' | 'inactive')">
-        <option value="all">狀態：全部</option>
-        <option value="active">狀態：啟用中</option>
-        <option value="inactive">狀態：停用</option>
-      </select>
+      <UiMultiSelect v-if="activeTab !== 'customer'" :model-value="statusFilter" label="狀態" placeholder="全部狀態" :options="[{ value: 'active', label: '啟用中' }, { value: 'inactive', label: '停用' }]" @update:model-value="onStatusFilterChange($event as Array<'active' | 'inactive'>)" />
       <button class="primary-btn" type="button" :disabled="loading || !canCreate" @click="onStartCreate">+ 新增{{ tabTitle }}</button>
     </div>
 

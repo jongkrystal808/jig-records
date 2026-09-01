@@ -1,13 +1,31 @@
-import type { AppUser, Customer, Fixture, FixtureQualityReport, MachineModel, Station } from "@/types";
+import type { AppUser, Customer, Fixture, FixtureQualityReport, MachineModel, PageResult, Station } from "@/types";
 
-import { request, requestText, setOptionalParam } from "@/api/core";
+import { request, requestBlob, requestText, setOptionalParam } from "@/api/core";
 
 export const masterApi = {
   listCustomers() {
     return request<Customer[]>("/master/customers");
   },
+  listCustomersPage(page = 1, pageSize = 50, keyword = "") {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize), keyword });
+    return request<PageResult<Customer>>(`/master/customers/page?${params.toString()}`);
+  },
   listCustomerUsers(customerId: number) {
     return request<AppUser[]>(`/master/customers/${customerId}/users`);
+  },
+  exportFormMasterCsv(params: {
+    entity: "fixture" | "model" | "station" | "customer" | "fixture-images";
+    customerId?: number;
+    keyword?: string;
+    statusFilter?: "all" | "active" | "inactive";
+    imageStatus?: "all" | "with-image" | "missing-image";
+  }) {
+    const search = new URLSearchParams({ entity: params.entity });
+    setOptionalParam(search, "customer_id", params.customerId);
+    setOptionalParam(search, "keyword", params.keyword);
+    setOptionalParam(search, "status_filter", params.statusFilter);
+    setOptionalParam(search, "image_status", params.imageStatus);
+    return requestBlob(`/master/form-export?${search.toString()}`);
   },
   createCustomer(payload: { code: string; name: string; assigned_user_ids?: number[] }) {
     return request<Customer>("/master/customers", { method: "POST", body: JSON.stringify(payload) });
@@ -20,6 +38,10 @@ export const masterApi = {
     setOptionalParam(params, "customer_id", customerId);
     const suffix = params.size ? `?${params.toString()}` : "";
     return request<Fixture[]>(`/master/fixtures${suffix}`);
+  },
+  listFixturesPage(customerId: number, page = 1, pageSize = 50, keyword = "", statusFilter = "all", imageStatus = "all") {
+    const params = new URLSearchParams({ customer_id: String(customerId), page: String(page), page_size: String(pageSize), keyword, status_filter: statusFilter, image_status: imageStatus });
+    return request<PageResult<Fixture>>(`/master/fixtures/page?${params.toString()}`);
   },
   getFixtureQualityReport(customerId: number) {
     return request<FixtureQualityReport>(`/master/fixtures/quality?customer_id=${customerId}`);
@@ -87,6 +109,10 @@ export const masterApi = {
     const suffix = params.size ? `?${params.toString()}` : "";
     return request<MachineModel[]>(`/master/models${suffix}`);
   },
+  listModelsPage(customerId: number, page = 1, pageSize = 50, keyword = "", statusFilter = "all") {
+    const params = new URLSearchParams({ customer_id: String(customerId), page: String(page), page_size: String(pageSize), keyword, status_filter: statusFilter });
+    return request<PageResult<MachineModel>>(`/master/models/page?${params.toString()}`);
+  },
   exportModelsCsv(customerId?: number) {
     const params = new URLSearchParams();
     setOptionalParam(params, "customer_id", customerId);
@@ -127,6 +153,10 @@ export const masterApi = {
     setOptionalParam(params, "customer_id", customerId);
     const suffix = params.size ? `?${params.toString()}` : "";
     return request<Station[]>(`/master/stations${suffix}`);
+  },
+  listStationsPage(customerId: number, page = 1, pageSize = 50, keyword = "", statusFilter = "all") {
+    const params = new URLSearchParams({ customer_id: String(customerId), page: String(page), page_size: String(pageSize), keyword, status_filter: statusFilter });
+    return request<PageResult<Station>>(`/master/stations/page?${params.toString()}`);
   },
   exportStationsCsv(customerId?: number) {
     const params = new URLSearchParams();

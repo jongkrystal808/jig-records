@@ -1,0 +1,13 @@
+Deck topic: Fixture-M Lite 治具系統三頁簡報
+
+Internal content sources:
+- C:/Users/user/PycharmProjects/jig-record/AGENT.md
+- C:/Users/user/PycharmProjects/jig-record/ARCHITECTURE_LANDING.md
+- C:/Users/user/PycharmProjects/jig-record/ARCHITECTURE.md
+
+Internal image sources:
+- C:/Users/user/PycharmProjects/jig-record/uploads/fixtures/O-78-5.jpg
+- C:/Users/user/PycharmProjects/jig-record/uploads/fixtures/F-00629.jpg
+- C:/Users/user/PycharmProjects/jig-record/uploads/fixtures/D-00002.jpg
+
+No external claims or assets were used. Improvement benefits are qualitative; suggested KPIs are measurement recommendations, not claimed results.

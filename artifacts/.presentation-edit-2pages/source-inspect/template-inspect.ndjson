@@ -1,0 +1,284 @@
+{"kind":"layout","layoutId":"/ppt/slideMasters/slideMaster1.xml","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout1.xml","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/y90nupkv","slide":1,"title":"TE－專案改善","textShapes":27}
+{"kind":"shape","id":"sh/lwzy90ry","slide":1,"name":"left-accent-1","bbox":[0,103,50,69]}
+{"kind":"shape","id":"sh/547294r6","slide":1,"name":"outer-1","bbox":[48,30,1184,812]}
+{"kind":"textbox","id":"sh/k3yl0zql","slide":1,"name":"owner-1","text":"TE－專案改善","textPreview":"TE－專案改善","textChars":7,"textLines":1,"bbox":[64,76,235,30]}
+{"kind":"textbox","id":"sh/7qp4be9c","slide":1,"name":"title-1","text":"現場作業集中到同一治具工作台","textPreview":"現場作業集中到同一治具工作台","textChars":14,"textLines":1,"bbox":[300,52,680,52]}
+{"kind":"textbox","id":"sh/65g3298r","slide":1,"name":"module-1","text":"改善總覽","textPreview":"改善總覽","textChars":4,"textLines":1,"bbox":[1010,68,190,28]}
+{"kind":"shape","id":"sh/ts7md4r2","slide":1,"name":"header-line-1","bbox":[48,121,1184,0]}
+{"kind":"textbox","id":"sh/sryl4zqx","slide":1,"name":"reason-label-1","text":"改善原因：","textPreview":"改善原因：","textChars":5,"textLines":1,"bbox":[62,151,120,30]}
+{"kind":"textbox","id":"sh/fu94fe98","slide":1,"name":"reason-1","text":"庫存、查詢、產能與管理資料若分散在不同表單，現場需重複查找與交叉核對，難以快速取得一致答案。","textPreview":"庫存、查詢、產能與管理資料若分散在不同表單，現場需重複查找與交叉核對，難以快速取得一致答案。","textChars":46,"textLines":1,"bbox":[178,143,1018,50]}
+{"kind":"shape","id":"sh/utg3698n","slide":1,"name":"reason-line-1","bbox":[48,208,1184,0]}
+{"kind":"textbox","id":"sh/wn6dc7eh","slide":1,"name":"before-label-1","text":"改善前","textPreview":"改善前","textChars":3,"textLines":1,"bbox":[48,214,592,30]}
+{"kind":"textbox","id":"sh/hofulsf2","slide":1,"name":"after-label-1","text":"改善後","textPreview":"改善後","textChars":3,"textLines":1,"bbox":[640,214,592,30]}
+{"kind":"shape","id":"sh/ul4vaxgb","slide":1,"name":"panel-top-1","bbox":[48,252,1184,0]}
+{"kind":"shape","id":"sh/vmdcj2xw","slide":1,"name":"panel-divider-1","bbox":[640,208,0,438]}
+{"kind":"shape","id":"sh/4r6dg7et","slide":1,"name":"before-surface-1","bbox":[49,254,591,392]}
+{"kind":"shape","id":"sh/5sfepcfe","slide":1,"name":"before-accent-1","bbox":[72,282,8,266]}
+{"kind":"textbox","id":"sh/ipovexwn","slide":1,"name":"before-headline-1","text":"資訊分散，流程靠人串接","textPreview":"資訊分散，流程靠人串接","textChars":11,"textLines":1,"bbox":[98,278,500,58]}
+{"kind":"textbox","id":"sh/3qxwn2x8","slide":1,"name":"before-bullets-1","text":"• 收退料、庫存與產能分別查找\n\n• 同一欄位在不同流程可能出現不同寫法\n\n• 管理者與現場人員缺少一致的操作入口","textPreview":"• 收退料、庫存與產能分別查找 |  | • 同一欄位在不同流程可能出現不同寫法 |  | • 管理者與現場人員缺少一致的操作入口","textChars":57,"textLines":5,"bbox":[98,345,492,190]}
+{"kind":"shape","id":"sh/sfqdkrep","slide":1,"name":"before-keywords-bg-1","bbox":[96,566,480,48]}
+{"kind":"textbox","id":"sh/dgzetcfa","slide":1,"name":"before-keywords-1","text":"多處查找　｜　重複輸入　｜　口頭確認","textPreview":"多處查找　｜　重複輸入　｜　口頭確認","textChars":18,"textLines":1,"bbox":[108,578,456,26]}
+{"kind":"shape","id":"sh/1cvuxc7e","slide":1,"name":"after-surface-1","bbox":[640,254,591,392]}
+{"kind":"shape","id":"sh/0bmd476t","slide":1,"name":"after-frame-1","bbox":[666,274,540,302]}
+{"kind":"textbox","id":"sh/e94v2hon","slide":1,"name":"after-caption-1","text":"搜尋、收退料、近期紀錄與現場資訊整合於同一工作台","textPreview":"搜尋、收退料、近期紀錄與現場資訊整合於同一工作台","textChars":24,"textLines":1,"bbox":[674,586,524,44]}
+{"kind":"shape","id":"sh/90ve1w7q","slide":1,"name":"cost-cell-1-0-0","bbox":[48,646,108,38]}
+{"kind":"textbox","id":"sh/ozmd8r65","slide":1,"name":"cost-text-1-0-0","text":"改善項目","textPreview":"改善項目","textChars":4,"textLines":1,"bbox":[56,654,92,26]}
+{"kind":"shape","id":"sh/nydczmpk","slide":1,"name":"cost-cell-1-0-1","bbox":[156,646,538,38]}
+{"kind":"textbox","id":"sh/mx4v6hoz","slide":1,"name":"cost-text-1-0-1","text":"改善前","textPreview":"改善前","textChars":3,"textLines":1,"bbox":[164,654,522,26]}
+{"kind":"shape","id":"sh/p4bu5s76","slide":1,"name":"cost-cell-1-0-2","bbox":[694,646,538,38]}
+{"kind":"textbox","id":"sh/432dwn6l","slide":1,"name":"cost-text-1-0-2","text":"改善後","textPreview":"改善後","textChars":3,"textLines":1,"bbox":[702,654,522,26]}
+{"kind":"shape","id":"sh/uxgjq907","slide":1,"name":"cost-cell-1-1-0","bbox":[48,684,108,52]}
+{"kind":"textbox","id":"sh/vyp0je1s","slide":1,"name":"cost-text-1-1-0","text":"人力成本","textPreview":"人力成本","textChars":4,"textLines":1,"bbox":[56,693,92,40]}
+{"kind":"shape","id":"sh/wzy1szid","slide":1,"name":"cost-cell-1-1-1","bbox":[156,684,538,52]}
+{"kind":"textbox","id":"sh/h072l4jy","slide":1,"name":"cost-text-1-1-1","text":"跨頁查資料、人工彙整","textPreview":"跨頁查資料、人工彙整","textChars":10,"textLines":1,"bbox":[164,693,522,40]}
+{"kind":"shape","id":"sh/i1gje90j","slide":1,"name":"cost-cell-1-1-2","bbox":[694,684,538,52]}
+{"kind":"textbox","id":"sh/j2pkne14","slide":1,"name":"cost-text-1-1-2","text":"共用工作台與快捷入口，減少來回查找","textPreview":"共用工作台與快捷入口，減少來回查找","textChars":17,"textLines":1,"bbox":[702,693,522,40]}
+{"kind":"shape","id":"sh/43y1gji9","slide":1,"name":"cost-cell-1-2-0","bbox":[48,736,108,52]}
+{"kind":"textbox","id":"sh/54r2poju","slide":1,"name":"cost-text-1-2-0","text":"錯誤成本","textPreview":"錯誤成本","textChars":4,"textLines":1,"bbox":[56,745,92,40]}
+{"kind":"shape","id":"sh/y5wjip0z","slide":1,"name":"cost-cell-1-2-1","bbox":[156,736,538,52]}
+{"kind":"textbox","id":"sh/z650ba1k","slide":1,"name":"cost-text-1-2-1","text":"資料口徑不一，需人工核對","textPreview":"資料口徑不一，需人工核對","textChars":12,"textLines":1,"bbox":[164,745,522,40]}
+{"kind":"shape","id":"sh/z2xgf6to","slide":1,"name":"cost-cell-1-2-2","bbox":[694,736,538,52]}
+{"kind":"textbox","id":"sh/e1oz61c3","slide":1,"name":"cost-text-1-2-2","text":"統一契約、後端規則與角色權限","textPreview":"統一契約、後端規則與角色權限","textChars":14,"textLines":1,"bbox":[702,745,522,40]}
+{"kind":"shape","id":"sh/14fyhgbe","slide":1,"name":"cost-cell-1-3-0","bbox":[48,788,108,52]}
+{"kind":"textbox","id":"sh/036h8but","slide":1,"name":"cost-text-1-3-0","text":"操作成本","textPreview":"操作成本","textChars":4,"textLines":1,"bbox":[56,797,92,40]}
+{"kind":"shape","id":"sh/nqxgjqtk","slide":1,"name":"cost-cell-1-3-1","bbox":[156,788,538,52]}
+{"kind":"textbox","id":"sh/mpozalcz","slide":1,"name":"cost-text-1-3-1","text":"功能入口分散，學習路徑長","textPreview":"功能入口分散，學習路徑長","textChars":12,"textLines":1,"bbox":[164,797,522,40]}
+{"kind":"shape","id":"sh/9sfylgbq","slide":1,"name":"cost-cell-1-3-2","bbox":[694,788,538,52]}
+{"kind":"textbox","id":"sh/or6hcvu5","slide":1,"name":"cost-text-1-3-2","text":"Modern／Form／Workbench 共用核心流程","textPreview":"Modern／Form／Workbench 共用核心流程","textChars":28,"textLines":1,"bbox":[702,797,522,40]}
+{"kind":"shape","id":"sh/buh0nqtg","slide":1,"name":"footer-1","bbox":[0,858,1280,102]}
+{"kind":"shape","id":"sh/at8zelcb","slide":1,"name":"footer-band-1","bbox":[355,886,810,36]}
+{"kind":"shape","id":"sh/8zqx4vq9","slide":1,"name":"footer-logo-1","bbox":[48,875,64,50]}
+{"kind":"textbox","id":"sh/t0jyd0ru","slide":1,"name":"footer-logo-text-1","text":"FM","textPreview":"FM","textChars":2,"textLines":1,"bbox":[51,888,58,26]}
+{"kind":"textbox","id":"sh/6x8f2583","slide":1,"name":"footer-brand-1","text":"Fixture-M Lite","textPreview":"Fixture-M Lite","textChars":14,"textLines":1,"bbox":[124,874,220,34]}
+{"kind":"textbox","id":"sh/7yhgbq9o","slide":1,"name":"footer-sub-1","text":"治具庫存與產能管理平台","textPreview":"治具庫存與產能管理平台","textChars":11,"textLines":1,"bbox":[126,907,220,20]}
+{"kind":"textbox","id":"sh/kvqx0vqd","slide":1,"name":"footer-page-1","text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[1180,889,56,28]}
+{"kind":"image","id":"im/58vy9s7y","slide":1,"name":"","geometry":"roundRect","bbox":[674,282,524,286]}
+{"kind":"notes","id":"nt/y90nupkv","slide":1,"text":"[Sources]\n- doc/ARCHITECTURE_LANDING.md\n- doc/ARCHITECTURE.md\n- frontend/tests/visual/workbench.visual.spec.ts-snapshots/workbench-receipt-desktop-1920-win32.png\n[/Sources]"}
+{"kind":"slide","id":"sl/hwbqtkby","slide":2,"title":"TE－專案改善","textShapes":27}
+{"kind":"shape","id":"sh/d8zit87m","slide":2,"name":"left-accent-2","bbox":[0,103,50,69]}
+{"kind":"shape","id":"sh/9072xkry","slide":2,"name":"outer-2","bbox":[48,30,1184,812]}
+{"kind":"textbox","id":"sh/ozy1ofad","slide":2,"name":"owner-2","text":"TE－專案改善","textPreview":"TE－專案改善","textChars":7,"textLines":1,"bbox":[64,76,235,30]}
+{"kind":"textbox","id":"sh/b29kza94","slide":2,"name":"title-2","text":"收退料由逐筆登錄改為批次校驗","textPreview":"收退料由逐筆登錄改為批次校驗","textChars":14,"textLines":1,"bbox":[300,52,680,52]}
+{"kind":"textbox","id":"sh/a10jqpsj","slide":2,"name":"module-2","text":"庫存管理","textPreview":"庫存管理","textChars":4,"textLines":1,"bbox":[1010,68,190,28]}
+{"kind":"shape","id":"sh/x4r21kru","slide":2,"name":"header-line-2","bbox":[48,121,1184,0]}
+{"kind":"textbox","id":"sh/w3i1sfa9","slide":2,"name":"reason-label-2","text":"改善原因：","textPreview":"改善原因：","textChars":5,"textLines":1,"bbox":[62,151,120,30]}
+{"kind":"textbox","id":"sh/r65knqtk","slide":2,"name":"reason-2","text":"大量收料與退料若逐筆輸入，容易在治具編號、datecode／編號、來源與數量欄位發生漏填或格式不一致。","textPreview":"大量收料與退料若逐筆輸入，容易在治具編號、datecode／編號、來源與數量欄位發生漏填或格式不一致。","textChars":51,"textLines":1,"bbox":[178,143,1018,50]}
+{"kind":"shape","id":"sh/q5wjelsz","slide":2,"name":"reason-line-2","bbox":[48,208,1184,0]}
+{"kind":"textbox","id":"sh/ove9o7yd","slide":2,"name":"before-label-2","text":"改善前","textPreview":"改善前","textChars":3,"textLines":1,"bbox":[48,214,592,30]}
+{"kind":"textbox","id":"sh/9wnqhczy","slide":2,"name":"after-label-2","text":"改善後","textPreview":"改善後","textChars":3,"textLines":1,"bbox":[640,214,592,30]}
+{"kind":"shape","id":"sh/mtwrmxg7","slide":2,"name":"panel-top-2","bbox":[48,252,1184,0]}
+{"kind":"shape","id":"sh/nu58f2hs","slide":2,"name":"panel-divider-2","bbox":[640,208,0,438]}
+{"kind":"shape","id":"sh/wjy9sry9","slide":2,"name":"before-surface-2","bbox":[49,254,591,392]}
+{"kind":"shape","id":"sh/xk7qlczu","slide":2,"name":"before-accent-2","bbox":[72,282,8,266]}
+{"kind":"textbox","id":"sh/ahwrqhgj","slide":2,"name":"before-headline-2","text":"逐筆輸入，核對成本高","textPreview":"逐筆輸入，核對成本高","textChars":10,"textLines":1,"bbox":[98,278,500,58]}
+{"kind":"textbox","id":"sh/bip8jmho","slide":2,"name":"before-bullets-2","text":"• 大量資料需要重複鍵入相同欄位\n\n• 短數字識別碼可能出現 1、01、0001 等差異\n\n• 匯入衝突或錯誤不易在送出前集中確認","textPreview":"• 大量資料需要重複鍵入相同欄位 |  | • 短數字識別碼可能出現 1、01、0001 等差異 |  | • 匯入衝突或錯誤不易在送出前集中確認","textChars":65,"textLines":5,"bbox":[98,345,492,190]}
+{"kind":"shape","id":"sh/cnupgny5","slide":2,"name":"before-keywords-bg-2","bbox":[96,566,480,48]}
+{"kind":"textbox","id":"sh/do3q9szq","slide":2,"name":"before-keywords-2","text":"逐筆登錄　｜　格式不一　｜　事後修正","textPreview":"逐筆登錄　｜　格式不一　｜　事後修正","textChars":18,"textLines":1,"bbox":[108,578,456,26]}
+{"kind":"shape","id":"sh/t8byxkn2","slide":2,"name":"after-surface-2","bbox":[640,254,591,392]}
+{"kind":"shape","id":"sh/s72xofmh","slide":2,"name":"after-frame-2","bbox":[666,274,540,302]}
+{"kind":"textbox","id":"sh/65kfmpor","slide":2,"name":"after-caption-2","text":"批次貼上、預覽校驗、統一 identifier 規則與帳目追溯","textPreview":"批次貼上、預覽校驗、統一 identifier 規則與帳目追溯","textChars":31,"textLines":1,"bbox":[674,586,524,44]}
+{"kind":"shape","id":"sh/hcvy14ne","slide":2,"name":"cost-cell-2-0-0","bbox":[48,646,108,38]}
+{"kind":"textbox","id":"sh/gbmxszmt","slide":2,"name":"cost-text-2-0-0","text":"改善項目","textPreview":"改善項目","textChars":4,"textLines":1,"bbox":[56,654,92,26]}
+{"kind":"shape","id":"sh/fadgzu58","slide":2,"name":"cost-cell-2-0-1","bbox":[156,646,538,38]}
+{"kind":"textbox","id":"sh/u94fqp4n","slide":2,"name":"cost-text-2-0-1","text":"改善前","textPreview":"改善前","textChars":3,"textLines":1,"bbox":[164,654,522,26]}
+{"kind":"shape","id":"sh/p0vy54na","slide":2,"name":"cost-cell-2-0-2","bbox":[694,646,538,38]}
+{"kind":"textbox","id":"sh/4zmxwzmp","slide":2,"name":"cost-text-2-0-2","text":"改善後","textPreview":"改善後","textChars":3,"textLines":1,"bbox":[702,654,522,26]}
+{"kind":"shape","id":"sh/mlgvq147","slide":2,"name":"cost-cell-2-1-0","bbox":[48,684,108,52]}
+{"kind":"textbox","id":"sh/nmpcj6ls","slide":2,"name":"cost-text-2-1-0","text":"人力成本","textPreview":"人力成本","textChars":4,"textLines":1,"bbox":[56,693,92,40]}
+{"kind":"shape","id":"sh/onydsbmd","slide":2,"name":"cost-cell-2-1-1","bbox":[156,684,538,52]}
+{"kind":"textbox","id":"sh/9o7ulg3y","slide":2,"name":"cost-text-2-1-1","text":"逐筆登錄與重複核對","textPreview":"逐筆登錄與重複核對","textChars":9,"textLines":1,"bbox":[164,693,522,40]}
+{"kind":"shape","id":"sh/a9gvulkj","slide":2,"name":"cost-cell-2-1-2","bbox":[694,684,538,52]}
+{"kind":"textbox","id":"sh/ba9cn6l4","slide":2,"name":"cost-text-2-1-2","text":"試算表式批次貼上，一次處理多列","textPreview":"試算表式批次貼上，一次處理多列","textChars":15,"textLines":1,"bbox":[702,693,522,40]}
+{"kind":"shape","id":"sh/wbidwb29","slide":2,"name":"cost-cell-2-2-0","bbox":[48,736,108,52]}
+{"kind":"textbox","id":"sh/xcrupg3u","slide":2,"name":"cost-text-2-2-0","text":"錯誤成本","textPreview":"錯誤成本","textChars":4,"textLines":1,"bbox":[56,745,92,40]}
+{"kind":"shape","id":"sh/id0vylkf","slide":2,"name":"cost-cell-2-2-1","bbox":[156,736,538,52]}
+{"kind":"textbox","id":"sh/je9crql0","slide":2,"name":"cost-text-2-2-1","text":"識別碼格式不一、欄位遺漏","textPreview":"識別碼格式不一、欄位遺漏","textChars":12,"textLines":1,"bbox":[164,745,522,40]}
+{"kind":"shape","id":"sh/ru5cbqd4","slide":2,"name":"cost-cell-2-2-2","bbox":[694,736,538,52]}
+{"kind":"textbox","id":"sh/69wbilcj","slide":2,"name":"cost-text-2-2-2","text":"前後端共用正規化與欄位驗證","textPreview":"前後端共用正規化與欄位驗證","textChars":13,"textLines":1,"bbox":[702,745,522,40]}
+{"kind":"shape","id":"sh/tw7ud0va","slide":2,"name":"cost-cell-2-3-0","bbox":[48,788,108,52]}
+{"kind":"textbox","id":"sh/svedkvup","slide":2,"name":"cost-text-2-3-0","text":"操作成本","textPreview":"操作成本","textChars":4,"textLines":1,"bbox":[56,797,92,40]}
+{"kind":"shape","id":"sh/fypcfqdg","slide":2,"name":"cost-cell-2-3-1","bbox":[156,788,538,52]}
+{"kind":"textbox","id":"sh/exgvmlcv","slide":2,"name":"cost-text-2-3-1","text":"錯誤送出後才回頭修正","textPreview":"錯誤送出後才回頭修正","textChars":10,"textLines":1,"bbox":[164,797,522,40]}
+{"kind":"shape","id":"sh/107uh0v6","slide":2,"name":"cost-cell-2-3-2","bbox":[694,788,538,52]}
+{"kind":"textbox","id":"sh/gzydovul","slide":2,"name":"cost-text-2-3-2","text":"送出前預覽；衝突與錯誤逐列提示","textPreview":"送出前預覽；衝突與錯誤逐列提示","textChars":15,"textLines":1,"bbox":[702,797,522,40]}
+{"kind":"shape","id":"sh/v2lc36dw","slide":2,"name":"footer-2","bbox":[0,858,1280,102]}
+{"kind":"shape","id":"sh/a1cba1wb","slide":2,"name":"footer-band-2","bbox":[355,886,810,36]}
+{"kind":"shape","id":"sh/0vq1o36x","slide":2,"name":"footer-logo-2","bbox":[48,875,64,50]}
+{"kind":"textbox","id":"sh/1wzix87i","slide":2,"name":"footer-logo-text-2","text":"FM","textPreview":"FM","textChars":2,"textLines":1,"bbox":[51,888,58,26]}
+{"kind":"textbox","id":"sh/et8zmto7","slide":2,"name":"footer-brand-2","text":"Fixture-M Lite","textPreview":"Fixture-M Lite","textChars":14,"textLines":1,"bbox":[124,874,220,34]}
+{"kind":"textbox","id":"sh/zuh0vypc","slide":2,"name":"footer-sub-2","text":"治具庫存與產能管理平台","textPreview":"治具庫存與產能管理平台","textChars":11,"textLines":1,"bbox":[126,907,220,20]}
+{"kind":"textbox","id":"sh/c76hk361","slide":2,"name":"footer-page-2","text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1180,889,56,28]}
+{"kind":"image","id":"im/5g3y5kvi","slide":2,"name":"","geometry":"roundRect","bbox":[674,282,524,286]}
+{"kind":"notes","id":"nt/hwbqtkby","slide":2,"text":"[Sources]\n- doc/ARCHITECTURE_LANDING.md\n- doc/backend-map.md\n- backend/app/utils/identifier_rules.py\n- frontend/src/utils/identifier.ts\n- frontend/tests/visual/workbench.visual.spec.ts-snapshots/workbench-ledger-multiselect-open-desktop-1920-win32.png\n[/Sources]"}
+{"kind":"slide","id":"sl/ofy9wn61","slide":3,"title":"TE－專案改善","textShapes":30}
+{"kind":"shape","id":"sh/8zit4fix","slide":3,"name":"left-accent-3","bbox":[0,103,50,69]}
+{"kind":"shape","id":"sh/cza94vmx","slide":3,"name":"outer-3","bbox":[48,30,1184,812]}
+{"kind":"textbox","id":"sh/d0jax03i","slide":3,"name":"owner-3","text":"TE－專案改善","textPreview":"TE－專案改善","textChars":7,"textLines":1,"bbox":[64,76,235,30]}
+{"kind":"textbox","id":"sh/298ryl4v","slide":3,"name":"title-3","text":"可開站數改由完整需求的瓶頸決定","textPreview":"可開站數改由完整需求的瓶頸決定","textChars":15,"textLines":1,"bbox":[300,52,680,52]}
+{"kind":"textbox","id":"sh/3ah8rqlg","slide":3,"name":"module-3","text":"生產能力","textPreview":"生產能力","textChars":4,"textLines":1,"bbox":[1010,68,190,28]}
+{"kind":"shape","id":"sh/obq90bml","slide":3,"name":"header-line-3","bbox":[48,121,1184,0]}
+{"kind":"textbox","id":"sh/pcjqtg36","slide":3,"name":"reason-label-3","text":"改善原因：","textPreview":"改善原因：","textChars":5,"textLines":1,"bbox":[62,151,120,30]}
+{"kind":"textbox","id":"sh/m5cra54z","slide":3,"name":"reason-3","text":"同一站點可被多個機種共用；若只依站點或單一治具庫存估算，會忽略機種別需求與真正的瓶頸治具。","textPreview":"同一站點可被多個機種共用；若只依站點或單一治具庫存估算，會忽略機種別需求與真正的瓶頸治具。","textChars":45,"textLines":1,"bbox":[178,143,1018,50]}
+{"kind":"shape","id":"sh/n6ls3alk","slide":3,"name":"reason-line-3","bbox":[48,208,1184,0]}
+{"kind":"textbox","id":"sh/n2l4fq98","slide":3,"name":"before-label-3","text":"改善前","textPreview":"改善前","textChars":3,"textLines":1,"bbox":[48,214,592,30]}
+{"kind":"textbox","id":"sh/m1c3mlsn","slide":3,"name":"after-label-3","text":"改善後","textPreview":"改善後","textChars":3,"textLines":1,"bbox":[640,214,592,30]}
+{"kind":"shape","id":"sh/943mhgre","slide":3,"name":"panel-top-3","bbox":[48,252,1184,0]}
+{"kind":"shape","id":"sh/83ulovat","slide":3,"name":"panel-divider-3","bbox":[640,208,0,438]}
+{"kind":"shape","id":"sh/v6l4jq94","slide":3,"name":"before-surface-3","bbox":[49,254,591,392]}
+{"kind":"shape","id":"sh/a5c3ql8z","slide":3,"name":"before-accent-3","bbox":[72,282,8,266]}
+{"kind":"textbox","id":"sh/x8nml0ra","slide":3,"name":"before-headline-3","text":"站點共用造成產能誤判","textPreview":"站點共用造成產能誤判","textChars":10,"textLines":1,"bbox":[98,278,500,58]}
+{"kind":"textbox","id":"sh/w7ulsvqp","slide":3,"name":"before-bullets-3","text":"• 由 station_id 單獨推測機種，需求範圍不完整\n\n• 只看部分治具庫存，可能高估可開站數\n\n• 需求數量異動缺少明確的衝突確認","textPreview":"• 由 station_id 單獨推測機種，需求範圍不完整 |  | • 只看部分治具庫存，可能高估可開站數 |  | • 需求數量異動缺少明確的衝突確認","textChars":69,"textLines":5,"bbox":[98,345,492,190]}
+{"kind":"shape","id":"sh/ja54na9g","slide":3,"name":"before-keywords-bg-3","bbox":[96,566,480,48]}
+{"kind":"textbox","id":"sh/i9w3u58v","slide":3,"name":"before-keywords-3","text":"範圍不清　｜　局部估算　｜　產能高估","textPreview":"範圍不清　｜　局部估算　｜　產能高估","textChars":18,"textLines":1,"bbox":[108,578,456,26]}
+{"kind":"shape","id":"sh/e10f2twf","slide":3,"name":"after-surface-3","bbox":[640,254,591,392]}
+{"kind":"shape","id":"sh/f29gbyx0","slide":3,"name":"capacity-formula-bg-3","bbox":[680,284,510,126]}
+{"kind":"textbox","id":"sh/03ix43e5","slide":3,"name":"capacity-label-3","text":"權威可開站數","textPreview":"權威可開站數","textChars":6,"textLines":1,"bbox":[710,298,450,30]}
+{"kind":"textbox","id":"sh/14ryd8fq","slide":3,"name":"capacity-formula-3","text":"MIN  ⌊目前庫存 ÷ 單站需求量⌋","textPreview":"MIN  ⌊目前庫存 ÷ 單站需求量⌋","textChars":19,"textLines":1,"bbox":[698,338,474,52]}
+{"kind":"textbox","id":"sh/6d0fytg3","slide":3,"name":"capacity-scope-3","text":"計算範圍：model_id + station_id 的完整治具需求集合","textPreview":"計算範圍：model_id + station_id 的完整治具需求集合","textChars":36,"textLines":1,"bbox":[682,425,506,38]}
+{"kind":"textbox","id":"sh/re9g7yxo","slide":3,"name":"capacity-points-3","text":"✓ 同一站點可被多機種共用，但需求保持機種別\n\n✓ 不再從 station_id 單獨反推機種\n\n✓ 以瓶頸治具決定最大開站數","textPreview":"✓ 同一站點可被多機種共用，但需求保持機種別 |  | ✓ 不再從 station_id 單獨反推機種 |  | ✓ 以瓶頸治具決定最大開站數","textChars":63,"textLines":5,"bbox":[704,472,466,132]}
+{"kind":"shape","id":"sh/sfix03y9","slide":3,"name":"cost-cell-3-0-0","bbox":[48,646,108,38]}
+{"kind":"textbox","id":"sh/tgry9ofu","slide":3,"name":"cost-text-3-0-0","text":"改善項目","textPreview":"改善項目","textChars":4,"textLines":1,"bbox":[56,654,92,26]}
+{"kind":"shape","id":"sh/a9kfadwn","slide":3,"name":"cost-cell-3-0-1","bbox":[156,646,538,38]}
+{"kind":"textbox","id":"sh/batgjixs","slide":3,"name":"cost-text-3-0-1","text":"改善前","textPreview":"改善前","textChars":3,"textLines":1,"bbox":[164,654,522,26]}
+{"kind":"shape","id":"sh/l4fi9cza","slide":3,"name":"cost-cell-3-0-2","bbox":[694,646,538,38]}
+{"kind":"textbox","id":"sh/k3m1g7yp","slide":3,"name":"cost-text-3-0-2","text":"改善後","textPreview":"改善後","textChars":3,"textLines":1,"bbox":[702,654,522,26]}
+{"kind":"shape","id":"sh/z2d07mh4","slide":3,"name":"cost-cell-3-1-0","bbox":[48,684,108,52]}
+{"kind":"textbox","id":"sh/y14jehgj","slide":3,"name":"cost-text-3-1-0","text":"人力成本","textPreview":"人力成本","textChars":4,"textLines":1,"bbox":[56,693,92,40]}
+{"kind":"shape","id":"sh/x0vi5czy","slide":3,"name":"cost-cell-3-1-1","bbox":[156,684,538,52]}
+{"kind":"textbox","id":"sh/czmhc7id","slide":3,"name":"cost-text-3-1-1","text":"人工逐一比對治具庫存與需求","textPreview":"人工逐一比對治具庫存與需求","textChars":13,"textLines":1,"bbox":[164,693,522,40]}
+{"kind":"shape","id":"sh/byd032h8","slide":3,"name":"cost-cell-3-1-2","bbox":[694,684,538,52]}
+{"kind":"textbox","id":"sh/ax4zax0n","slide":3,"name":"cost-text-3-1-2","text":"系統依 model＋station 自動計算瓶頸","textPreview":"系統依 model＋station 自動計算瓶頸","textChars":24,"textLines":1,"bbox":[702,693,522,40]}
+{"kind":"shape","id":"sh/hwzihwzi","slide":3,"name":"cost-cell-3-2-0","bbox":[48,736,108,52]}
+{"kind":"textbox","id":"sh/wv61obyx","slide":3,"name":"cost-text-3-2-0","text":"錯誤成本","textPreview":"錯誤成本","textChars":4,"textLines":1,"bbox":[56,745,92,40]}
+{"kind":"shape","id":"sh/4nuhs7uh","slide":3,"name":"cost-cell-3-2-1","bbox":[156,736,538,52]}
+{"kind":"textbox","id":"sh/po3ilcvm","slide":3,"name":"cost-text-3-2-1","text":"機種與站點關係混用","textPreview":"機種與站點關係混用","textChars":9,"textLines":1,"bbox":[164,745,522,40]}
+{"kind":"shape","id":"sh/21szqxcb","slide":3,"name":"cost-cell-3-2-2","bbox":[694,736,538,52]}
+{"kind":"textbox","id":"sh/32l0j2dw","slide":3,"name":"cost-text-3-2-2","text":"需求唯一範圍固定為 model＋station＋fixture","textPreview":"需求唯一範圍固定為 model＋station＋fixture","textChars":31,"textLines":1,"bbox":[702,745,522,40]}
+{"kind":"shape","id":"sh/cruhwrud","slide":3,"name":"cost-cell-3-3-0","bbox":[48,788,108,52]}
+{"kind":"textbox","id":"sh/ds3ipcvy","slide":3,"name":"cost-text-3-3-0","text":"操作成本","textPreview":"操作成本","textChars":4,"textLines":1,"bbox":[56,797,92,40]}
+{"kind":"shape","id":"sh/qpczuhc7","slide":3,"name":"cost-cell-3-3-1","bbox":[156,788,538,52]}
+{"kind":"textbox","id":"sh/rql0nmds","slide":3,"name":"cost-text-3-3-1","text":"匯入可能覆蓋既有設定","textPreview":"匯入可能覆蓋既有設定","textChars":10,"textLines":1,"bbox":[164,797,522,40]}
+{"kind":"shape","id":"sh/0ve10ru9","slide":3,"name":"cost-cell-3-3-2","bbox":[694,788,538,52]}
+{"kind":"textbox","id":"sh/1wnitwvu","slide":3,"name":"cost-text-3-3-2","text":"預覽衝突，需明確確認才覆寫","textPreview":"預覽衝突，需明確確認才覆寫","textChars":13,"textLines":1,"bbox":[702,797,522,40]}
+{"kind":"shape","id":"sh/v29cfu18","slide":3,"name":"footer-3","bbox":[0,858,1280,102]}
+{"kind":"shape","id":"sh/a10b6p03","slide":3,"name":"footer-band-3","bbox":[355,886,810,36]}
+{"kind":"shape","id":"sh/xoruhkje","slide":3,"name":"footer-logo-3","bbox":[48,875,64,50]}
+{"kind":"textbox","id":"sh/w3it8zit","slide":3,"name":"footer-logo-text-3","text":"FM","textPreview":"FM","textChars":2,"textLines":1,"bbox":[51,888,58,26]}
+{"kind":"textbox","id":"sh/nypcba1c","slide":3,"name":"footer-brand-3","text":"Fixture-M Lite","textPreview":"Fixture-M Lite","textChars":14,"textLines":1,"bbox":[124,874,220,34]}
+{"kind":"textbox","id":"sh/mxgb250r","slide":3,"name":"footer-sub-3","text":"治具庫存與產能管理平台","textPreview":"治具庫存與產能管理平台","textChars":11,"textLines":1,"bbox":[126,907,220,20]}
+{"kind":"textbox","id":"sh/90rudkji","slide":3,"name":"footer-page-3","text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1180,889,56,28]}
+{"kind":"notes","id":"nt/ofy9wn61","slide":3,"text":"[Sources]\n- AGENTS.md\n- doc/ARCHITECTURE_LANDING.md\n- doc/backend-map.md\n- backend/tests/test_configuration_report.py\n- backend/app/services/production_service.py\n[/Sources]"}
+{"kind":"slide","id":"sl/jyx0ra1s","slide":4,"title":"TE－專案改善","textShapes":27}
+{"kind":"shape","id":"sh/hoja9w3q","slide":4,"name":"left-accent-4","bbox":[0,103,50,69]}
+{"kind":"shape","id":"sh/1cj2d8b6","slide":4,"name":"outer-4","bbox":[48,30,1184,812]}
+{"kind":"textbox","id":"sh/0ba143al","slide":4,"name":"owner-4","text":"TE－專案改善","textPreview":"TE－專案改善","textChars":7,"textLines":1,"bbox":[64,76,235,30]}
+{"kind":"textbox","id":"sh/rm1k7yt4","slide":4,"name":"title-4","text":"查詢與報表改為後端一致彙整","textPreview":"查詢與報表改為後端一致彙整","textChars":13,"textLines":1,"bbox":[300,52,680,52]}
+{"kind":"textbox","id":"sh/ql8jytsj","slide":4,"name":"module-4","text":"搜尋／報表","textPreview":"搜尋／報表","textChars":5,"textLines":1,"bbox":[1010,68,190,28]}
+{"kind":"shape","id":"sh/doj29oba","slide":4,"name":"header-line-4","bbox":[48,121,1184,0]}
+{"kind":"textbox","id":"sh/sna103ap","slide":4,"name":"reason-label-4","text":"改善原因：","textPreview":"改善原因：","textChars":5,"textLines":1,"bbox":[62,151,120,30]}
+{"kind":"textbox","id":"sh/3ihk3et8","slide":4,"name":"reason-4","text":"治具、機種、站點、庫存與交易資料若由前端逐頁拼接，容易出現分頁不一致、漏列與匯出結果不同步。","textPreview":"治具、機種、站點、庫存與交易資料若由前端逐頁拼接，容易出現分頁不一致、漏列與匯出結果不同步。","textChars":46,"textLines":1,"bbox":[178,143,1018,50]}
+{"kind":"shape","id":"sh/ih8ju9sn","slide":4,"name":"reason-line-4","bbox":[48,208,1184,0]}
+{"kind":"textbox","id":"sh/kbm987y5","slide":4,"name":"before-label-4","text":"改善前","textPreview":"改善前","textChars":3,"textLines":1,"bbox":[48,214,592,30]}
+{"kind":"textbox","id":"sh/5cva1cfq","slide":4,"name":"after-label-4","text":"改善後","textPreview":"改善後","textChars":3,"textLines":1,"bbox":[640,214,592,30]}
+{"kind":"shape","id":"sh/i94r6xgz","slide":4,"name":"panel-top-4","bbox":[48,252,1184,0]}
+{"kind":"shape","id":"sh/jadsz2xk","slide":4,"name":"panel-divider-4","bbox":[640,208,0,438]}
+{"kind":"shape","id":"sh/w72947yt","slide":4,"name":"before-surface-4","bbox":[49,254,591,392]}
+{"kind":"shape","id":"sh/x8vaxsfe","slide":4,"name":"before-accent-4","bbox":[72,282,8,266]}
+{"kind":"textbox","id":"sh/a5kr2xg3","slide":4,"name":"before-headline-4","text":"前端拼資料，結果難一致","textPreview":"前端拼資料，結果難一致","textChars":11,"textLines":1,"bbox":[98,278,500,58]}
+{"kind":"textbox","id":"sh/v6tsv2xo","slide":4,"name":"before-bullets-4","text":"• 跨多個清單查找治具與關聯資訊\n\n• 篩選、排序與彙總分散在頁面邏輯\n\n• 畫面結果與完整匯出可能採不同資料範圍","textPreview":"• 跨多個清單查找治具與關聯資訊 |  | • 篩選、排序與彙總分散在頁面邏輯 |  | • 畫面結果與完整匯出可能採不同資料範圍","textChars":57,"textLines":5,"bbox":[98,345,492,190]}
+{"kind":"shape","id":"sh/g36tgryd","slide":4,"name":"before-keywords-bg-4","bbox":[96,566,480,48]}
+{"kind":"textbox","id":"sh/h4fa9wfy","slide":4,"name":"before-keywords-4","text":"跨表查找　｜　分頁漂移　｜　匯出口徑不一","textPreview":"跨表查找　｜　分頁漂移　｜　匯出口徑不一","textChars":20,"textLines":1,"bbox":[108,578,456,26]}
+{"kind":"shape","id":"sh/p0batw72","slide":4,"name":"after-surface-4","bbox":[640,254,591,392]}
+{"kind":"shape","id":"sh/oz29krqh","slide":4,"name":"after-frame-4","bbox":[666,274,540,302]}
+{"kind":"textbox","id":"sh/2xkrih8b","slide":4,"name":"after-caption-4","text":"後端讀模型統一篩選、排序、分頁、彙總與完整匯出","textPreview":"後端讀模型統一篩選、排序、分頁、彙總與完整匯出","textChars":23,"textLines":1,"bbox":[674,586,524,44]}
+{"kind":"shape","id":"sh/1wbapc7q","slide":4,"name":"cost-cell-4-0-0","bbox":[48,646,108,38]}
+{"kind":"textbox","id":"sh/gv29g7q5","slide":4,"name":"cost-text-4-0-0","text":"改善項目","textPreview":"改善項目","textChars":4,"textLines":1,"bbox":[56,654,92,26]}
+{"kind":"shape","id":"sh/fu9sn2p0","slide":4,"name":"cost-cell-4-0-1","bbox":[156,646,538,38]}
+{"kind":"textbox","id":"sh/et0reh8f","slide":4,"name":"cost-text-4-0-1","text":"改善前","textPreview":"改善前","textChars":3,"textLines":1,"bbox":[164,654,522,26]}
+{"kind":"shape","id":"sh/tsrqlc7u","slide":4,"name":"cost-cell-4-0-2","bbox":[694,646,538,38]}
+{"kind":"textbox","id":"sh/sri9s7q9","slide":4,"name":"cost-text-4-0-2","text":"改善後","textPreview":"改善後","textChars":3,"textLines":1,"bbox":[702,654,522,26]}
+{"kind":"shape","id":"sh/ilwf69kv","slide":4,"name":"cost-cell-4-1-0","bbox":[48,684,108,52]}
+{"kind":"textbox","id":"sh/jm5gze1g","slide":4,"name":"cost-text-4-1-0","text":"人力成本","textPreview":"人力成本","textChars":4,"textLines":1,"bbox":[56,693,92,40]}
+{"kind":"shape","id":"sh/knex8j21","slide":4,"name":"cost-cell-4-1-1","bbox":[156,684,538,52]}
+{"kind":"textbox","id":"sh/5ony1oj6","slide":4,"name":"cost-text-4-1-1","text":"人工交叉查詢多張清單","textPreview":"人工交叉查詢多張清單","textChars":10,"textLines":1,"bbox":[164,693,522,40]}
+{"kind":"shape","id":"sh/axcf29kj","slide":4,"name":"cost-cell-4-1-2","bbox":[694,684,538,52]}
+{"kind":"textbox","id":"sh/vy5gbe14","slide":4,"name":"cost-text-4-1-2","text":"搜尋優先流程與聯動篩選","textPreview":"搜尋優先流程與聯動篩選","textChars":11,"textLines":1,"bbox":[702,693,522,40]}
+{"kind":"shape","id":"sh/wzex4z2p","slide":4,"name":"cost-cell-4-2-0","bbox":[48,736,108,52]}
+{"kind":"textbox","id":"sh/xknyx4ja","slide":4,"name":"cost-text-4-2-0","text":"錯誤成本","textPreview":"錯誤成本","textChars":4,"textLines":1,"bbox":[56,745,92,40]}
+{"kind":"shape","id":"sh/mtcfypkn","slide":4,"name":"cost-cell-4-2-1","bbox":[156,736,538,52]}
+{"kind":"textbox","id":"sh/nulw7u18","slide":4,"name":"cost-text-4-2-1","text":"頁面端拼接造成漏列或重複","textPreview":"頁面端拼接造成漏列或重複","textChars":12,"textLines":1,"bbox":[164,745,522,40]}
+{"kind":"shape","id":"sh/fm5c3q54","slide":4,"name":"cost-cell-4-2-2","bbox":[694,736,538,52]}
+{"kind":"textbox","id":"sh/elwba54j","slide":4,"name":"cost-text-4-2-2","text":"專用 repository＋service 產生一致讀模型","textPreview":"專用 repository＋service 產生一致讀模型","textChars":29,"textLines":1,"bbox":[702,745,522,40]}
+{"kind":"shape","id":"sh/18nu50nu","slide":4,"name":"cost-cell-4-3-0","bbox":[48,788,108,52]}
+{"kind":"textbox","id":"sh/0netcvm9","slide":4,"name":"cost-text-4-3-0","text":"操作成本","textPreview":"操作成本","textChars":4,"textLines":1,"bbox":[56,797,92,40]}
+{"kind":"shape","id":"sh/rilczq5s","slide":4,"name":"cost-cell-4-3-1","bbox":[156,788,538,52]}
+{"kind":"textbox","id":"sh/qhcb6l47","slide":4,"name":"cost-text-4-3-1","text":"畫面與匯出需重複操作","textPreview":"畫面與匯出需重複操作","textChars":10,"textLines":1,"bbox":[164,797,522,40]}
+{"kind":"shape","id":"sh/dknu10ny","slide":4,"name":"cost-cell-4-3-2","bbox":[694,788,538,52]}
+{"kind":"textbox","id":"sh/sjut8vmd","slide":4,"name":"cost-text-4-3-2","text":"同一篩選條件支援 CSV／XLSX 完整匯出","textPreview":"同一篩選條件支援 CSV／XLSX 完整匯出","textChars":22,"textLines":1,"bbox":[702,797,522,40]}
+{"kind":"shape","id":"sh/3elcv65w","slide":4,"name":"footer-4","bbox":[0,858,1280,102]}
+{"kind":"shape","id":"sh/idcb2lob","slide":4,"name":"footer-band-4","bbox":[355,886,810,36]}
+{"kind":"shape","id":"sh/8jq9c72t","slide":4,"name":"footer-logo-4","bbox":[48,875,64,50]}
+{"kind":"textbox","id":"sh/tkjq5c3e","slide":4,"name":"footer-logo-text-4","text":"FM","textPreview":"FM","textChars":2,"textLines":1,"bbox":[51,888,58,26]}
+{"kind":"textbox","id":"sh/6x8rahk3","slide":4,"name":"footer-brand-4","text":"Fixture-M Lite","textPreview":"Fixture-M Lite","textChars":14,"textLines":1,"bbox":[124,874,220,34]}
+{"kind":"textbox","id":"sh/7ih83mlo","slide":4,"name":"footer-sub-4","text":"治具庫存與產能管理平台","textPreview":"治具庫存與產能管理平台","textChars":11,"textLines":1,"bbox":[126,907,220,20]}
+{"kind":"textbox","id":"sh/gna9gr25","slide":4,"name":"footer-page-4","text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1180,889,56,28]}
+{"kind":"image","id":"im/1kretwra","slide":4,"name":"","geometry":"roundRect","bbox":[674,282,524,286]}
+{"kind":"notes","id":"nt/jyx0ra1s","slide":4,"text":"[Sources]\n- doc/ARCHITECTURE_LANDING.md\n- doc/ARCHITECTURE.md\n- backend/app/repositories/configuration_report_repository.py\n- backend/app/services/configuration_report_service.py\n- frontend/tests/visual/workbench.visual.spec.ts-snapshots/workbench-management-overview-desktop-1920-win32.png\n[/Sources]"}
+{"kind":"slide","id":"sl/i107q5of","slide":5,"title":"TE－專案改善","textShapes":27}
+{"kind":"shape","id":"sh/lcfy147i","slide":5,"name":"left-accent-5","bbox":[0,103,50,69]}
+{"kind":"shape","id":"sh/dgbulwnm","slide":5,"name":"outer-5","bbox":[48,30,1184,812]}
+{"kind":"textbox","id":"sh/cf2tcr61","slide":5,"name":"owner-5","text":"TE－專案改善","textPreview":"TE－專案改善","textChars":7,"textLines":1,"bbox":[64,76,235,30]}
+{"kind":"textbox","id":"sh/z2tcnm5s","slide":5,"name":"title-5","text":"權限、儲位與圖片改為可追溯規則","textPreview":"權限、儲位與圖片改為可追溯規則","textChars":15,"textLines":1,"bbox":[300,52,680,52]}
+{"kind":"textbox","id":"sh/yhkbe1o7","slide":5,"name":"module-5","text":"資料治理","textPreview":"資料治理","textChars":4,"textLines":1,"bbox":[1010,68,190,28]}
+{"kind":"shape","id":"sh/l4bupwny","slide":5,"name":"header-line-5","bbox":[48,121,1184,0]}
+{"kind":"textbox","id":"sh/032tgr6d","slide":5,"name":"reason-label-5","text":"改善原因：","textPreview":"改善原因：","textChars":5,"textLines":1,"bbox":[62,151,120,30]}
+{"kind":"textbox","id":"sh/n6dcr65o","slide":5,"name":"reason-5","text":"治具資料涉及不同客戶、儲位與現場圖片；若只依畫面隱藏或人工命名，可能造成越權、找錯位置或圖片對應錯誤。","textPreview":"治具資料涉及不同客戶、儲位與現場圖片；若只依畫面隱藏或人工命名，可能造成越權、找錯位置或圖片對應錯誤。","textChars":51,"textLines":1,"bbox":[178,143,1018,50]}
+{"kind":"shape","id":"sh/m5kbi1oj","slide":5,"name":"reason-line-5","bbox":[48,208,1184,0]}
+{"kind":"textbox","id":"sh/w32dkbuh","slide":5,"name":"before-label-5","text":"改善前","textPreview":"改善前","textChars":3,"textLines":1,"bbox":[48,214,592,30]}
+{"kind":"textbox","id":"sh/x4vedgvm","slide":5,"name":"after-label-5","text":"改善後","textPreview":"改善後","textChars":3,"textLines":1,"bbox":[640,214,592,30]}
+{"kind":"shape","id":"sh/ahkvi1cb","slide":5,"name":"panel-top-5","bbox":[48,252,1184,0]}
+{"kind":"shape","id":"sh/v2twb6dw","slide":5,"name":"panel-divider-5","bbox":[640,208,0,438]}
+{"kind":"shape","id":"sh/k7mxovud","slide":5,"name":"before-surface-5","bbox":[49,254,591,392]}
+{"kind":"shape","id":"sh/58vehgvy","slide":5,"name":"before-accent-5","bbox":[72,282,8,266]}
+{"kind":"textbox","id":"sh/i54fmlc7","slide":5,"name":"before-headline-5","text":"規則靠約定，風險留在現場","textPreview":"規則靠約定，風險留在現場","textChars":12,"textLines":1,"bbox":[98,278,500,58]}
+{"kind":"textbox","id":"sh/j6dwfqds","slide":5,"name":"before-bullets-5","text":"• 管理權限可能被誤解為可跨客戶操作\n\n• 單一儲位欄位無法同時表達線邊與部門位置\n\n• 圖片命名、替換與刪除缺少一致的客戶範圍","textPreview":"• 管理權限可能被誤解為可跨客戶操作 |  | • 單一儲位欄位無法同時表達線邊與部門位置 |  | • 圖片命名、替換與刪除缺少一致的客戶範圍","textChars":64,"textLines":5,"bbox":[98,345,492,190]}
+{"kind":"shape","id":"sh/sb6xsvu9","slide":5,"name":"before-keywords-bg-5","bbox":[96,566,480,48]}
+{"kind":"textbox","id":"sh/tcfel0vu","slide":5,"name":"before-keywords-5","text":"越權風險　｜　儲位模糊　｜　圖片難維護","textPreview":"越權風險　｜　儲位模糊　｜　圖片難維護","textChars":19,"textLines":1,"bbox":[108,578,456,26]}
+{"kind":"shape","id":"sh/hgrmpwj2","slide":5,"name":"after-surface-5","bbox":[640,254,591,392]}
+{"kind":"shape","id":"sh/gfi5grih","slide":5,"name":"after-frame-5","bbox":[666,274,540,302]}
+{"kind":"textbox","id":"sh/ud0ne10b","slide":5,"name":"after-caption-5","text":"後端客戶範圍＋雙儲位欄位＋客戶目錄圖片維護","textPreview":"後端客戶範圍＋雙儲位欄位＋客戶目錄圖片維護","textChars":21,"textLines":1,"bbox":[674,586,524,44]}
+{"kind":"shape","id":"sh/pkr6tgjy","slide":5,"name":"cost-cell-5-0-0","bbox":[48,646,108,38]}
+{"kind":"textbox","id":"sh/4ji5kbid","slide":5,"name":"cost-text-5-0-0","text":"改善項目","textPreview":"改善項目","textChars":4,"textLines":1,"bbox":[56,654,92,26]}
+{"kind":"shape","id":"sh/3i94r61s","slide":5,"name":"cost-cell-5-0-1","bbox":[156,646,538,38]}
+{"kind":"textbox","id":"sh/2h0ni107","slide":5,"name":"cost-text-5-0-1","text":"改善前","textPreview":"改善前","textChars":3,"textLines":1,"bbox":[164,654,522,26]}
+{"kind":"shape","id":"sh/5o7mhcju","slide":5,"name":"cost-cell-5-0-2","bbox":[694,646,538,38]}
+{"kind":"textbox","id":"sh/kny587i9","slide":5,"name":"cost-text-5-0-2","text":"改善後","textPreview":"改善後","textChars":3,"textLines":1,"bbox":[702,654,522,26]}
+{"kind":"shape","id":"sh/atcjidg7","slide":5,"name":"cost-cell-5-1-0","bbox":[48,684,108,52]}
+{"kind":"textbox","id":"sh/vu5kbihc","slide":5,"name":"cost-text-5-1-0","text":"人力成本","textPreview":"人力成本","textChars":4,"textLines":1,"bbox":[56,693,92,40]}
+{"kind":"shape","id":"sh/wve1knyx","slide":5,"name":"cost-cell-5-1-1","bbox":[156,684,538,52]}
+{"kind":"textbox","id":"sh/xwn2dszi","slide":5,"name":"cost-text-5-1-1","text":"人工確認客戶、儲位與圖片對應","textPreview":"人工確認客戶、儲位與圖片對應","textChars":14,"textLines":1,"bbox":[164,693,522,40]}
+{"kind":"shape","id":"sh/ihw3mxg3","slide":5,"name":"cost-cell-5-1-2","bbox":[694,684,538,52]}
+{"kind":"textbox","id":"sh/ji5kf2ho","slide":5,"name":"cost-text-5-1-2","text":"指派客戶範圍與治具代碼快速定位","textPreview":"指派客戶範圍與治具代碼快速定位","textChars":15,"textLines":1,"bbox":[702,693,522,40]}
+{"kind":"shape","id":"sh/kjelony9","slide":5,"name":"cost-cell-5-2-0","bbox":[48,736,108,52]}
+{"kind":"textbox","id":"sh/5kn2hszu","slide":5,"name":"cost-text-5-2-0","text":"錯誤成本","textPreview":"錯誤成本","textChars":4,"textLines":1,"bbox":[56,745,92,40]}
+{"kind":"shape","id":"sh/e1sjatgz","slide":5,"name":"cost-cell-5-2-1","bbox":[156,736,538,52]}
+{"kind":"textbox","id":"sh/zmlk3yhk","slide":5,"name":"cost-text-5-2-1","text":"只靠前端隱藏，仍可能越權","textPreview":"只靠前端隱藏，仍可能越權","textChars":12,"textLines":1,"bbox":[164,745,522,40]}
+{"kind":"shape","id":"sh/fid07u98","slide":5,"name":"cost-cell-5-2-2","bbox":[694,736,538,52]}
+{"kind":"textbox","id":"sh/ehkzepsn","slide":5,"name":"cost-text-5-2-2","text":"所有 API 在後端再次驗證角色與客戶範圍","textPreview":"所有 API 在後端再次驗證角色與客戶範圍","textChars":21,"textLines":1,"bbox":[702,745,522,40]}
+{"kind":"shape","id":"sh/1kvi94re","slide":5,"name":"cost-cell-5-3-0","bbox":[48,788,108,52]}
+{"kind":"textbox","id":"sh/gjmhgzqt","slide":5,"name":"cost-text-5-3-0","text":"操作成本","textPreview":"操作成本","textChars":4,"textLines":1,"bbox":[56,797,92,40]}
+{"kind":"shape","id":"sh/3md0bu94","slide":5,"name":"cost-cell-5-3-1","bbox":[156,788,538,52]}
+{"kind":"textbox","id":"sh/2l4zip8j","slide":5,"name":"cost-text-5-3-1","text":"圖片與刪除後歷史難追溯","textPreview":"圖片與刪除後歷史難追溯","textChars":11,"textLines":1,"bbox":[164,797,522,40]}
+{"kind":"shape","id":"sh/povid4ra","slide":5,"name":"cost-cell-5-3-2","bbox":[694,788,538,52]}
+{"kind":"textbox","id":"sh/onmhkzqp","slide":5,"name":"cost-text-5-3-2","text":"客戶別檔案路徑；刪除可保留交易快照","textPreview":"客戶別檔案路徑；刪除可保留交易快照","textChars":17,"textLines":1,"bbox":[702,797,522,40]}
+{"kind":"shape","id":"sh/bqx0fe9g","slide":5,"name":"footer-5","bbox":[0,858,1280,102]}
+{"kind":"shape","id":"sh/qp4jm98v","slide":5,"name":"footer-band-5","bbox":[355,886,810,36]}
+{"kind":"shape","id":"sh/8f6hcj6t","slide":5,"name":"footer-logo-5","bbox":[48,875,64,50]}
+{"kind":"textbox","id":"sh/9gfy5o7e","slide":5,"name":"footer-logo-text-5","text":"FM","textPreview":"FM","textChars":2,"textLines":1,"bbox":[51,888,58,26]}
+{"kind":"textbox","id":"sh/mdoza9o3","slide":5,"name":"footer-brand-5","text":"Fixture-M Lite","textPreview":"Fixture-M Lite","textChars":14,"textLines":1,"bbox":[124,874,220,34]}
+{"kind":"textbox","id":"sh/nexg3epo","slide":5,"name":"footer-sub-5","text":"治具庫存與產能管理平台","textPreview":"治具庫存與產能管理平台","textChars":11,"textLines":1,"bbox":[126,907,220,20]}
+{"kind":"textbox","id":"sh/0r6h8z6x","slide":5,"name":"footer-page-5","text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1180,889,56,28]}
+{"kind":"image","id":"im/d8ry90zq","slide":5,"name":"","geometry":"roundRect","bbox":[674,282,524,286]}
+{"kind":"notes","id":"nt/i107q5of","slide":5,"text":"[Sources]\n- AGENTS.md\n- doc/ARCHITECTURE_LANDING.md\n- doc/ARCHITECTURE.md\n- backend/app/core/auth.py\n- backend/alembic/versions/0012_split_fixture_storage_columns.py\n- backend/alembic/versions/0014_fixture_deletion.py\n- frontend/tests/visual/workbench.visual.spec.ts-snapshots/workbench-image-maintenance-desktop-1920-win32.png\n[/Sources]"}

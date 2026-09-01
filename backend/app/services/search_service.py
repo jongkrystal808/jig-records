@@ -2,10 +2,11 @@ from sqlalchemy.orm import Session
 
 from backend.app.repositories.inventory_repository import InventoryRepository
 from backend.app.repositories.production_repository import ProductionRepository
-from backend.app.repositories.search_repository import SearchEntityType, SearchRepository
+from backend.app.repositories.search_repository import FixtureSearchMode, SearchEntityType, SearchRepository
 from backend.app.services.inventory_service import InventoryService
 from backend.app.services.master_service import MasterService
 from backend.app.services.production_service import ProductionService
+from backend.app.utils.identifier_rules import resolve_identifier_query
 
 
 class SearchService:
@@ -31,6 +32,7 @@ class SearchService:
             payload["stock_qty"] = row["stock_qty"] if row["stock_qty"] is not None else 0
             payload["stock_status"] = row["stock_status"] or "normal"
             payload["location_code"] = row["location_code"]
+            payload["matched_identifier"] = row.get("matched_identifier")
         return payload
 
     def global_search(
@@ -39,6 +41,7 @@ class SearchService:
         *,
         customer_id: int | None = None,
         entity_type: SearchEntityType | None = None,
+        fixture_search_mode: FixtureSearchMode = "fixture",
         page: int = 1,
         page_size: int = 12,
     ) -> dict:
@@ -50,6 +53,7 @@ class SearchService:
                 customer_id=customer_id,
                 limit=page_size,
                 offset=offset,
+                fixture_search_mode=fixture_search_mode,
             )
             items = [self._serialize_result(entity_type, row) for row in rows]
             return {
@@ -70,6 +74,7 @@ class SearchService:
                 customer_id=customer_id,
                 limit=combined_limit,
                 offset=0,
+                fixture_search_mode="fixture",
             )
             total += count
             combined_rows.extend(
@@ -98,11 +103,48 @@ class SearchService:
             "has_more": offset + len(items) < total,
         }
 
-    def get_fixture_context(self, fixture_id: int, *, customer_id: int, recent_transaction_limit: int = 8) -> dict:
+    def get_fixture_overview(
+        self,
+        *,
+        customer_id: int,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict:
+        offset = (page - 1) * page_size
+        rows, total = self.repo.search_fixtures(
+            "",
+            customer_id=customer_id,
+            limit=page_size,
+            offset=offset,
+        )
+        items = [self._serialize_result("fixture", row) for row in rows]
+        return {
+            "items": items,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "has_more": offset + len(items) < total,
+        }
+
+    def get_fixture_context(
+        self,
+        fixture_id: int,
+        *,
+        customer_id: int,
+        recent_transaction_limit: int = 8,
+        identifier: str | None = None,
+    ) -> dict:
         fixture = self.master_service.get_fixture_detail(fixture_id, customer_id=customer_id)
         stock = self.inventory_repo.get_stock_summary_row(fixture_id, customer_id=customer_id)
-        identifier_rows = self.inventory_repo.list_identifier_stock_summary_rows(customer_id=customer_id, fixture_id=fixture_id)
-        station_rows = self.production_repo.list_requirement_rows_by_fixture(fixture_id, customer_id=customer_id)
+        exact_identifier = identifier.strip() if identifier and identifier.strip() else None
+        identifier_rows = [] if exact_identifier else self.inventory_repo.list_identifier_stock_summary_rows(
+            customer_id=customer_id,
+            fixture_id=fixture_id,
+        )
+        station_rows = [] if exact_identifier else self.production_repo.list_requirement_rows_by_fixture(
+            fixture_id,
+            customer_id=customer_id,
+        )
         related_models = []
         seen_model_ids: set[int] = set()
         for row in station_rows:
@@ -115,7 +157,21 @@ class SearchService:
             recent_transaction_limit,
             customer_id=customer_id,
             fixture_id=fixture_id,
+            identifier=exact_identifier,
         )
+        if exact_identifier:
+            identifier_candidates, _ = resolve_identifier_query(exact_identifier)
+            normalized_candidates = {candidate.casefold() for candidate in identifier_candidates or []}
+            filtered_transactions = []
+            for transaction in transactions:
+                matching_items = [
+                    item
+                    for item in transaction["items"]
+                    if (item.get("identifier") or "").strip().casefold() in normalized_candidates
+                ]
+                if matching_items:
+                    filtered_transactions.append({**transaction, "items": matching_items})
+            transactions = filtered_transactions
         return {
             "fixture": fixture,
             "stock": stock,

@@ -1,13 +1,16 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class ORMModel(BaseModel):
-    model_config = ConfigDict(
-        from_attributes=True,
-        json_encoders={datetime: lambda value: value.date().isoformat()},
-    )
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("*", when_used="json", check_fields=False)
+    def serialize_business_dates(self, value):
+        if isinstance(value, datetime):
+            return value.date().isoformat()
+        return value
 
 
 class TimestampedResponse(ORMModel):

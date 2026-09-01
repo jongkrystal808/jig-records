@@ -9,13 +9,13 @@ from dataclasses import dataclass
 from typing import Literal
 
 from fastapi import Depends, Header, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
 from backend.app.models.master import Customer, User, UserCustomer
 
-PermissionLevel = Literal["read", "write", "manage"]
+PermissionLevel = Literal["read", "write", "manage", "super_manage"]
 SessionMode = Literal["user", "guest"]
 
 
@@ -196,11 +196,13 @@ def require_permission(level: PermissionLevel):
         if level == "read":
             return session
         if level == "write":
-            if session.is_guest:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="guest sessions are read-only")
+            if session.is_guest or session.role not in {"super_admin", "admin", "user"}:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="valid signed-in user role required")
             return session
-        if session.role != "admin":
+        if level == "manage" and session.role not in {"super_admin", "admin"}:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin permission required")
+        if level == "super_manage" and session.role != "super_admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="super admin permission required")
         return session
 
     return dependency
@@ -238,6 +240,60 @@ def list_accessible_customers(session: SessionContext, db: Session) -> list[dict
         return []
     stmt = select(Customer).where(Customer.id.in_(allowed_customer_ids)).order_by(Customer.code)
     return [_serialize_customer(customer, db) for customer in db.scalars(stmt)]
+
+
+def list_accessible_customers_page(
+    session: SessionContext,
+    db: Session,
+    *,
+    page: int,
+    page_size: int,
+    keyword: str = "",
+) -> dict:
+    stmt = select(Customer)
+    if not session.is_guest:
+        allowed_customer_ids = get_allowed_customer_ids(session, db) or []
+        if not allowed_customer_ids:
+            return {"items": [], "page": page, "page_size": page_size, "total": 0}
+        stmt = stmt.where(Customer.id.in_(allowed_customer_ids))
+    normalized = keyword.strip()
+    if normalized:
+        pattern = f"%{normalized}%"
+        stmt = stmt.where(or_(Customer.code.ilike(pattern), Customer.name.ilike(pattern)))
+
+    total = int(db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0)
+    customers = list(
+        db.scalars(
+            stmt.order_by(Customer.code)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    )
+    customer_ids = [customer.id for customer in customers]
+    assigned_user_ids: dict[int, list[int]] = {customer_id: [] for customer_id in customer_ids}
+    if customer_ids:
+        for customer_id, user_id in db.execute(
+            select(UserCustomer.customer_id, UserCustomer.user_id)
+            .where(UserCustomer.customer_id.in_(customer_ids))
+            .order_by(UserCustomer.customer_id, UserCustomer.user_id)
+        ):
+            assigned_user_ids[int(customer_id)].append(int(user_id))
+    return {
+        "items": [
+            {
+                "id": customer.id,
+                "code": customer.code,
+                "name": customer.name,
+                "assigned_user_ids": assigned_user_ids[customer.id],
+                "created_at": customer.created_at,
+                "updated_at": customer.updated_at,
+            }
+            for customer in customers
+        ],
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+    }
 
 
 def resolve_customer_scope(

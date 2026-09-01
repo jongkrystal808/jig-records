@@ -19,6 +19,7 @@ const props = defineProps<{
   relatedModels: MachineModel[];
   stationRows: Array<{ model_code: string; station_code: string; station_name: string; required_qty: number }>;
   transactions: MaterialTransaction[];
+  matchedIdentifier: string;
   visibleSections: Record<string, boolean>;
   formatCount: (value: number) => string;
   formatDate: (value: string | null | undefined) => string;
@@ -120,7 +121,10 @@ const shouldShowTransactionOverviewAction = computed(() => props.transactions.le
       </section>
 
       <section v-if="visibleSections.transactions" class="ui-panel-card">
-        <div class="ui-section-head"><h3>收退料記錄</h3><span class="section-meta">近期 {{ visibleTransactions.length }} 筆</span></div>
+        <div class="ui-section-head">
+          <h3>{{ matchedIdentifier ? `${matchedIdentifier} 收退料記錄` : "收退料記錄" }}</h3>
+          <span class="section-meta">近期 {{ visibleTransactions.length }} 筆</span>
+        </div>
         <table v-if="transactions.length > 0" class="ui-info-table">
           <thead>
             <tr><th>類型</th><th>日期</th><th>單號</th><th>datecode/編號</th><th>數量</th></tr>

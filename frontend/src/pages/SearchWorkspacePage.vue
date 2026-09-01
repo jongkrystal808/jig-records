@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { onBeforeRouteLeave, useRoute, useRouter, type LocationQueryRaw } from "vue-router";
+import { useRoute, useRouter, type LocationQueryRaw } from "vue-router";
 
 import { api, fetchFixtureImageObjectUrl } from "@/api";
 import { authSession, requestInventoryBatchOpen, selectedCustomerId, setCustomerSwitchGuard } from "@/appState";
+import { requestConfirmation } from "@/confirmState";
 import InlineSpinner from "@/components/common/InlineSpinner.vue";
+import FixtureOverviewPanel from "@/components/search/FixtureOverviewPanel.vue";
 import FixtureInfoPanel from "@/components/search/FixtureInfoPanel.vue";
 import ModelInfoPanel from "@/components/search/ModelInfoPanel.vue";
 import SearchHeroSection from "@/components/search/SearchHeroSection.vue";
@@ -19,10 +21,15 @@ import type {
   SearchResult,
   StockStatus
 } from "@/types";
+import type { FixtureSearchMode, SearchWorkspaceHandoffState } from "@/utils/searchHomeModeState";
 import { formatLocalDate } from "@/utils/date";
 import { groupIdentifierStockByOwnership } from "@/utils/display";
 
 type SearchMode = "fixture" | "model";
+
+const emit = defineEmits<{
+  reportContextChange: [state: SearchWorkspaceHandoffState];
+}>();
 type DetailTab = "info" | "edit";
 
 type RecentFixtureShortcut = {
@@ -32,6 +39,7 @@ type RecentFixtureShortcut = {
 };
 
 const SEARCH_PAGE_SIZE = 12;
+const FIXTURE_OVERVIEW_PAGE_SIZE = 20;
 const RECENT_SHORTCUT_TRANSACTION_LIMIT = 80;
 const FIXTURE_CONTEXT_TRANSACTION_LIMIT = 8;
 const MAX_RECENT_FIXTURE_SHORTCUTS = 20;
@@ -61,6 +69,7 @@ const defaultFixtureSections = ["summary", "image", "identifier", "transactions"
 const defaultModelSections = ["summary", "stations", "fixtures", "requirements"];
 
 const mode = ref<SearchMode>("fixture");
+const fixtureSearchMode = ref<FixtureSearchMode>("fixture");
 const detailTab = ref<DetailTab>("info");
 const queryDraft = ref("");
 const committedQuery = ref("");
@@ -73,6 +82,12 @@ const searchResults = ref<SearchResult[]>([]);
 const searchTotal = ref(0);
 const searchPage = ref(1);
 const searchHasMore = ref(false);
+const fixtureOverviewRows = ref<SearchResult[]>([]);
+const fixtureOverviewTotal = ref(0);
+const fixtureOverviewPage = ref(1);
+const fixtureOverviewHasMore = ref(false);
+const fixtureOverviewLoading = ref(false);
+const fixtureOverviewLoadingMore = ref(false);
 const selectedResultId = ref<number | null>(null);
 const selectedFixtureContext = ref<SearchFixtureContext | null>(null);
 const selectedModelContext = ref<SearchModelContext | null>(null);
@@ -87,6 +102,19 @@ const modelSectionSelection = ref<string[]>(loadSelection(MODEL_SECTION_KEY, def
 
 let detailRequestId = 0;
 let searchRequestId = 0;
+let fixtureOverviewRequestId = 0;
+let syncingSearchRoute = false;
+let searchRouteReady = false;
+
+const SEARCH_ROUTE_KEYS = new Set([
+  "mode",
+  "fixture_search",
+  "q",
+  "query_draft",
+  "page",
+  "selected_id",
+  "detail"
+]);
 
 function loadSelection(key: string, fallback: string[]): string[] {
   const raw = localStorage.getItem(key);
@@ -134,6 +162,14 @@ const panelLoading = computed(() => loading.value || detailLoading.value);
 const selectedFixture = computed(() => selectedFixtureContext.value?.fixture ?? null);
 const selectedFixtureStock = computed(() => selectedFixtureContext.value?.stock ?? null);
 const selectedModel = computed(() => selectedModelContext.value?.model ?? null);
+const selectedSearchResult = computed(() =>
+  searchResults.value.find((row) => row.reference_id === selectedResultId.value) ?? null
+);
+const selectedExactIdentifier = computed(() =>
+  mode.value === "fixture" && fixtureSearchMode.value === "identifier"
+    ? selectedSearchResult.value?.matched_identifier?.trim() || ""
+    : ""
+);
 const visibleFixtureSections = computed(() => {
   const keys = new Set(fixtureSectionSelection.value);
   return {
@@ -146,6 +182,19 @@ const visibleFixtureSections = computed(() => {
     maintenance: keys.has("maintenance")
   };
 });
+const effectiveVisibleFixtureSections = computed(() =>
+  selectedExactIdentifier.value
+    ? {
+        summary: true,
+        image: true,
+        identifier: false,
+        transactions: true,
+        models: false,
+        stations: false,
+        maintenance: false
+      }
+    : visibleFixtureSections.value
+);
 const visibleModelSections = computed(() => {
   const keys = new Set(modelSectionSelection.value);
   return {
@@ -182,8 +231,20 @@ const modelSectionChips = computed(() =>
     canEdit.value ? { key: "maintenance", label: "資料維護" } : null
   ].filter((item): item is { key: string; label: string } => item !== null)
 );
-const activeSectionKeys = computed(() => (mode.value === "fixture" ? fixtureSectionSelection.value : modelSectionSelection.value));
-const currentSectionChips = computed(() => (mode.value === "fixture" ? fixtureSectionChips.value : modelSectionChips.value));
+const activeSectionKeys = computed(() =>
+  selectedExactIdentifier.value
+    ? []
+    : mode.value === "fixture"
+      ? fixtureSectionSelection.value
+      : modelSectionSelection.value
+);
+const currentSectionChips = computed(() =>
+  selectedExactIdentifier.value
+    ? []
+    : mode.value === "fixture"
+      ? fixtureSectionChips.value
+      : modelSectionChips.value
+);
 const shouldShowEmptyResultState = computed(
   () => searchResults.value.length === 0 && !shouldShowFixtureCreateForm.value && !shouldShowModelCreateForm.value
 );
@@ -240,11 +301,11 @@ function clearSelectedFixtureImage(): void {
 async function refreshSelectedFixtureImage(): Promise<void> {
   clearSelectedFixtureImage();
   imageLoadFailed.value = false;
-  if (!selectedFixture.value) {
+  if (!selectedFixture.value || selectedCustomerId.value == null) {
     return;
   }
   try {
-    selectedFixtureImage.value = await fetchFixtureImageObjectUrl(selectedFixture.value.code);
+    selectedFixtureImage.value = await fetchFixtureImageObjectUrl(selectedFixture.value.code, selectedCustomerId.value);
   } catch {
     imageLoadFailed.value = true;
   }
@@ -279,7 +340,13 @@ async function loadSelectedContext(): Promise<void> {
   detailLoading.value = true;
   try {
     if (mode.value === "fixture") {
-      const context = await api.getFixtureSearchContext(selectedResultId.value, customerId.value, FIXTURE_CONTEXT_TRANSACTION_LIMIT);
+      const matchedIdentifier = selectedExactIdentifier.value || undefined;
+      const context = await api.getFixtureSearchContext(
+        selectedResultId.value,
+        customerId.value,
+        FIXTURE_CONTEXT_TRANSACTION_LIMIT,
+        matchedIdentifier
+      );
       if (requestId !== detailRequestId) return;
       selectedFixtureContext.value = context;
       selectedModelContext.value = null;
@@ -309,6 +376,9 @@ function buildSearchRouteQuery(): LocationQueryRaw {
     mode: mode.value,
     q: committedQuery.value.trim()
   };
+  if (mode.value === "fixture") {
+    query.fixture_search = fixtureSearchMode.value;
+  }
   if (searchPage.value > 1) {
     query.page = String(searchPage.value);
   }
@@ -318,12 +388,97 @@ function buildSearchRouteQuery(): LocationQueryRaw {
   if (detailTab.value === "edit") {
     query.detail = "edit";
   }
+  const draftQuery = queryDraft.value.trim();
+  if (draftQuery && draftQuery !== committedQuery.value.trim()) {
+    query.query_draft = draftQuery;
+  }
   return query;
+}
+
+function buildCurrentSearchLocation(): { path: string; query: LocationQueryRaw } {
+  const preserved = Object.fromEntries(
+    Object.entries(route.query).filter(([key]) => !SEARCH_ROUTE_KEYS.has(key))
+  );
+  return {
+    path: route.path,
+    query: {
+      ...preserved,
+      ...buildSearchRouteQuery()
+    }
+  };
+}
+
+async function syncSearchRoute(history: "push" | "replace"): Promise<void> {
+  const target = buildCurrentSearchLocation();
+  if (router.resolve(target).fullPath === route.fullPath) return;
+  syncingSearchRoute = true;
+  try {
+    await router[history](target);
+  } finally {
+    syncingSearchRoute = false;
+  }
+}
+
+async function loadFixtureOverview(append = false): Promise<void> {
+  const requestId = ++fixtureOverviewRequestId;
+  if (!customerId.value) {
+    fixtureOverviewRows.value = [];
+    fixtureOverviewTotal.value = 0;
+    fixtureOverviewPage.value = 1;
+    fixtureOverviewHasMore.value = false;
+    fixtureOverviewLoading.value = false;
+    fixtureOverviewLoadingMore.value = false;
+    return;
+  }
+
+  const targetPage = append ? fixtureOverviewPage.value + 1 : 1;
+  if (append) {
+    fixtureOverviewLoadingMore.value = true;
+  } else {
+    fixtureOverviewRows.value = [];
+    fixtureOverviewTotal.value = 0;
+    fixtureOverviewPage.value = 1;
+    fixtureOverviewHasMore.value = false;
+    fixtureOverviewLoading.value = true;
+  }
+  try {
+    const page = await api.getFixtureOverview(
+      customerId.value,
+      targetPage,
+      FIXTURE_OVERVIEW_PAGE_SIZE
+    );
+    if (requestId !== fixtureOverviewRequestId) return;
+    fixtureOverviewRows.value = append
+      ? [...fixtureOverviewRows.value, ...page.items]
+      : page.items;
+    fixtureOverviewTotal.value = page.total;
+    fixtureOverviewPage.value = page.page;
+    fixtureOverviewHasMore.value = page.has_more;
+  } catch (err) {
+    if (requestId !== fixtureOverviewRequestId) return;
+    pushToast(err instanceof Error ? err.message : "載入治具總覽失敗。", "error");
+  } finally {
+    if (requestId === fixtureOverviewRequestId) {
+      fixtureOverviewLoading.value = false;
+      fixtureOverviewLoadingMore.value = false;
+    }
+  }
+}
+
+function notifyReportContextChange(): void {
+  emit("reportContextChange", {
+    mode: mode.value,
+    fixtureSearchMode: fixtureSearchMode.value,
+    draftQuery: queryDraft.value,
+    committedQuery: committedQuery.value,
+    selectedResultId: selectedResultId.value
+  });
 }
 
 function buildSearchReturnTo(): string {
   const query = buildSearchRouteQuery();
   if (route.name === "search") {
+    query.ui_surface = "modern";
     query.home_mode = "query";
   }
   return router.resolve({
@@ -332,24 +487,20 @@ function buildSearchReturnTo(): string {
   }).fullPath;
 }
 
-function confirmDiscardSearchDraft(message = "目前有未儲存的修改，離開後會遺失。要繼續嗎？"): boolean {
+async function confirmDiscardSearchDraft(message = "目前有未儲存的修改，離開後會遺失。要繼續嗎？"): Promise<boolean> {
   if (!hasUnsavedDraft.value) {
     return true;
   }
-  return window.confirm(message);
+  return requestConfirmation(message, {
+    title: "捨棄未儲存修改？",
+    confirmLabel: "捨棄並繼續",
+    tone: "danger"
+  });
 }
 
 function resetDraftFlags(): void {
   hasUnsavedFixtureDraft.value = false;
   hasUnsavedModelDraft.value = false;
-}
-
-function handleBeforeUnload(event: BeforeUnloadEvent): void {
-  if (!hasUnsavedDraft.value) {
-    return;
-  }
-  event.preventDefault();
-  event.returnValue = "";
 }
 
 async function runSearch(options: { append?: boolean; preferredId?: number | null; scrollToPanel?: boolean } = {}): Promise<void> {
@@ -379,6 +530,7 @@ async function runSearch(options: { append?: boolean; preferredId?: number | nul
       q,
       customerId: customerId.value,
       entityType: mode.value,
+      fixtureSearchMode: mode.value === "fixture" ? fixtureSearchMode.value : undefined,
       page: targetPage,
       pageSize: SEARCH_PAGE_SIZE
     });
@@ -411,15 +563,27 @@ async function runSearch(options: { append?: boolean; preferredId?: number | nul
 
 async function restoreSearchFromRoute(): Promise<void> {
   const routeMode = readRouteString(route.query.mode);
+  const routeFixtureSearchMode = readRouteString(route.query.fixture_search);
   const routeQuery = readRouteString(route.query.q).trim();
-  if ((routeMode !== "fixture" && routeMode !== "model") || !routeQuery) {
-    return;
+  const routeDraftQuery = readRouteString(route.query.query_draft).trim();
+  if (routeMode === "fixture" || routeMode === "model") {
+    mode.value = routeMode;
   }
-
-  mode.value = routeMode;
-  queryDraft.value = routeQuery;
+  fixtureSearchMode.value = routeFixtureSearchMode === "identifier" ? "identifier" : "fixture";
+  queryDraft.value = routeDraftQuery || routeQuery;
   committedQuery.value = routeQuery;
   detailTab.value = readRouteString(route.query.detail) === "edit" ? "edit" : "info";
+  if (!routeQuery) {
+    searchResults.value = [];
+    searchTotal.value = 0;
+    searchPage.value = 1;
+    searchHasMore.value = false;
+    selectedResultId.value = null;
+    selectedFixtureContext.value = null;
+    selectedModelContext.value = null;
+    clearSelectedFixtureImage();
+    return;
+  }
 
   const targetPage = readPositiveInteger(route.query.page, 1);
   const preferredId = readPositiveInteger(route.query.selected_id, 0) || null;
@@ -433,18 +597,21 @@ async function restoreSearchFromRoute(): Promise<void> {
   }
 }
 
-function submitSearch(): void {
-  if (!confirmDiscardSearchDraft()) {
+async function submitSearch(): Promise<void> {
+  if (!(await confirmDiscardSearchDraft())) {
     return;
   }
   resetDraftFlags();
   committedQuery.value = queryDraft.value.trim();
   detailTab.value = "info";
-  void runSearch();
+  searchPage.value = 1;
+  selectedResultId.value = null;
+  await runSearch();
+  await syncSearchRoute("push");
 }
 
-function clearSearch(): void {
-  if (!confirmDiscardSearchDraft()) {
+async function clearSearch(): Promise<void> {
+  if (!(await confirmDiscardSearchDraft())) {
     return;
   }
   queryDraft.value = "";
@@ -459,6 +626,7 @@ function clearSearch(): void {
   selectedModelContext.value = null;
   clearSelectedFixtureImage();
   resetDraftFlags();
+  await syncSearchRoute("push");
 }
 
 async function loadMoreResults(): Promise<void> {
@@ -466,6 +634,7 @@ async function loadMoreResults(): Promise<void> {
     return;
   }
   await runSearch({ append: true });
+  await syncSearchRoute("replace");
 }
 
 function toggleSection(targetMode: SearchMode, key: string): void {
@@ -493,8 +662,8 @@ function persistSelections(): void {
   localStorage.setItem(DETAIL_TAB_KEY, detailTab.value);
 }
 
-function applyRecentFixtureShortcut(fixtureCode: string): void {
-  if (!confirmDiscardSearchDraft()) {
+async function applyRecentFixtureShortcut(fixtureCode: string): Promise<void> {
+  if (!(await confirmDiscardSearchDraft())) {
     return;
   }
   resetDraftFlags();
@@ -502,7 +671,12 @@ function applyRecentFixtureShortcut(fixtureCode: string): void {
   queryDraft.value = fixtureCode;
   committedQuery.value = fixtureCode;
   detailTab.value = "info";
-  void runSearch();
+  await runSearch();
+  await syncSearchRoute("push");
+}
+
+async function openFixtureFromOverview(row: SearchResult): Promise<void> {
+  await applyRecentFixtureShortcut(row.title);
 }
 
 function goToFixtureInventoryOverview(): void {
@@ -513,6 +687,7 @@ function goToFixtureInventoryOverview(): void {
     path: "/inventory/overview",
     query: {
       fixture_code: selectedFixture.value.code,
+      ...(selectedExactIdentifier.value ? { tracking_code: selectedExactIdentifier.value } : {}),
       return_to: buildSearchReturnTo()
     }
   });
@@ -525,7 +700,7 @@ function goToFixtureBatchImport(): void {
   requestInventoryBatchOpen(selectedFixture.value.code);
 }
 
-function goCreateFromNoResult(): void {
+async function goCreateFromNoResult(): Promise<void> {
   if (!canEdit.value) {
     return;
   }
@@ -534,49 +709,68 @@ function goCreateFromNoResult(): void {
     selection.value = [...selection.value, "maintenance"];
   }
   detailTab.value = "edit";
+  await syncSearchRoute("push");
 }
 
-function handleModeChange(nextMode: SearchMode): void {
+async function handleModeChange(nextMode: SearchMode): Promise<void> {
   if (nextMode === mode.value) {
     return;
   }
-  if (!confirmDiscardSearchDraft()) {
+  if (!(await confirmDiscardSearchDraft())) {
     return;
   }
   resetDraftFlags();
   mode.value = nextMode;
+  searchPage.value = 1;
+  selectedResultId.value = null;
+  if (hasActiveQuery.value) await runSearch();
+  await syncSearchRoute("push");
 }
 
-function handleResultSelection(nextResultId: number): void {
+async function handleFixtureSearchModeChange(nextMode: FixtureSearchMode): Promise<void> {
+  if (nextMode === fixtureSearchMode.value) return;
+  if (!(await confirmDiscardSearchDraft())) return;
+  resetDraftFlags();
+  fixtureSearchMode.value = nextMode;
+  searchPage.value = 1;
+  selectedResultId.value = null;
+  if (hasActiveQuery.value) await runSearch();
+  await syncSearchRoute("push");
+}
+
+async function handleResultSelection(nextResultId: number): Promise<void> {
   if (nextResultId === selectedResultId.value) {
     return;
   }
-  if (!confirmDiscardSearchDraft()) {
+  if (!(await confirmDiscardSearchDraft())) {
     return;
   }
   resetDraftFlags();
   selectedResultId.value = nextResultId;
+  await syncSearchRoute("push");
 }
 
-function handleDetailTabChange(nextTab: DetailTab): void {
+async function handleDetailTabChange(nextTab: DetailTab): Promise<void> {
   if (nextTab === detailTab.value) {
     return;
   }
-  if (detailTab.value === "edit" && !confirmDiscardSearchDraft()) {
+  if (detailTab.value === "edit" && !(await confirmDiscardSearchDraft())) {
     return;
   }
   if (nextTab !== "edit") {
     resetDraftFlags();
   }
   detailTab.value = nextTab;
+  await syncSearchRoute("push");
 }
 
-function cancelEdit(): void {
-  if (detailTab.value === "edit" && !confirmDiscardSearchDraft()) {
+async function cancelEdit(): Promise<void> {
+  if (detailTab.value === "edit" && !(await confirmDiscardSearchDraft())) {
     return;
   }
   resetDraftFlags();
   detailTab.value = "info";
+  await syncSearchRoute("replace");
 }
 
 function goToProduction(): void {
@@ -595,12 +789,14 @@ function goToProduction(): void {
 async function handleFixtureSaved(fixtureId: number): Promise<void> {
   detailTab.value = "info";
   await runSearch({ preferredId: fixtureId });
+  await syncSearchRoute("replace");
   pushToast("治具資料已更新。", "success");
 }
 
 async function handleModelSaved(modelId: number): Promise<void> {
   detailTab.value = "info";
   await runSearch({ preferredId: modelId });
+  await syncSearchRoute("replace");
   pushToast("機種資料已更新。", "success");
 }
 
@@ -618,7 +814,7 @@ async function scrollToResultPanel(): Promise<void> {
   });
 }
 
-watch(mode, async () => {
+watch(mode, () => {
   if (mode.value === "fixture" && !visibleFixtureSections.value.maintenance && detailTab.value === "edit") {
     detailTab.value = "info";
   }
@@ -626,9 +822,6 @@ watch(mode, async () => {
     detailTab.value = "info";
   }
   persistSelections();
-  if (hasActiveQuery.value) {
-    await runSearch();
-  }
 });
 
 watch([fixtureSectionSelection, modelSectionSelection, detailTab], persistSelections, { deep: true });
@@ -638,7 +831,7 @@ watch(queryDraft, () => {
   }
 });
 watch(customerId, async () => {
-  await loadCustomerScopedShellData();
+  await Promise.all([loadCustomerScopedShellData(), loadFixtureOverview()]);
   if (hasActiveQuery.value) {
     await runSearch();
     return;
@@ -648,6 +841,7 @@ watch(customerId, async () => {
 watch(selectedResultId, async () => {
   await loadSelectedContext();
 });
+watch([mode, fixtureSearchMode, queryDraft, committedQuery, selectedResultId], notifyReportContextChange);
 onMounted(async () => {
   const savedMode = localStorage.getItem(MODE_KEY);
   if (savedMode === "fixture" || savedMode === "model") {
@@ -658,14 +852,22 @@ onMounted(async () => {
     detailTab.value = savedDetailTab;
   }
 
-  await loadCustomerScopedShellData();
+  await Promise.all([loadCustomerScopedShellData(), loadFixtureOverview()]);
   await restoreSearchFromRoute();
-  window.addEventListener("beforeunload", handleBeforeUnload);
+  searchRouteReady = true;
+  notifyReportContextChange();
 });
+
+watch(
+  () => route.fullPath,
+  async () => {
+    if (!searchRouteReady || syncingSearchRoute) return;
+    await restoreSearchFromRoute();
+  }
+);
 
 onBeforeUnmount(() => {
   clearSelectedFixtureImage();
-  window.removeEventListener("beforeunload", handleBeforeUnload);
   setCustomerSwitchGuard("search-page", false, "搜尋頁有尚未儲存的治具／機種修改");
 });
 
@@ -683,35 +885,49 @@ watch(
   { immediate: true }
 );
 
-onBeforeRouteLeave(() => {
-  if (!confirmDiscardSearchDraft()) {
-    return false;
-  }
-  return true;
-});
 </script>
 
 <template>
   <div class="search-shell" :class="{ idle: !hasActiveQuery }">
-    <SearchHeroSection
-      :mode="mode"
-      :query-draft="queryDraft"
-      :has-active-query="hasActiveQuery"
-      :recent-fixture-shortcuts="recentFixtureShortcuts"
-      :section-chips="currentSectionChips"
-      :active-section-keys="activeSectionKeys"
-      @update:mode="handleModeChange"
-      @update:query-draft="queryDraft = $event"
-      @submit="submitSearch"
-      @clear="clearSearch"
-      @apply-recent-fixture-shortcut="applyRecentFixtureShortcut"
-      @toggle-section="toggleSection"
-    />
+    <div class="search-workspace-card" :class="{ idle: !hasActiveQuery }">
+      <div class="search-workspace-query">
+        <SearchHeroSection
+          :mode="mode"
+          :fixture-search-mode="fixtureSearchMode"
+          :query-draft="queryDraft"
+          :has-active-query="hasActiveQuery"
+          :recent-fixture-shortcuts="recentFixtureShortcuts"
+          :section-chips="currentSectionChips"
+          :active-section-keys="activeSectionKeys"
+          @update:mode="handleModeChange"
+          @update:fixture-search-mode="handleFixtureSearchModeChange"
+          @update:query-draft="queryDraft = $event"
+          @submit="submitSearch"
+          @clear="clearSearch"
+          @apply-recent-fixture-shortcut="applyRecentFixtureShortcut"
+          @toggle-section="toggleSection"
+        />
+      </div>
+
+      <div v-if="!hasActiveQuery" class="search-workspace-overview">
+        <FixtureOverviewPanel
+          :rows="fixtureOverviewRows"
+          :total="fixtureOverviewTotal"
+          :loading="fixtureOverviewLoading"
+          :loading-more="fixtureOverviewLoadingMore"
+          :has-more="fixtureOverviewHasMore"
+          :format-count="formatCount"
+          :stock-tone="stockTone"
+          @select="openFixtureFromOverview"
+          @load-more="loadFixtureOverview(true)"
+        />
+      </div>
+    </div>
 
     <section v-if="hasActiveQuery" ref="resultPanel" class="content-grid">
       <SearchResultPanel
         :can-edit="canEdit"
-        :show-maintenance-tab="mode === 'fixture' ? visibleFixtureSections.maintenance : visibleModelSections.maintenance"
+        :show-maintenance-tab="mode === 'fixture' ? effectiveVisibleFixtureSections.maintenance : visibleModelSections.maintenance"
         :detail-tab="detailTab"
         :loading="panelLoading"
         :empty="shouldShowEmptyResultState"
@@ -740,6 +956,7 @@ onBeforeRouteLeave(() => {
                 </div>
                 <span class="result-row-subtitle">{{ row.subtitle || "-" }}</span>
                 <div v-if="row.entity_type === 'fixture'" class="result-row-meta">
+                  <span v-if="row.matched_identifier">datecode/編號 {{ row.matched_identifier }}</span>
                   <span>庫存 {{ formatCount(row.stock_qty ?? 0) }}</span>
                   <span>{{ row.location_code || "-" }}</span>
                 </div>
@@ -769,7 +986,8 @@ onBeforeRouteLeave(() => {
                 :related-models="selectedFixtureModels"
                 :station-rows="selectedFixtureStationRows"
                 :transactions="selectedFixtureTransactions"
-                :visible-sections="visibleFixtureSections"
+                :matched-identifier="selectedExactIdentifier"
+                :visible-sections="effectiveVisibleFixtureSections"
                 :format-count="formatCount"
                 :format-date="formatLocalDate"
                 :stock-tone="stockTone"
@@ -832,12 +1050,68 @@ onBeforeRouteLeave(() => {
   align-content: start;
 }
 
+.search-workspace-card {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.search-workspace-card::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset: 0 auto 0 0;
+  width: 4px;
+  border-radius: 20px 0 0 20px;
+  background: linear-gradient(180deg, var(--blue) 0%, color-mix(in srgb, var(--blue) 55%, white) 100%);
+  pointer-events: none;
+}
+
+.search-workspace-query {
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--blue) 16%, transparent), transparent 30%),
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--blue) 8%, transparent), transparent 26%),
+    linear-gradient(180deg, #ffffff 0%, color-mix(in srgb, var(--blue-soft) 50%, white) 100%);
+}
+
+.search-workspace-card.idle .search-workspace-query {
+  border-radius: 20px 20px 0 0;
+}
+
+.search-workspace-overview {
+  border-top: 1px solid color-mix(in srgb, var(--blue) 14%, var(--line));
+  border-radius: 0 0 20px 20px;
+  background: rgba(255, 255, 255, 0.98);
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   align-items: start;
   scroll-margin-top: 96px;
+}
+
+@media (max-width: 680px) {
+  .search-workspace-card,
+  .search-workspace-query {
+    border-radius: 16px;
+  }
+
+  .search-workspace-card::before {
+    border-radius: 16px 0 0 16px;
+  }
+
+  .search-workspace-card.idle .search-workspace-query {
+    border-radius: 16px 16px 0 0;
+  }
+
+  .search-workspace-overview {
+    border-radius: 0 0 16px 16px;
+  }
 }
 
 .search-results-layout {

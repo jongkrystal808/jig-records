@@ -15,6 +15,7 @@ class GlobalSearchResult(ORMModel):
     stock_qty: int | None = None
     stock_status: str | None = None
     location_code: str | None = None
+    matched_identifier: str | None = None
 
 
 class GlobalSearchResultPage(ORMModel):

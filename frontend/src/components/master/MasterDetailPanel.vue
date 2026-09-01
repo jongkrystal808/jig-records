@@ -4,6 +4,8 @@ import { computed } from "vue";
 import UiFormActions from "@/components/UiFormActions.vue";
 import UiSectionHeader from "@/components/UiSectionHeader.vue";
 import UiStatusPill from "@/components/UiStatusPill.vue";
+import FormUserCustomerScopePicker from "@/components/home/FormUserCustomerScopePicker.vue";
+import MasterReadonlySummary from "@/components/master/MasterReadonlySummary.vue";
 import type { AppUser, Customer } from "@/types";
 import { formatLocalDate } from "@/utils/date";
 
@@ -12,7 +14,9 @@ type MasterTab = "fixture" | "model" | "station" | "customer" | "user";
 const props = defineProps<{
   activeTab: MasterTab;
   tabTitle: string;
+  editorMode: "summary" | "edit" | "create";
   isCreateMode: boolean;
+  summaryFields: Array<{ label: string; value: string }>;
   selectedDetailLabel: string;
   selectedStatusBadge: { label: string; tone: "active" | "inactive" } | null;
   saving: boolean;
@@ -26,6 +30,7 @@ const props = defineProps<{
   selectedCustomerRow: Customer | null;
   selectedUser: AppUser | null;
   customerAssignedUsers: AppUser[];
+  customers: Customer[];
   users: AppUser[];
   fixtureForm: {
     code: string;
@@ -59,9 +64,12 @@ const props = defineProps<{
     is_active: boolean;
     password: string;
     reset_password: string;
+    allowed_customer_ids: number[];
   };
-  onStartCreate: () => void;
-  onReloadSelection: () => void;
+  onStartCreate: () => void | Promise<void>;
+  onStartEdit: () => void;
+  onCancelEdit: () => void | Promise<void>;
+  onReloadSelection: () => void | Promise<void>;
   onSaveCurrent: () => void | Promise<void>;
   onToggleCurrentActive: () => void | Promise<void>;
   onRequestDeleteEntity: () => void;
@@ -95,26 +103,48 @@ const hardDeleteMeta = computed(() => {
 
 <template>
   <article class="panel detail-panel" data-tour="detailed-master-detail" :class="{ 'detail-panel-create': isCreateMode }">
-    <UiSectionHeader class="panel-head" :class="{ 'panel-head-create': isCreateMode }" :title="`${tabTitle}詳細資料`" :description="isCreateMode ? '新增資料' : selectedDetailLabel">
+    <UiSectionHeader
+      class="panel-head"
+      :class="{ 'panel-head-create': isCreateMode }"
+      :title="`${tabTitle}詳細資料`"
+      :description="editorMode === 'create' ? '新增資料' : summaryFields.length ? selectedDetailLabel : '請先選擇資料'"
+    >
       <template #actions>
         <span v-if="isCreateMode" class="mode-chip mode-chip-create">新增模式</span>
-        <UiStatusPill v-if="selectedStatusBadge" class="status-legend" :label="selectedStatusBadge.label" :tone="selectedStatusBadge.tone" />
+        <span v-else-if="editorMode === 'edit'" class="mode-chip mode-chip-edit">編輯模式</span>
+        <UiStatusPill v-if="selectedStatusBadge && editorMode !== 'create'" class="status-legend" :label="selectedStatusBadge.label" :tone="selectedStatusBadge.tone" />
         <div class="action-group detail-head-actions">
           <button class="outline-btn small" type="button" :disabled="saving" @click="onStartCreate">新增</button>
-          <button class="ghost-btn small action-divider-btn" type="button" :disabled="saving || isCreateMode" @click="onReloadSelection">重載</button>
+          <button
+            v-if="editorMode === 'summary'"
+            class="ghost-btn small action-divider-btn"
+            type="button"
+            :disabled="saving || summaryFields.length === 0"
+            @click="onStartEdit"
+          >
+            編輯
+          </button>
+          <button v-else class="ghost-btn small action-divider-btn" type="button" :disabled="saving || isCreateMode" @click="onReloadSelection">重載</button>
         </div>
       </template>
     </UiSectionHeader>
 
-    <form class="detail-form" data-tour="master-detail-form" @submit.prevent="onSaveCurrent">
+    <MasterReadonlySummary
+      v-if="editorMode === 'summary'"
+      :fields="summaryFields"
+      :entity-label="tabTitle"
+      :on-edit="onStartEdit"
+    />
+
+    <form v-else class="detail-form" data-tour="master-detail-form" @submit.prevent="onSaveCurrent">
       <template v-if="activeTab === 'fixture'">
         <label>
           <span>治具編號 *</span>
           <input v-model="fixtureForm.code" required />
         </label>
         <label><span>治具名稱 *</span><input v-model="fixtureForm.name" required /></label>
-        <label><span>產線儲位</span><input v-model="fixtureForm.line_storage_location" placeholder="A-01-03" /></label>
-        <label><span>部門儲位</span><input v-model="fixtureForm.department_storage_location" placeholder="RD-SHELF-3" /></label>
+        <label><span>產線儲位</span><input v-model="fixtureForm.line_storage_location" placeholder="T2, AXG001, MOXA001" /></label>
+        <label><span>部門儲位</span><input v-model="fixtureForm.department_storage_location" placeholder="RD-SHELF-3, BNG001" /></label>
         <label><span>最低水位</span><input v-model.number="fixtureForm.min_stock_qty" type="number" min="0" /></label>
         <label>
           <span>負責人</span>
@@ -176,19 +206,22 @@ const hardDeleteMeta = computed(() => {
             </div>
           </div>
         </div>
-        <label class="full"><span>建立時間</span><input :value="formatLocalDate(selectedCustomerRow?.created_at)" disabled /></label>
-        <label class="full"><span>更新時間</span><input :value="formatLocalDate(selectedCustomerRow?.updated_at)" disabled /></label>
+        <label class="full"><span>建立日期</span><input :value="formatLocalDate(selectedCustomerRow?.created_at)" disabled /></label>
+        <label class="full"><span>更新日期</span><input :value="formatLocalDate(selectedCustomerRow?.updated_at)" disabled /></label>
       </template>
 
       <template v-else-if="canManageUsers">
         <label><span>帳號 *</span><input v-model="userForm.username" :disabled="selectedUserId !== null" required /></label>
         <label><span>Email</span><input v-model="userForm.email" type="email" placeholder="name@example.com" /></label>
         <label><span>顯示名稱 *</span><input v-model="userForm.display_name" required /></label>
-        <label><span>角色</span><select v-model="userForm.role"><option value="admin">Admin</option><option value="user">User</option></select></label>
+        <label><span>角色</span><select v-model="userForm.role"><option value="super_admin">Super Admin</option><option value="admin">Admin</option><option value="user">User</option></select></label>
         <label><span>狀態</span><select v-model="userForm.is_active"><option :value="true">啟用中</option><option :value="false">停用</option></select></label>
         <label v-if="selectedUserId === null" class="full"><span>登入密碼 *</span><input v-model="userForm.password" type="password" minlength="6" required /></label>
-        <label class="full"><span>建立時間</span><input :value="formatLocalDate(selectedUser?.created_at)" disabled /></label>
-        <label class="full"><span>更新時間</span><input :value="formatLocalDate(selectedUser?.updated_at)" disabled /></label>
+        <div class="full role-scope-panel">
+          <FormUserCustomerScopePicker v-model="userForm.allowed_customer_ids" :customers="customers" />
+        </div>
+        <label class="full"><span>建立日期</span><input :value="formatLocalDate(selectedUser?.created_at)" disabled /></label>
+        <label class="full"><span>更新日期</span><input :value="formatLocalDate(selectedUser?.updated_at)" disabled /></label>
         <label v-if="selectedUserId !== null" class="full">
           <span>重設密碼</span>
           <div class="inline-action">
@@ -209,7 +242,7 @@ const hardDeleteMeta = computed(() => {
         :delete-label="toggleActionLabel"
         :show-delete="activeTab !== 'customer'"
         :state-text="isCreateMode ? '新增模式' : '編輯模式'"
-        @cancel="onStartCreate"
+        @cancel="onCancelEdit"
         @delete="onToggleCurrentActive"
       />
       <div v-if="hardDeleteMeta && canDeleteMasterEntity && !isCreateMode" class="fixture-delete-zone">
@@ -276,6 +309,12 @@ const hardDeleteMeta = computed(() => {
   color: #8f4b00;
   background: rgba(255, 239, 207, 0.95);
   border: 1px solid rgba(224, 138, 30, 0.24);
+}
+
+.mode-chip-edit {
+  color: #24558e;
+  background: #edf5ff;
+  border: 1px solid #c7daf2;
 }
 
 .fixture-delete-zone {

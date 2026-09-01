@@ -117,11 +117,11 @@ async function save(): Promise<void> {
     </label>
     <label>
       <span>產線儲位</span>
-      <input v-model="form.line_storage_location" placeholder="A-01-03" />
+      <input v-model="form.line_storage_location" placeholder="T2, AXG001, MOXA001" />
     </label>
     <label>
       <span>部門儲位</span>
-      <input v-model="form.department_storage_location" placeholder="RD-SHELF-3" />
+      <input v-model="form.department_storage_location" placeholder="RD-SHELF-3, BNG001" />
     </label>
     <label>
       <span>最低水位</span>

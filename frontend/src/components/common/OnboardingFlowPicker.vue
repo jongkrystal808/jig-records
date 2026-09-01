@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import type { OnboardingFlowId } from "@/onboarding";
+import UiModalShell from "@/components/common/UiModalShell.vue";
+import type { OnboardingFlowId, OnboardingSurface, OnboardingVariant } from "@/onboarding";
 
 type OnboardingFlowCard = {
   id: OnboardingFlowId;
@@ -11,11 +12,14 @@ type OnboardingFlowCard = {
   stepCount: number;
   disabled: boolean;
   disabledReason: string;
+  variant: OnboardingVariant;
 };
 
 const props = defineProps<{
   open: boolean;
   flows: OnboardingFlowCard[];
+  role: string;
+  surface: OnboardingSurface;
 }>();
 
 const emit = defineEmits<{
@@ -23,31 +27,41 @@ const emit = defineEmits<{
   select: [flowId: OnboardingFlowId];
 }>();
 
-const detailedFlow = computed(() => props.flows.find((flow) => flow.id === "system-detailed-guide") ?? null);
-const conciseFlows = computed(() => props.flows.filter((flow) => flow.id !== "system-detailed-guide"));
+const detailedFlow = computed(() => props.flows.find((flow) => flow.variant === "detailed") ?? null);
+const conciseFlows = computed(() => props.flows.filter((flow) => flow.variant === "concise"));
+const isGuest = computed(() => props.role === "guest");
+const surfaceLabel = computed(() => ({
+  modern: "Modern UI",
+  form: "Form UI",
+  workbench: "工作台 UI"
+})[props.surface]);
 </script>
 
 <template>
-  <teleport to="body">
-    <div v-if="open" class="picker-layer" aria-live="polite">
-      <div class="picker-backdrop" @click="emit('close')"></div>
-      <section class="picker-card">
+  <UiModalShell
+    :open="open"
+    labelled-by="onboarding-picker-title"
+    layer-class="picker-layer"
+    dialog-class="picker-card"
+    @close="emit('close')"
+  >
         <header class="picker-head">
           <div>
-            <span class="picker-eyebrow">Onboarding</span>
-            <h2>選擇要看的教學</h2>
-            <p>可選單一功能的精簡教學，也可選「全系統按鈕與操作說明」詳細版，從首頁一路認識各工作頁。</p>
+            <span class="picker-eyebrow">{{ surfaceLabel }} Onboarding</span>
+            <h2 id="onboarding-picker-title">{{ surfaceLabel }} 新手教學</h2>
+            <p v-if="isGuest">可先看精簡版快速認識目前介面，或觀看完整唯讀教學；需登入的操作權限也列在下方。</p>
+            <p v-else>這裡只顯示 {{ surfaceLabel }} 的教學。可用精簡版快速查閱，也可從完整詳細版逐區認識工作流程。</p>
           </div>
-          <button class="outline-btn" type="button" @click="emit('close')">關閉</button>
+          <button class="outline-btn" type="button" data-modal-initial-focus @click="emit('close')">關閉</button>
         </header>
 
         <section v-if="detailedFlow" class="picker-section detailed-section" aria-labelledby="detailed-guide-heading">
           <div class="section-head">
             <div>
               <span class="section-kicker">推薦入口</span>
-              <h3 id="detailed-guide-heading">完整詳細版</h3>
+              <h3 id="detailed-guide-heading">{{ isGuest ? "完整唯讀教學" : "完整詳細版" }}</h3>
             </div>
-            <span class="section-hint">第一次完整認識系統，請從這裡開始</span>
+            <span class="section-hint">{{ isGuest ? "涵蓋所有訪客可查看功能" : "第一次完整認識系統，請從這裡開始" }}</span>
           </div>
           <article class="flow-card detailed-flow-card" :class="{ disabled: detailedFlow.disabled }">
             <div class="detailed-copy">
@@ -64,7 +78,7 @@ const conciseFlows = computed(() => props.flows.filter((flow) => flow.id !== "sy
               :disabled="detailedFlow.disabled"
               @click="emit('select', detailedFlow.id)"
             >
-              {{ detailedFlow.disabled ? detailedFlow.disabledReason : "開始完整詳細版" }}
+              {{ detailedFlow.disabled ? detailedFlow.disabledReason : isGuest ? "開始完整唯讀教學" : "開始完整詳細版" }}
             </button>
           </article>
         </section>
@@ -73,11 +87,11 @@ const conciseFlows = computed(() => props.flows.filter((flow) => flow.id !== "sy
           <div class="section-head">
             <div>
               <span class="section-kicker">快速查閱</span>
-              <h3 id="concise-guide-heading">功能精簡教學</h3>
+              <h3 id="concise-guide-heading">{{ isGuest ? "快速教學" : "功能精簡教學" }}</h3>
             </div>
-            <span class="section-hint">只想了解單一功能時再選下方卡片</span>
+            <span class="section-hint">{{ isGuest ? "快速認識目前介面的查詢與報表" : "只想了解單一功能時再選下方卡片" }}</span>
           </div>
-          <div class="picker-grid">
+          <div class="picker-grid" :class="{ 'single-flow': conciseFlows.length === 1 }">
           <article
             v-for="flow in conciseFlows"
             :key="flow.id"
@@ -101,13 +115,33 @@ const conciseFlows = computed(() => props.flows.filter((flow) => flow.id !== "sy
           </article>
           </div>
         </section>
-      </section>
-    </div>
-  </teleport>
+
+        <section v-if="isGuest" class="picker-section access-section" aria-labelledby="login-features-heading">
+          <div class="section-head">
+            <div>
+              <span class="section-kicker">權限說明</span>
+              <h3 id="login-features-heading">登入後可用功能</h3>
+            </div>
+            <span class="section-hint">訪客目前只能查看，不會顯示以下操作入口</span>
+          </div>
+          <div class="access-grid">
+            <article class="access-card">
+              <span class="access-badge">需 User / Admin / Super Admin</span>
+              <h4>收退料作業、資料維護、產能設定</h4>
+              <p>登入後才能新增或扣除庫存、維護治具／機種／站點，以及調整機種站點與治具需求。</p>
+            </article>
+            <article class="access-card">
+              <span class="access-badge admin">Admin / Super Admin</span>
+              <h4>帳目管理與資料品質</h4>
+              <p>Admin 與 Super Admin 可撤回或重算帳目，以及處理治具主檔品質問題；客戶與使用者管理僅限 Super Admin。</p>
+            </article>
+          </div>
+        </section>
+  </UiModalShell>
 </template>
 
 <style scoped>
-.picker-layer {
+:global(.picker-layer) {
   position: fixed;
   inset: 0;
   z-index: 130;
@@ -116,13 +150,7 @@ const conciseFlows = computed(() => props.flows.filter((flow) => flow.id !== "sy
   padding: 12px;
 }
 
-.picker-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.4);
-}
-
-.picker-card {
+:global(.picker-card) {
   position: relative;
   z-index: 1;
   width: min(980px, 100%);
@@ -210,6 +238,10 @@ const conciseFlows = computed(() => props.flows.filter((flow) => flow.id !== "sy
   gap: 14px;
 }
 
+.picker-grid.single-flow {
+  grid-template-columns: 1fr;
+}
+
 .detailed-flow-card {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -282,16 +314,66 @@ const conciseFlows = computed(() => props.flows.filter((flow) => flow.id !== "sy
   justify-self: start;
 }
 
+.access-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.access-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px dashed rgba(100, 116, 139, 0.45);
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.access-card h4,
+.access-card p {
+  margin: 0;
+}
+
+.access-card h4 {
+  color: #334155;
+  font-size: 15px;
+}
+
+.access-card p {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.access-badge {
+  width: fit-content;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: #dbeafe;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.access-badge.admin {
+  color: #7c3aed;
+  background: #ede9fe;
+}
+
 @media (max-width: 900px) {
-  .picker-layer {
+  :global(.picker-layer) {
     padding: 10px;
   }
 
-  .picker-card {
+  :global(.picker-card) {
     padding: 16px;
   }
 
   .picker-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .access-grid {
     grid-template-columns: 1fr;
   }
 

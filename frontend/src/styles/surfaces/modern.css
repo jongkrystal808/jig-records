@@ -1,0 +1,7 @@
+.modern-ui-surface {
+  --ui-surface-name: "modern";
+  --ui-surface-radius: 18px;
+  --ui-surface-density: comfortable;
+  min-height: 100%;
+  isolation: isolate;
+}

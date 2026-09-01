@@ -1,0 +1,7 @@
+Internal sources retained from the source deck:
+- C:/Users/user/PycharmProjects/jig-record/AGENT.md
+- C:/Users/user/PycharmProjects/jig-record/ARCHITECTURE_LANDING.md
+- C:/Users/user/PycharmProjects/jig-record/ARCHITECTURE.md
+- Internal fixture images embedded in the source deck.
+
+No external claims or assets are added. Improvement statements remain qualitative; the slide proposes KPIs for later measurement instead of claiming unverified percentages.

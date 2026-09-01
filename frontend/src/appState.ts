@@ -2,6 +2,12 @@ import { ref } from "vue";
 
 import type { OnboardingFlowId } from "@/onboarding";
 import type { AuthSession, Customer } from "@/types";
+import type { SearchWorkspaceHandoffState } from "@/utils/searchHomeModeState";
+import {
+  clearUnsavedChangesGuards,
+  setUnsavedChangesGuard,
+  unsavedChangesGuards
+} from "@/unsavedChangesGuard";
 
 const SESSION_KEY = "jig-record-session";
 const CUSTOMER_KEY = "jig-record-customer-id";
@@ -49,33 +55,37 @@ export const onboardingFlowId = ref<OnboardingFlowId | null>(null);
 export const onboardingStepIndex = ref(0);
 export const onboardingSandboxMode = ref(false);
 export const inventoryBatchShortcutFixtureCode = ref("");
+export const inventoryBatchShortcutMode = ref<"receipt" | "return">("receipt");
 export const inventoryBatchShortcutRequestId = ref(0);
-export const customerSwitchGuards = ref<Record<string, string>>({});
+export type FormWorkspaceKey = "import" | "inventory-overview" | "production" | "master";
+export const formWorkspaceRequestKey = ref<FormWorkspaceKey | null>(null);
+export const formWorkspaceRequestId = ref(0);
+export const customerSwitchGuards = unsavedChangesGuards;
+export const searchWorkspaceHandoffState = ref<SearchWorkspaceHandoffState | null>(null);
 
-export function requestInventoryBatchOpen(fixtureCode?: string): void {
+export function requestInventoryBatchOpen(
+  fixtureCode?: string,
+  mode: "receipt" | "return" = "receipt"
+): void {
   inventoryBatchShortcutFixtureCode.value = (fixtureCode ?? "").trim().toUpperCase();
+  inventoryBatchShortcutMode.value = mode;
   inventoryBatchShortcutRequestId.value += 1;
 }
 
+export function requestFormWorkspaceOpen(key: FormWorkspaceKey): void {
+  formWorkspaceRequestKey.value = key;
+  formWorkspaceRequestId.value += 1;
+}
+
 export function setCustomerSwitchGuard(key: string, active: boolean, message: string): void {
-  if (active) {
-    customerSwitchGuards.value = {
-      ...customerSwitchGuards.value,
-      [key]: message
-    };
-    return;
-  }
-
-  if (!(key in customerSwitchGuards.value)) {
-    return;
-  }
-
-  const nextGuards = { ...customerSwitchGuards.value };
-  delete nextGuards[key];
-  customerSwitchGuards.value = nextGuards;
+  setUnsavedChangesGuard(key, active, message);
 }
 
 export function resetSession(): void {
+  if (typeof window !== "undefined") {
+    window.sessionStorage.removeItem(SESSION_KEY);
+    window.sessionStorage.removeItem(CUSTOMER_KEY);
+  }
   authSession.value = null;
   selectedCustomerId.value = null;
   globalFixtureKeyword.value = "";
@@ -86,6 +96,10 @@ export function resetSession(): void {
   onboardingStepIndex.value = 0;
   onboardingSandboxMode.value = false;
   inventoryBatchShortcutFixtureCode.value = "";
+  inventoryBatchShortcutMode.value = "receipt";
   inventoryBatchShortcutRequestId.value = 0;
-  customerSwitchGuards.value = {};
+  formWorkspaceRequestKey.value = null;
+  formWorkspaceRequestId.value = 0;
+  clearUnsavedChangesGuards();
+  searchWorkspaceHandoffState.value = null;
 }
