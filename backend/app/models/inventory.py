@@ -33,9 +33,13 @@ class MaterialTransaction(Base, TimestampMixin):
     transaction_type: Mapped[str] = mapped_column(transaction_type_enum, nullable=False)
     transaction_no: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
     note: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    actor_user = relationship("User", foreign_keys=[actor_user_id])
     items = relationship("MaterialTransactionItem", back_populates="transaction", cascade="all, delete-orphan")
 
 

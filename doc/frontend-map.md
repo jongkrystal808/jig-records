@@ -22,7 +22,7 @@
     - `Workspace UI` -> `WorkspaceSystemSurface.vue`；全程使用 Modern 頂部欄，`/search`、`/inventory` 使用無重複版頭的 `WorkbenchUiSurface.vue` 快速作業，第四個分頁直接進入仍歸屬現場工作台的 `/inventory/overview` transaction-only 總檢視；資料維護與產能 route 承接完整維護頁面
       - 固定表頭／客戶／條件區／結果表格位置；`FormWorkspaceSwitcher.vue` 由各工作區插入條件區與表格之間，所有尺寸都直接顯示完整文字，並分為「日常作業／設定維護／系統管理」三組；窄版可橫向捲動
       - `篩選報表` -> heading-less `InventoryRelationsPage.vue`
-      - `收退料匯入` -> report-styled `BatchImportPanel.vue`（super_admin / admin / user）；收／退料、單號、治具、來源、datecode／編號、數量與備註均直接在資料列編輯，功能索引位於表格上方
+      - `收退料匯入` -> report-styled `BatchImportPanel.vue`（super_admin / admin / user）；收／退料、單號、治具、來源、datecode／編號、數量與備註均直接在資料列編輯，操作人固定取登入 session，不由表格或 CSV 指定，功能索引位於表格上方
       - `收退料總檢視` -> `FormReportOperations.vue` 分派至 `FormTransactionOperations.vue`（所有角色）
       - `產能` -> `FormReportOperations.vue` 分派至 `FormProductionOperations.vue` requirement / mapping grid（super_admin / admin / user）
       - `資料維護` -> `FormReportOperations.vue` 分派至 `FormMasterDataOperations.vue`（super_admin / admin / user；customer / user 維護僅 super_admin）

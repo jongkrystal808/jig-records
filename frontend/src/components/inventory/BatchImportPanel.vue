@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { api } from "@/api";
-import { authSession, onboardingActive, onboardingFlowId, onboardingStepIndex, setCustomerSwitchGuard } from "@/appState";
+import { onboardingActive, onboardingFlowId, onboardingStepIndex, setCustomerSwitchGuard } from "@/appState";
 import InlineSpinner from "@/components/common/InlineSpinner.vue";
 import InventoryBatchEntryGrid from "@/components/inventory/InventoryBatchEntryGrid.vue";
 import {
@@ -319,7 +319,6 @@ function exportCurrentRows(): void {
 const { saving, submit } = useInventoryBatchSubmit({
   customerId: () => props.customerId,
   tutorialMode: () => props.tutorialMode,
-  createdBy: () => authSession.value?.display_name || "System",
   readyRows,
   mergedReadyItems,
   canSubmit,

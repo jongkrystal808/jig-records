@@ -286,14 +286,18 @@ class BootstrapFlowTests(unittest.TestCase):
                 fixture_requirement_columns = {
                     column["name"] for column in inspect(connection).get_columns("fixture_requirements")
                 }
+                material_transaction_columns = {
+                    column["name"] for column in inspect(connection).get_columns("material_transactions")
+                }
                 table_names = set(inspect(connection).get_table_names())
             engine.dispose()
 
-            self.assertEqual(revision, "0019_fixture_storage")
+            self.assertEqual(revision, "0020_transaction_actor")
             self.assertEqual(admin_count, 1)
             self.assertEqual(admin_role, "super_admin")
             self.assertIn("designated_mode", fixture_requirement_columns)
             self.assertIn("fixture_requirement_identifiers", table_names)
+            self.assertIn("actor_user_id", material_transaction_columns)
             self.assertIn("storage_containers", table_names)
             self.assertIn("storage_codes", table_names)
             self.assertIn("fixture_placements", table_names)
@@ -356,12 +360,72 @@ class BootstrapFlowTests(unittest.TestCase):
                     text("SELECT target_type, model_id, station_id FROM fixture_placements ORDER BY target_type")
                 ).mappings().all()
             engine.dispose()
-            self.assertEqual(revision, "0019_fixture_storage")
+            self.assertEqual(revision, "0020_transaction_actor")
             self.assertEqual(codes, ["AXG001", "MOXA001"])
             self.assertEqual(len(placements), 3)
             self.assertEqual(
                 [row for row in placements if row["target_type"] == "model_station"],
                 [{"target_type": "model_station", "model_id": 99, "station_id": 99}],
+            )
+        finally:
+            if engine is not None:
+                engine.dispose()
+            object.__setattr__(settings, "database_url", original_database_url)
+            db_path.unlink(missing_ok=True)
+
+    def test_transaction_actor_migration_backfills_only_unique_user_matches(self) -> None:
+        temp_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        temp_file.close()
+        db_path = Path(temp_file.name)
+        original_database_url = settings.database_url
+        engine = None
+        try:
+            object.__setattr__(settings, "database_url", f"sqlite:///{db_path.as_posix()}")
+            command.upgrade(_alembic_config(), "0019_fixture_storage")
+            engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+            with engine.begin() as connection:
+                connection.execute(text("INSERT INTO customers (id, code, name) VALUES (90, 'C90', 'Customer 90')"))
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO users (id, username, password_hash, display_name, role, is_active)
+                        VALUES
+                            (90, 'alice', 'hash', 'Alice', 'user', 1),
+                            (91, 'bob', 'hash', 'Shared Name', 'user', 1),
+                            (92, 'carol', 'hash', 'Shared Name', 'user', 1)
+                        """
+                    )
+                )
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO material_transactions (
+                            id, customer_id, transaction_type, transaction_no, occurred_at,
+                            actor_user_id, created_by, note
+                        )
+                        VALUES
+                            (90, 90, 'receipt', 'LEGACY-ACTOR-UNIQUE', CURRENT_TIMESTAMP, NULL, 'alice', NULL),
+                            (91, 90, 'receipt', 'LEGACY-ACTOR-AMBIGUOUS', CURRENT_TIMESTAMP, NULL, 'Shared Name', NULL)
+                        """
+                    )
+                )
+            engine.dispose()
+
+            command.upgrade(_alembic_config(), "head")
+
+            engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+            with engine.begin() as connection:
+                actor_rows = connection.execute(
+                    text("SELECT transaction_no, actor_user_id FROM material_transactions ORDER BY id")
+                ).mappings().all()
+            engine.dispose()
+
+            self.assertEqual(
+                actor_rows,
+                [
+                    {"transaction_no": "LEGACY-ACTOR-UNIQUE", "actor_user_id": 90},
+                    {"transaction_no": "LEGACY-ACTOR-AMBIGUOUS", "actor_user_id": None},
+                ],
             )
         finally:
             if engine is not None:

@@ -156,6 +156,7 @@ class InventoryRepository:
                     "transaction_type": tx.transaction_type,
                     "transaction_no": self._normalize_transaction_no(tx.transaction_no),
                     "occurred_at": tx.occurred_at,
+                    "actor_user_id": tx.actor_user_id,
                     "created_by": tx.created_by,
                     "note": tx.note,
                     "created_at": tx.created_at,
@@ -170,6 +171,7 @@ class InventoryRepository:
         customer_id: int,
         transaction_type: str,
         occurred_at: datetime,
+        actor_user_id: int,
         created_by: str,
         transaction_no: str,
         note: str | None,
@@ -180,6 +182,7 @@ class InventoryRepository:
             transaction_type=transaction_type,
             transaction_no=normalized_transaction_no,
             occurred_at=occurred_at,
+            actor_user_id=actor_user_id,
             created_by=created_by,
             note=note,
         )
@@ -286,7 +289,7 @@ class InventoryRepository:
         *,
         customer_id: int,
         transaction_type: str,
-        created_by: str,
+        actor_user_id: int,
         transaction_no: str | None,
         created_at_from: datetime,
     ) -> list[MaterialTransaction]:
@@ -299,7 +302,7 @@ class InventoryRepository:
             .where(
                 MaterialTransaction.customer_id == customer_id,
                 MaterialTransaction.transaction_type == transaction_type,
-                MaterialTransaction.created_by == created_by,
+                MaterialTransaction.actor_user_id == actor_user_id,
                 MaterialTransaction.transaction_no == normalized_transaction_no,
                 MaterialTransaction.created_at >= created_at_from,
             )
@@ -761,6 +764,7 @@ class InventoryRepository:
                 MaterialTransaction.transaction_type.label("transaction_type"),
                 MaterialTransaction.transaction_no.label("transaction_no"),
                 MaterialTransaction.occurred_at.label("occurred_at"),
+                MaterialTransaction.actor_user_id.label("actor_user_id"),
                 MaterialTransaction.created_by.label("created_by"),
                 MaterialTransactionItem.fixture_id.label("fixture_id"),
                 fixture_code_expr.label("fixture_code"),

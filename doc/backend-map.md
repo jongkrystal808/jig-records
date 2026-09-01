@@ -352,11 +352,12 @@
   - `self_purchased_qty = 自購收料 - 自購退料`
   - `stock_qty = customer_supplied_qty + self_purchased_qty`
 - `/inventory/stock`、`/inventory/alerts`、`/inventory/identifier-stock-summary` 都回傳總庫存、客供庫存與自購庫存。
-- 客供 / 自購收料在作業上分開，且 datecode 不跨來源重複；退料可用量維持以 `fixture_id + identifier` 總量查核。
+- 退料可用量依 `fixture_id + identifier + ownership_type` 分類查核，不能用另一來源的餘額退料。
 - 批次貼上匯入前端仍走 `/receipts` / `/returns`
 - 前端方格將固定的治具、identifier、數量欄序列化為 `fixture-code<TAB>identifier<TAB>quantity`，再沿用既有解析與 `/receipts` / `/returns`
 - 前端顯示文案可將 `identifier` 呈現為 `datecode/編號`，但 backend API / schema / DB 欄位名仍維持 `identifier`
 - CSV 匯入走 `/inventory/transactions/import`
+- `POST /inventory/receipts`、`POST /inventory/returns` 與 CSV 匯入都以登入 session 的 `user_id` 決定操作人；payload `created_by`、CSV 同名欄位與舊 `operator_name` query 即使出現也不參與寫入。新交易同時保存 `actor_user_id` 與不可隨使用者改名而變動的 `created_by` 顯示名稱快照。
 - `POST /inventory/receipts` 與 `POST /inventory/returns` 的 `transaction_no` 現在是明確必填；repository 不再自動產生 fallback 單號
 - 交易歷史讀取模型 (`/inventory/transactions`、`/inventory/admin/transactions`、`/inventory/transactions/overview`) 仍容許 legacy `NULL / 空字串 transaction_no`，repository 讀取時會正規化成 `None`
 - overview 查詢支援 `transaction_type` / `ownership_type` / `date_from` / `date_to` / `fixture_code` / `transaction_no` / `identifier` / `created_by`；`transaction_type` 與 `ownership_type` 可用重複 query key 複選，同一分類為 OR、跨分類為 AND，單一值請求仍相容
@@ -726,6 +727,7 @@
   - `transaction_type`
   - `transaction_no`
   - `occurred_at`
+  - `actor_user_id`（登入使用者 FK；無法可靠歸屬的 legacy 交易可為 `NULL`）
   - `created_by`
   - `note`
 - 前端使用：

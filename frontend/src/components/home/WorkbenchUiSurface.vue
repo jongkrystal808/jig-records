@@ -723,7 +723,6 @@ async function submitTransaction(): Promise<void> {
 
   const payload = {
     customer_id: customerId,
-    created_by: currentUserName.value,
     transaction_no: form.transactionNo.trim(),
     note: form.note.trim() || undefined,
     items: [{

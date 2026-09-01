@@ -22,7 +22,6 @@ class StockTransactionItemInput(BaseModel):
 
 class StockTransactionCreate(BaseModel):
     customer_id: int
-    created_by: str = Field(min_length=1, max_length=120)
     occurred_at: datetime | None = None
     transaction_no: str = Field(min_length=1, max_length=64)
     note: str | None = None
@@ -96,6 +95,7 @@ class StockTransactionRead(ORMModel):
     transaction_type: Literal["receipt", "return"]
     transaction_no: str | None
     occurred_at: datetime
+    actor_user_id: int | None = None
     created_by: str
     note: str | None
     created_at: datetime
@@ -114,6 +114,7 @@ class TransactionOverviewRowRead(ORMModel):
     transaction_type: Literal["receipt", "return"]
     transaction_no: str | None
     occurred_at: datetime
+    actor_user_id: int | None = None
     created_by: str
     fixture_id: int | None
     fixture_code: str

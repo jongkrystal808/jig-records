@@ -667,6 +667,7 @@ class ConfigurationReportRepository:
                 MaterialTransaction.transaction_type.label("transaction_type"),
                 MaterialTransaction.transaction_no.label("transaction_no"),
                 MaterialTransaction.occurred_at.label("occurred_at"),
+                MaterialTransaction.actor_user_id.label("actor_user_id"),
                 MaterialTransaction.created_by.label("created_by"),
                 MaterialTransactionItem.fixture_id.label("fixture_id"),
                 Fixture.code.label("fixture_code"),

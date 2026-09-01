@@ -49,12 +49,37 @@ class ServiceTestCase(unittest.TestCase):
         self.production_service = ProductionService(self.db)
         self.inventory_service = InventoryService(self.db)
 
+    def ensure_transaction_actor(self) -> SessionContext:
+        if hasattr(self, "transaction_actor"):
+            return self.transaction_actor
+        user = self.repo.create_user(
+            username="test-operator",
+            email=None,
+            password_hash="test-hash",
+            display_name="Tester",
+            role="user",
+            is_active=True,
+        )
+        self.db.commit()
+        self.transaction_actor = SessionContext(
+            mode="user",
+            user_id=user.id,
+            username=user.username,
+            display_name=user.display_name,
+            role=user.role,
+            issued_at=0,
+            expires_at=9999999999,
+        )
+        self.inventory_service = InventoryService(self.db, actor=self.transaction_actor)
+        return self.transaction_actor
+
     def tearDown(self) -> None:
         self.db.close()
         self.engine.dispose()
         self.db_path.unlink(missing_ok=True)
 
     def seed_customer_bundle(self):
+        self.ensure_transaction_actor()
         customer = self.repo.create_customer(code="C-001", name="Customer 1")
         model = self.repo.create_model(customer_id=customer.id, code="M-001", name="Model 1")
         station = self.repo.create_station(customer_id=customer.id, code="ST-001", name="Station 1")
@@ -770,6 +795,7 @@ class MasterServiceTests(ServiceTestCase):
                         required_qty=1,
                     )
                 )
+                self.ensure_transaction_actor()
                 self.inventory_service.receipt(
                     StockTransactionCreate(
                         customer_id=customer.id,
@@ -1396,6 +1422,27 @@ class InventoryServiceTests(ServiceTestCase):
         self.assertIsNotNone(transaction)
         self.assertEqual(transaction.transaction_no, "12005436")
 
+    def test_receipt_persists_authenticated_actor_and_display_name_snapshot(self) -> None:
+        bundle = self.seed_customer_bundle()
+        payload = self._make_receipt_payload(bundle, transaction_no="ACTOR-SNAPSHOT-001")
+
+        self.inventory_service.receipt(payload)
+        transaction = self.db.scalar(
+            select(MaterialTransaction).where(MaterialTransaction.transaction_no == "ACTOR-SNAPSHOT-001")
+        )
+        self.assertIsNotNone(transaction)
+        self.assertEqual(transaction.actor_user_id, self.transaction_actor.user_id)
+        self.assertEqual(transaction.created_by, "Tester")
+
+        actor_user = self.repo.get_user(self.transaction_actor.user_id)
+        self.assertIsNotNone(actor_user)
+        actor_user.display_name = "Renamed Operator"
+        self.db.commit()
+        self.db.refresh(transaction)
+
+        self.assertEqual(transaction.actor_user_id, self.transaction_actor.user_id)
+        self.assertEqual(transaction.created_by, "Tester")
+
     def test_stock_summary_exposes_customer_and_self_purchased_balances(self) -> None:
         bundle = self.seed_customer_bundle()
         fixture_id = bundle["fixture_a"].id
@@ -1618,6 +1665,7 @@ class InventoryServiceTests(ServiceTestCase):
             customer_id=bundle["customer"].id,
             transaction_type="receipt",
             occurred_at=datetime(2026, 6, 8, 8, 30, tzinfo=timezone.utc),
+            actor_user_id=self.transaction_actor.user_id,
             created_by="Legacy Loader",
             transaction_no="RCV-LEGACY-0001",
             note=None,
@@ -1650,6 +1698,7 @@ class InventoryServiceTests(ServiceTestCase):
             customer_id=bundle["customer"].id,
             transaction_type="receipt",
             occurred_at=datetime(2026, 6, 8, 8, 30, tzinfo=timezone.utc),
+            actor_user_id=self.transaction_actor.user_id,
             created_by="Legacy Loader",
             transaction_no="RCV-LEGACY-DATECODE",
             note=None,
@@ -1682,6 +1731,7 @@ class InventoryServiceTests(ServiceTestCase):
             customer_id=bundle["customer"].id,
             transaction_type="receipt",
             occurred_at=datetime(2026, 6, 10, 8, 30, tzinfo=timezone.utc),
+            actor_user_id=self.transaction_actor.user_id,
             created_by="Export Tester",
             transaction_no="RCV-EXPORT-SOURCE",
             note=None,
@@ -1727,6 +1777,7 @@ class InventoryServiceTests(ServiceTestCase):
             customer_id=bundle["customer"].id,
             transaction_type="receipt",
             occurred_at=datetime(2026, 6, 8, 8, 30, tzinfo=timezone.utc),
+            actor_user_id=self.transaction_actor.user_id,
             created_by="Legacy Loader",
             transaction_no="RCV-LEGACY-12345",
             note=None,
@@ -1743,6 +1794,7 @@ class InventoryServiceTests(ServiceTestCase):
             customer_id=bundle["customer"].id,
             transaction_type="receipt",
             occurred_at=datetime(2026, 6, 8, 9, 30, tzinfo=timezone.utc),
+            actor_user_id=self.transaction_actor.user_id,
             created_by="Legacy Loader",
             transaction_no="RCV-LEGACY-123456",
             note=None,
@@ -1910,9 +1962,8 @@ class InventoryServiceTests(ServiceTestCase):
         with self.assertRaises(ValueError) as exc:
             self.inventory_service.import_transactions_csv(
                 bundle["customer"].id,
-                "Tester",
                 payload=CsvImportPayload(content=csv_content),
-        )
+            )
 
         self.assertEqual(str(exc.exception), "CSV 第 3 列：找不到治具編號 NOT-EXIST")
 

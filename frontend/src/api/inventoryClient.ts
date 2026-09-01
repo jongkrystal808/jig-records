@@ -199,9 +199,9 @@ export const inventoryApi = {
   downloadTransactionTemplateCsv() {
     return requestText("/inventory/transactions/template");
   },
-  importTransactionsCsv(customerId: number, operatorName: string, content: string, filename?: string) {
+  importTransactionsCsv(customerId: number, content: string, filename?: string) {
     return request<{ imported_count: number }>(
-      `/inventory/transactions/import?customer_id=${customerId}&operator_name=${encodeURIComponent(operatorName)}`,
+      `/inventory/transactions/import?customer_id=${customerId}`,
       { method: "POST", body: JSON.stringify({ filename, content }) }
     );
   },

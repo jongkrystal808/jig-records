@@ -625,6 +625,76 @@ def test_inventory_capacity_and_search_flow(app_client):
     assert payload["total"] >= 1
 
 
+def test_inventory_actor_is_bound_to_authenticated_session_for_api_and_csv(app_client):
+    token = _login(app_client)
+    headers = {"Authorization": f"Bearer {token}"}
+    customer_id = _create_assigned_customer(app_client, headers)
+    users = app_client.get("/api/v2/auth/users", headers=headers)
+    assert users.status_code == 200
+    admin_user_id = next(row["id"] for row in users.json() if row["username"] == "admin")
+
+    fixture = app_client.post(
+        "/api/v2/master/fixtures",
+        json={
+            "customer_id": customer_id,
+            "code": "ACTOR-001",
+            "name": "Actor Fixture",
+            "min_stock_qty": 0,
+        },
+        headers=headers,
+    )
+    assert fixture.status_code == 201
+    fixture_id = fixture.json()["id"]
+
+    receipt = app_client.post(
+        "/api/v2/inventory/receipts",
+        json={
+            "customer_id": customer_id,
+            "created_by": "spoofed-user",
+            "transaction_no": "ACTOR-API-001",
+            "items": [
+                {
+                    "fixture_id": fixture_id,
+                    "ownership_type": "self_purchased",
+                    "identifier": "ACTOR-API",
+                    "quantity": 2,
+                }
+            ],
+        },
+        headers=headers,
+    )
+    assert receipt.status_code == 204
+
+    csv_content = (
+        "transaction_type,transaction_no,fixture_code,ownership_type,identifier,quantity,created_by,occurred_at,note\n"
+        "receipt,ACTOR-CSV-001,ACTOR-001,self_purchased,ACTOR-CSV,1,csv-spoofed-user,,\n"
+    )
+    imported = app_client.post(
+        "/api/v2/inventory/transactions/import",
+        params={"customer_id": customer_id, "operator_name": "query-spoofed-user"},
+        json={"content": csv_content},
+        headers=headers,
+    )
+    assert imported.status_code == 200
+    assert imported.json() == {"imported_count": 1}
+
+    transactions = app_client.get(
+        "/api/v2/inventory/transactions",
+        params={"customer_id": customer_id, "limit": 10},
+        headers=headers,
+    )
+    assert transactions.status_code == 200
+    actor_rows = {
+        row["transaction_no"]: (row["actor_user_id"], row["created_by"])
+        for row in transactions.json()
+        if row["transaction_no"] in {"ACTOR-API-001", "ACTOR-CSV-001"}
+    }
+    assert actor_rows == {
+        "ACTOR-API-001": (admin_user_id, "System Admin"),
+        "ACTOR-CSV-001": (admin_user_id, "System Admin"),
+    }
+
+
 def test_fixture_reenable_recomputes_low_stock_alert(app_client):
     token = _login(app_client)
     headers = {"Authorization": f"Bearer {token}"}

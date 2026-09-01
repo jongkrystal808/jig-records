@@ -8,6 +8,8 @@ from openpyxl.styles import Font
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.app.core.auth import SessionContext
+from backend.app.models.master import User
 from backend.app.repositories.inventory_repository import InventoryRepository
 from backend.app.schemas.common import CsvImportPayload
 from backend.app.schemas.inventory import StockTransactionCreate
@@ -26,8 +28,9 @@ class DuplicateTransactionError(ValueError):
 class InventoryService:
     DUPLICATE_GUARD_WINDOW = timedelta(minutes=2)
 
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, *, actor: SessionContext | None = None) -> None:
         self.db = db
+        self.actor = actor
         self.repo = InventoryRepository(db)
         self.capacity_service = ProductionService(db)
         self.audit = AuditService(db)
@@ -44,9 +47,14 @@ class InventoryService:
         tzinfo = source.tzinfo or timezone.utc
         return datetime.combine(source.date(), time.min, tzinfo=tzinfo)
 
-    @staticmethod
-    def _normalize_created_by(value: str) -> str:
-        return value.strip()
+    def _resolve_actor(self) -> tuple[int, str]:
+        actor_user_id = None if self.actor is None else self.actor.user_id
+        if actor_user_id is None:
+            raise ValueError("交易操作必須綁定已登入使用者")
+        user = self.db.get(User, actor_user_id)
+        if user is None or not user.is_active:
+            raise ValueError("交易操作人不存在或已停用")
+        return user.id, user.display_name.strip()
 
     @staticmethod
     def _build_duplicate_signature_items(payload: StockTransactionCreate) -> Counter[tuple[int, str, int, str]]:
@@ -69,13 +77,18 @@ class InventoryService:
         minutes = delta_seconds // 60
         return f"{minutes} 分鐘前"
 
-    def _ensure_not_duplicate_transaction(self, payload: StockTransactionCreate, transaction_type: str) -> None:
-        created_by = self._normalize_created_by(payload.created_by)
+    def _ensure_not_duplicate_transaction(
+        self,
+        payload: StockTransactionCreate,
+        transaction_type: str,
+        *,
+        actor_user_id: int,
+    ) -> None:
         now = datetime.now(tz=timezone.utc)
         candidates = self.repo.find_recent_transactions_by_signature(
             customer_id=payload.customer_id,
             transaction_type=transaction_type,
-            created_by=created_by,
+            actor_user_id=actor_user_id,
             transaction_no=payload.transaction_no,
             created_at_from=now - self.DUPLICATE_GUARD_WINDOW,
         )
@@ -109,16 +122,21 @@ class InventoryService:
         commit: bool = True,
         allow_duplicate: bool = False,
     ) -> None:
+        actor_user_id, actor_display_name = self._resolve_actor()
         if not allow_duplicate:
-            self._ensure_not_duplicate_transaction(payload, transaction_type)
+            self._ensure_not_duplicate_transaction(
+                payload,
+                transaction_type,
+                actor_user_id=actor_user_id,
+            )
         occurred_at = self._normalize_occurred_at(payload.occurred_at)
-        normalized_created_by = self._normalize_created_by(payload.created_by)
         try:
             transaction = self.repo.create_transaction(
                 customer_id=payload.customer_id,
                 transaction_type=transaction_type,
                 occurred_at=occurred_at,
-                created_by=normalized_created_by,
+                actor_user_id=actor_user_id,
+                created_by=actor_display_name,
                 transaction_no=payload.transaction_no,
                 note=payload.note,
             )
@@ -509,7 +527,6 @@ class InventoryService:
                 "ownership_type",
                 "identifier",
                 "quantity",
-                "created_by",
                 "occurred_at",
                 "note",
             ],
@@ -521,7 +538,6 @@ class InventoryService:
                     "ownership_type": "self_purchased",
                     "identifier": "2605",
                     "quantity": "10",
-                    "created_by": "System Admin",
                     "occurred_at": "2026-05-26",
                     "note": "sample",
                 }
@@ -576,7 +592,7 @@ class InventoryService:
             "item_count": self.repo.count_transaction_items(customer_id=customer_id),
         }
 
-    def import_transactions_csv(self, customer_id: int, operator_name: str, payload: CsvImportPayload) -> int:
+    def import_transactions_csv(self, customer_id: int, payload: CsvImportPayload) -> int:
         rows = parse_csv_bytes(payload.content.encode("utf-8"))
         imported_count = 0
         for row_index, row in enumerate(rows, start=2):
@@ -598,7 +614,6 @@ class InventoryService:
                 occurred_at = self._normalize_occurred_at(datetime.fromisoformat(occurred_at_raw)) if occurred_at_raw else None
                 payload_row = StockTransactionCreate(
                     customer_id=customer_id,
-                    created_by=row.get("created_by", "") or operator_name,
                     occurred_at=occurred_at,
                     transaction_no=row.get("transaction_no", "") or None,
                     note=row.get("note", "") or None,

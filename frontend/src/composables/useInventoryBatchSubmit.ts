@@ -10,7 +10,6 @@ import type { ReadyInventorySubmissionItem } from "@/composables/useInventoryBat
 export function useInventoryBatchSubmit(options: {
   customerId: () => number | undefined;
   tutorialMode: () => boolean;
-  createdBy: () => string;
   readyRows: Ref<InventoryBatchImportRow[]>;
   mergedReadyItems: Ref<ReadyInventorySubmissionItem[]>;
   canSubmit: Ref<boolean>;
@@ -48,7 +47,6 @@ export function useInventoryBatchSubmit(options: {
         if (!firstItem) continue;
         const payload = {
           customer_id: customerId,
-          created_by: options.createdBy(),
           transaction_no: firstItem.transactionNo.trim(),
           items: groupItems.map((item) => ({
             fixture_id: item.fixtureId,

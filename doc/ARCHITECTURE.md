@@ -350,7 +350,8 @@ Includes:
   - `customer_supplied_qty = customer-supplied receipts - customer-supplied returns`
   - `self_purchased_qty = self-purchased receipts - self-purchased returns`
   - `stock_qty = customer_supplied_qty + self_purchased_qty`
-- Customer-supplied and self-purchased receipts are operationally separated, and a datecode does not repeat across ownership sources; return validation therefore remains scoped by `fixture + identifier`
+- Returnable quantity is validated independently for each `fixture + identifier + ownership_type`, so one ownership source can never be returned against another source's balance
+- Receipt/return writes derive the operator from the authenticated session user. `material_transactions.actor_user_id` stores the stable user reference and `created_by` stores the display-name snapshot; request payloads, CSV rows, and import query parameters cannot override either value
 - Stock, alert, identifier-stock, and fixture-context responses expose total, customer-supplied, and self-purchased quantities
 - UI-visible inline row errors and toast feedback for failed inventory submissions
 - Preview-time `current stock` and `post-transaction stock` columns for each identifier row
@@ -1171,6 +1172,7 @@ Recent schema evolution:
 - Alembic revision `0015_configuration_report_indexes` adds compound transaction and transaction-item indexes for configuration-report filtering
 - Alembic revision `0016_user_model_shortcuts` adds customer-scoped, cross-device model shortcut usage and pin preferences for signed-in users
 - Alembic revision `0019_fixture_storage` adds `storage_containers`, `storage_codes`, and `fixture_placements`, then backfills existing comma-separated fixture storage fields. It is a new explicit Lite storage-index design, not restoration of the retired pre-Lite warehouse schema.
+- Alembic revision `0020_transaction_actor` adds `material_transactions.actor_user_id`; legacy rows are backfilled only when their free-text `created_by` uniquely matches one user, while ambiguous or unmatched rows remain nullable.
 
 Compatibility behavior:
 

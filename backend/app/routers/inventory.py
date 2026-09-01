@@ -77,7 +77,7 @@ def create_receipt(
     db: Session = Depends(get_db),
 ):
     resolve_customer_scope(session, db, payload.customer_id, allow_empty=False)
-    service = InventoryService(db)
+    service = InventoryService(db, actor=session)
     try:
         service.receipt(payload, allow_duplicate=confirm_duplicate)
     except DuplicateTransactionError as exc:
@@ -94,7 +94,7 @@ def create_return(
     db: Session = Depends(get_db),
 ):
     resolve_customer_scope(session, db, payload.customer_id, allow_empty=False)
-    service = InventoryService(db)
+    service = InventoryService(db, actor=session)
     try:
         service.return_material(payload, allow_duplicate=confirm_duplicate)
     except DuplicateTransactionError as exc:
@@ -528,15 +528,14 @@ def transaction_template(db: Session = Depends(get_db)):
 @router.post("/transactions/import", response_model=ImportResultRead, dependencies=[Depends(require_permission("write"))])
 def import_transactions(
     customer_id: int = Query(...),
-    operator_name: str = Query(..., min_length=1),
     payload: CsvImportPayload = ...,
     session: SessionContext = Depends(require_permission("write")),
     db: Session = Depends(get_db),
 ):
     resolve_customer_scope(session, db, customer_id, allow_empty=False)
-    service = InventoryService(db)
+    service = InventoryService(db, actor=session)
     try:
-        return {"imported_count": service.import_transactions_csv(customer_id, operator_name, payload)}
+        return {"imported_count": service.import_transactions_csv(customer_id, payload)}
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

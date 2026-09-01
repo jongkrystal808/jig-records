@@ -340,6 +340,7 @@ export interface MaterialTransaction {
   transaction_type: "receipt" | "return";
   transaction_no: string | null;
   occurred_at: string;
+  actor_user_id: number | null;
   created_by: string;
   note: string | null;
   created_at: string;
@@ -366,6 +367,7 @@ export interface TransactionOverviewRow {
   transaction_type: "receipt" | "return";
   transaction_no: string | null;
   occurred_at: string;
+  actor_user_id: number | null;
   created_by: string;
   fixture_id: number | null;
   fixture_code: string;
@@ -485,7 +487,6 @@ export interface TransactionQueryFilters {
 
 export interface StockTransactionCreate {
   customer_id: number;
-  created_by: string;
   occurred_at?: string;
   transaction_no: string;
   note?: string;
