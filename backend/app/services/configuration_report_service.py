@@ -119,6 +119,7 @@ class ConfigurationReportService:
             page_size=page_size,
             sort_by=sort_by,
             sort_direction=sort_direction,
+            include_total=False,
         )
         summary = self.repo.summarize(customer_id=customer_id, filters=filters)
         items = [self._serialize_row(row) for row in raw_rows]
@@ -136,10 +137,6 @@ class ConfigurationReportService:
             "page_size": page_size,
             **summary,
             "transaction_details": details,
-            "transaction_detail_count": self.repo.count_transaction_details_for_filtered_fixtures(
-                customer_id=customer_id,
-                filters=filters,
-            ),
         }
 
     def get_options(
@@ -242,6 +239,7 @@ class ConfigurationReportService:
             page_size=None,
             sort_by=sort_by,
             sort_direction=sort_direction,
+            include_total=False,
         )
         rows = [self._serialize_row(row) for row in raw_rows]
         detail_groups: dict[int, list[dict]] = {}

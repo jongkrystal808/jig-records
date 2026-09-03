@@ -39,6 +39,7 @@
   - 本機 / image 啟動 launcher
   - 依 `BOOTSTRAP_BEFORE_RUN` 決定是否先做 bootstrap
   - 預設會先跑 migration 與 default user 初始化，再起 `uvicorn`
+  - `UVICORN_RELOAD` 可明確控制 reload；未設定時只在 `APP_ENV=development` 啟用，reload 關閉時可用 `UVICORN_WORKERS` 設定 worker 數
 
 - `backend/app/bootstrap.py`
   - `bootstrap_application()`
@@ -56,7 +57,7 @@
   - 掛載 `auth` / `master` / `inventory` / `production` / `search` / `storage` / `audit`
 
 - `backend/app/core/auth.py`
-  - JWT session 解析
+  - signed session token 解析，並以使用者 `auth_version` 拒絕密碼變更前簽發的 token
   - `read` / `write` / `manage` / `super_manage` 權限檢查
   - customer scope 驗證
   - 已登入 `super_admin` / `admin` / `user` 都依 `user_customers` 解析可見客戶
@@ -74,6 +75,7 @@
   - explicit offline compat fix helper
   - structured gate outcome logging: `passed` / `blocked` / `compat_fixes_applied`
   - Alembic URL 寫入 ConfigParser 前會 escape `%`，支援 percent-encoded 密碼
+  - Alembic `fileConfig` 保留既有 application logger，避免同程序 migration 後停用未預期 500 的 traceback 記錄
 
 - `backend/app/core/logging.py`
   - backend app logger 初始化
@@ -85,7 +87,8 @@
 - `backend/app/core/audit_logging.py`
   - FastAPI request-level audit middleware
   - 每次 request 寫入 `request_audit`
-  - 記錄 actor / request / response / error metadata
+  - 每個 request 建立或沿用 `X-Request-ID`，並在 response header 與 audit event 使用同一識別碼
+  - 記錄 actor / request / response / error type metadata；query 中的 password、token、authorization、secret、API key 類欄位一律遮罩，未預期例外只記錄型別、不寫入例外字串
 
 - `backend/app/core/schema_patch.py`
   - legacy DB runtime patch 保底
@@ -105,6 +108,8 @@
 - `backend/app/core/errors.py`
   - FastAPI error handler 註冊
   - `RequestValidationError` payload 序列化保底
+  - 所有錯誤 response 以 `X-Request-ID` header 與 `error.request_id` 回傳追蹤識別碼
+  - 未預期 500 以 `logger.exception` 寫入結構化事件與完整 traceback；欄位只含 request ID、method、path、status 與 exception type，避免記錄 password、token 或 request body
 
 - `backend/app/schemas/common.py`
   - `ORMModel` 提供 `from_attributes` 與共用日期序列化契約
@@ -151,6 +156,7 @@
 - `UserCreate` / `UserUpdate` 的 `role` 僅接受 `super_admin`、`admin` 或 `user`；`guest` 不可建立為一般登入帳號，`write` guard 也會拒絕任何不合法的 signed-in role
 - 系統阻止停用或降級最後一位啟用中的 `super_admin`；migration `0017_super_admin_role` 會把既有 bootstrap `admin` 帳號提升為 `super_admin`
 - 密碼雜湊為 PBKDF2，並相容舊 sha256 資料
+- 修改自己的密碼或由 `super_admin` 重設密碼時會遞增 `users.auth_version`，使該使用者所有既有 token 立即失效；重新登入後才會取得新版本 token
 - `allowed_customer_ids` 是 user API 的正式客戶範圍契約；Modern 使用者編輯器可直接維護，更新省略此欄位時後端保留既有指派，Admin 也不具清空或全客戶 bypass 特例
 - onboarding / guided tour 沒有獨立後端 API，完全由前端 shell 控制
 - 前端 onboarding 目前已拆成多個可選 flow；backend 仍不需要新增 tutorial router
@@ -187,6 +193,7 @@
 - 圖片狀態篩選只掃描 customer-scoped／安全 legacy 圖片檔名，再把治具編號條件交給分頁 SQL；不先載入客戶的完整治具 ORM 清單
 - `GET /master/customers/page`、`GET /auth/users/page`（Form UI 客戶／使用者關鍵字、狀態與分頁；客戶頁直接以 customer scope、關鍵字、offset/limit 在 SQL 執行，不先載入完整可見集合）
 - 分頁使用者回應批次載入 `allowed_customer_ids` 與精簡 `allowed_customers`，避免逐列 N+1 查詢；Form UI 客戶權限選項另以 `/master/customers/page` 的 50 筆搜尋頁按需載入
+- 分頁與未分頁客戶回應都會針對當次 customer set 批次載入 `assigned_user_ids`，不再逐客戶查 `user_customers`
 - `GET /master/fixtures/quality`
 - `POST /master/fixtures`
 - `PUT /master/fixtures/{fixture_id}`
@@ -261,6 +268,7 @@
 #### 行為重點
 
 - dashboard summary 會直接回傳 `today_receipt_qty / today_return_qty / low_stock_count / recent_receipt_entries / recent_return_entries`
+- dashboard 低庫存只讀取最多 20 筆 preview，並由同一查詢的 window count 回傳完整筆數，不再把全部警示列載入記憶體後切片
 - topbar 今日統計不再依賴前端抓最近 200 筆交易後自行過濾
 - 帳目管理清單以 transaction 為單位分頁，response 為 `items / page / page_size / total`
 - `fixture_code` / `transaction_no` / `created_by` / `transaction_type` 都由後端過濾，不再只依賴前端對最近 200 筆做搜尋
@@ -516,7 +524,7 @@
 - `/production/capacity/stations/{station_id}?model_id=...`（報表指定單一站點時取得該站 capacity）
 - `/master/fixtures/{fixture_code}/image?customer_id=...`（點擊報表治具代碼時載入 customer-scoped 圖片）
 
-報表 repository 以 SQL union 組成 configured／unbound／unconfigured 關聯明細；目前沒有 fixture／model／station 主要實體 projection，也不接受 `report_dimension`，因此同一治具有多個 model/station 關聯時會依配置列重複呈現。可開站數在篩選前以 `model_id + station_id` window 依完整需求集合計算。收退料方向、日期與客供／自購來源皆在資料庫篩選，前端不再逐頁抓取完整 transaction overview。page response 另以完整篩選集合計算 `populated_columns`，供前端穩定隱藏整欄無資料的欄位，不會因分頁改變判斷。`0015_configuration_report_indexes.py` 補上 report transaction lookup 的複合索引。
+報表 repository 以 SQL union 組成 configured／unbound／unconfigured 關聯明細；目前沒有 fixture／model／station 主要實體 projection，也不接受 `report_dimension`，因此同一治具有多個 model/station 關聯時會依配置列重複呈現。可開站數在篩選前以 `model_id + station_id` window 依完整需求集合計算。收退料方向、日期與客供／自購來源皆在資料庫篩選，前端不再逐頁抓取完整 transaction overview。page response 直接沿用 summary total，不再另跑同一份大型 union count；summary 的欄位旗標、去重庫存加總與 transaction detail count 合併為單一 CTE statement。聯動治具／機種／站點／水位選項也以共用 CTE 合併成一次 database round trip。`populated_columns` 仍以完整篩選集合計算，前端隱藏整欄無資料的判斷不會因分頁改變。`0015_configuration_report_indexes.py` 補上 report transaction lookup 的複合索引。
 
 以下 Search module 服務所有角色在 `/search` 的查詢模式，以及相容入口 `/search/detail` 的分頁搜尋與 lazy context。
 

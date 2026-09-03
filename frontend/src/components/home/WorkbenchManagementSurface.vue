@@ -256,8 +256,8 @@ watch([module, masterView], () => {
         class="workbench-panel workbench-controls workbench-management-nav"
         :aria-label="isFloorOverview ? '現場工作台總檢視導覽' : '工作台管理模組'"
       >
-        <div class="workbench-panel-heading">
-          <div><span>{{ isFloorOverview ? "現場工作台" : "管理後臺" }}</span><h2>{{ moduleLabel }}</h2></div>
+        <div v-if="!isFloorOverview" class="workbench-panel-heading">
+          <div><span>管理後臺</span><h2>{{ moduleLabel }}</h2></div>
         </div>
 
         <nav

@@ -139,7 +139,17 @@ class MasterService:
             raise ValueError("customer code or name already exists") from exc
 
     def list_customers(self):
-        return [self._serialize_customer(customer) for customer in self.repo.list_customers()]
+        customers = self.repo.list_customers()
+        assigned_user_ids = self.repo.list_allowed_user_ids_for_customers(
+            [customer.id for customer in customers]
+        )
+        return [
+            self._serialize_customer(
+                customer,
+                assigned_user_ids=assigned_user_ids[customer.id],
+            )
+            for customer in customers
+        ]
 
     def update_customer(self, customer_id: int, payload: CustomerUpdate, actor: SessionContext | None = None):
         customer = self.repo.get_customer(customer_id)
@@ -1112,12 +1122,21 @@ class MasterService:
             "updated_at": fixture.updated_at,
         }
 
-    def _serialize_customer(self, customer) -> dict:
+    def _serialize_customer(
+        self,
+        customer,
+        *,
+        assigned_user_ids: list[int] | None = None,
+    ) -> dict:
         return {
             "id": customer.id,
             "code": customer.code,
             "name": customer.name,
-            "assigned_user_ids": self.repo.list_allowed_user_ids_for_customer(customer.id),
+            "assigned_user_ids": (
+                self.repo.list_allowed_user_ids_for_customer(customer.id)
+                if assigned_user_ids is None
+                else assigned_user_ids
+            ),
             "created_at": customer.created_at,
             "updated_at": customer.updated_at,
         }

@@ -12,7 +12,7 @@ from pathlib import Path
 from alembic import command
 from sqlalchemy import create_engine, inspect, text
 
-from backend.app.core.audit_logging import register_audit_middleware
+from backend.app.core.audit_logging import REQUEST_ID_HEADER, register_audit_middleware
 from backend.app.core.migrations import (
     _alembic_config,
     _normalize_alembic_revisions,
@@ -217,7 +217,10 @@ class AuditMiddlewareTests(unittest.TestCase):
 
                 token = create_session_token(mode="guest", display_name="訪客測試")
                 client = TestClient(app)
-                response = client.get("/ping?x=1", headers={"Authorization": f"Bearer {token}"})
+                response = client.get(
+                    "/ping?x=1&password=private-password&access_token=private-token",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
 
                 self.assertEqual(response.status_code, 200)
                 lines = get_audit_log_path().read_text(encoding="utf-8").strip().splitlines()
@@ -226,8 +229,15 @@ class AuditMiddlewareTests(unittest.TestCase):
                 self.assertEqual(payload["actor"]["mode"], "guest")
                 self.assertEqual(payload["actor"]["display_name"], "訪客測試")
                 self.assertEqual(payload["request"]["path"], "/ping")
-                self.assertEqual(payload["request"]["query"], "x=1")
+                self.assertEqual(
+                    payload["request"]["query"],
+                    "x=1&password=%5BREDACTED%5D&access_token=%5BREDACTED%5D",
+                )
                 self.assertEqual(payload["response"]["status_code"], 200)
+                self.assertEqual(response.headers[REQUEST_ID_HEADER], payload["request_id"])
+                self.assertRegex(payload["request_id"], r"^[0-9a-f]{32}$")
+                self.assertNotIn("private-password", lines[-1])
+                self.assertNotIn("private-token", lines[-1])
             finally:
                 for handler in audit_logger.handlers:
                     handler.close()
@@ -289,15 +299,19 @@ class BootstrapFlowTests(unittest.TestCase):
                 material_transaction_columns = {
                     column["name"] for column in inspect(connection).get_columns("material_transactions")
                 }
+                user_columns = {
+                    column["name"] for column in inspect(connection).get_columns("users")
+                }
                 table_names = set(inspect(connection).get_table_names())
             engine.dispose()
 
-            self.assertEqual(revision, "0020_transaction_actor")
+            self.assertEqual(revision, "0021_user_auth_version")
             self.assertEqual(admin_count, 1)
             self.assertEqual(admin_role, "super_admin")
             self.assertIn("designated_mode", fixture_requirement_columns)
             self.assertIn("fixture_requirement_identifiers", table_names)
             self.assertIn("actor_user_id", material_transaction_columns)
+            self.assertIn("auth_version", user_columns)
             self.assertIn("storage_containers", table_names)
             self.assertIn("storage_codes", table_names)
             self.assertIn("fixture_placements", table_names)
@@ -360,7 +374,7 @@ class BootstrapFlowTests(unittest.TestCase):
                     text("SELECT target_type, model_id, station_id FROM fixture_placements ORDER BY target_type")
                 ).mappings().all()
             engine.dispose()
-            self.assertEqual(revision, "0020_transaction_actor")
+            self.assertEqual(revision, "0021_user_auth_version")
             self.assertEqual(codes, ["AXG001", "MOXA001"])
             self.assertEqual(len(placements), 3)
             self.assertEqual(
@@ -430,6 +444,48 @@ class BootstrapFlowTests(unittest.TestCase):
         finally:
             if engine is not None:
                 engine.dispose()
+            object.__setattr__(settings, "database_url", original_database_url)
+            db_path.unlink(missing_ok=True)
+
+    def test_auth_version_migration_backfills_existing_users(self) -> None:
+        temp_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        temp_file.close()
+        db_path = Path(temp_file.name)
+        original_database_url = settings.database_url
+        migrations_logger = logging.getLogger("backend.app.core.migrations")
+        original_logger_disabled = migrations_logger.disabled
+        engine = None
+        try:
+            object.__setattr__(settings, "database_url", f"sqlite:///{db_path.as_posix()}")
+            command.upgrade(_alembic_config(), "0020_transaction_actor")
+            engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO users (id, username, password_hash, display_name, role, is_active)
+                        VALUES (90, 'legacy-user', 'hash', 'Legacy User', 'user', 1)
+                        """
+                    )
+                )
+            engine.dispose()
+
+            command.upgrade(_alembic_config(), "head")
+
+            engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+            with engine.begin() as connection:
+                revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+                auth_version = connection.execute(
+                    text("SELECT auth_version FROM users WHERE id = 90")
+                ).scalar_one()
+            engine.dispose()
+
+            self.assertEqual(revision, "0021_user_auth_version")
+            self.assertEqual(auth_version, 1)
+        finally:
+            if engine is not None:
+                engine.dispose()
+            migrations_logger.disabled = original_logger_disabled
             object.__setattr__(settings, "database_url", original_database_url)
             db_path.unlink(missing_ok=True)
 

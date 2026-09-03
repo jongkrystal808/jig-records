@@ -515,7 +515,7 @@ class InventoryRepository:
         row = self.db.execute(stmt).first()
         return None if row is None else dict(row._mapping)
 
-    def list_stock_alert_rows(self, customer_id: int | None = None) -> list[dict]:
+    def _stock_alert_statement(self, customer_id: int | None = None):
         stock_breakdown = self._stock_breakdown_subquery(customer_id)
         (
             customer_supplied_qty_expr,
@@ -543,7 +543,30 @@ class InventoryRepository:
         )
         if customer_id is not None:
             stmt = stmt.where(Fixture.customer_id == customer_id)
+        return stmt
+
+    def list_stock_alert_rows(self, customer_id: int | None = None) -> list[dict]:
+        stmt = self._stock_alert_statement(customer_id)
         return [dict(row._mapping) for row in self.db.execute(stmt).all()]
+
+    def list_stock_alert_preview(
+        self,
+        customer_id: int | None = None,
+        *,
+        limit: int = 20,
+    ) -> tuple[list[dict], int]:
+        stmt = self._stock_alert_statement(customer_id).add_columns(
+            func.count().over().label("alert_count")
+        )
+        rows = self.db.execute(stmt.limit(limit)).all()
+        if not rows:
+            return [], 0
+        preview: list[dict] = []
+        for row in rows:
+            item = dict(row._mapping)
+            item.pop("alert_count", None)
+            preview.append(item)
+        return preview, int(rows[0].alert_count or 0)
 
     def summarize_transaction_quantities_on_date(self, target_date: date, *, customer_id: int | None = None) -> dict[str, int]:
         stmt = (

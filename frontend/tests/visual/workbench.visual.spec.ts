@@ -178,115 +178,106 @@ async function installDeterministicApi(page: Page, role: "guest" | "admin" = "gu
   });
 }
 
-test("workbench combined transaction overview matches the approved responsive baseline", async ({ page }, testInfo) => {
-  await installDeterministicApi(page);
-  await page.goto("/search?ui_surface=workbench&workbench_mode=transaction&transaction_type=receipt&customer=1");
-  await page.locator(".workbench-ui").waitFor();
-  await expect(page.locator('.workbench-mode-tabs [role="tab"]')).toHaveCount(4);
-  await expect(page.locator('.workbench-mode-tabs [role="tab"]').last()).toHaveText("管理後臺");
-  await expect(page.locator(".workbench-recent-table tbody tr")).toHaveCount(50);
-  await expect(page.locator(".workbench-table-pager")).toContainText("第 1 / 2 頁");
-
+async function expectNoPageOverflow(page: Page, label: string): Promise<void> {
   const horizontalOverflow = await page.evaluate(() =>
     Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth)
   );
-  expect(horizontalOverflow, `${testInfo.project.name} must not overflow the page horizontally`).toBeLessThanOrEqual(1);
+  expect(horizontalOverflow, `${label} must not overflow the page horizontally`).toBeLessThanOrEqual(1);
+}
 
-  await expect(page).toHaveScreenshot("workbench-receipt.png", { fullPage: false });
+test("Workspace transaction operation matches the approved responsive baseline", async ({ page }, testInfo) => {
+  await installDeterministicApi(page);
+  await page.goto("/search?ui_surface=workspace&workbench_mode=transaction&transaction_type=receipt&customer=1");
+  await page.getByRole("region", { name: "Workspace UI 快速作業" }).waitFor();
+  await expect(page.locator('.workbench-mode-tabs [role="tab"]')).toHaveCount(4);
+  await expect(page.locator('.workbench-mode-tabs [role="tab"]').last()).toHaveText("收／退料總檢視");
+  await expect(page.locator(".workbench-recent-table tbody tr")).toHaveCount(50);
+  await expect(page.locator(".workbench-table-pager")).toContainText("第 1 / 2 頁");
+  await expectNoPageOverflow(page, `${testInfo.project.name} Workspace transaction operation`);
 
-  await page.getByRole("tab", { name: "管理後臺", exact: true }).click();
-  await expect(page.locator('[data-tour="workbench-management-launcher"]')).toBeVisible();
-  await expect(page.locator('[data-tour="workbench-management-launcher"]')).toContainText("匯出中心");
-  const managementOverflow = await page.evaluate(() =>
-    Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth)
-  );
-  expect(managementOverflow, `${testInfo.project.name} management launcher must not overflow horizontally`).toBeLessThanOrEqual(1);
+  await expect(page).toHaveScreenshot("workspace-transaction-operation.png", { fullPage: false });
+
+  await page.getByRole("tab", { name: "收／退料總檢視", exact: true }).click();
+  await expect(page).toHaveURL(/\/inventory\/overview\?.*ui_surface=workspace/);
 });
 
-test("workbench keeps fixture and identifier lookup as explicit URL-backed modes", async ({ page }, testInfo) => {
+test("Workspace fixture identifier lookup keeps its URL-backed state", async ({ page }, testInfo) => {
   await installDeterministicApi(page);
-  await page.goto("/search?ui_surface=workbench&workbench_mode=fixture&fixture_search=identifier&q=2204&selected_id=101&customer=1");
-  await page.locator(".workbench-ui").waitFor();
+  await page.goto("/search?ui_surface=workspace&workbench_mode=fixture&fixture_search=identifier&q=2204&selected_id=101&customer=1");
+  await page.getByRole("region", { name: "Workspace UI 快速作業" }).waitFor();
   await expect(page.getByRole("button", { name: "Datecode／序號", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".workbench-query-form input")).toHaveValue("2204");
   await expect(page.locator(".workbench-results")).toContainText("2204");
   await expect(page.locator(".workbench-detail")).toContainText("FX-001");
   await expect(page.locator(".toast-card.error")).toHaveCount(0);
+  await expectNoPageOverflow(page, `${testInfo.project.name} Workspace identifier search`);
 
-  const horizontalOverflow = await page.evaluate(() =>
-    Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth)
-  );
-  expect(horizontalOverflow, `${testInfo.project.name} identifier search must not overflow horizontally`).toBeLessThanOrEqual(1);
-  await expect(page).toHaveScreenshot("workbench-identifier-search.png", { fullPage: false });
+  await expect(page).toHaveScreenshot("workspace-identifier-search.png", { fullPage: false });
 });
 
-test("workbench management uses left navigation, full results, and right tools", async ({ page }, testInfo) => {
+test("Workspace transaction overview uses the current compact navigation and filter layout", async ({ page }, testInfo) => {
   await installDeterministicApi(page, "admin");
-  await page.goto("/inventory/overview?ui_surface=workbench&customer=1");
-  await page.locator(".workbench-management-ui").waitFor();
+  await page.goto("/inventory/overview?ui_surface=workspace&customer=1");
+  await page.getByRole("region", { name: "現場工作台收退料總檢視" }).waitFor();
   await expect(page.locator(".workbench-management-columns > .workbench-panel")).toHaveCount(3);
   await expect(page.locator(".workbench-management-detail")).toContainText("篩選條件");
-  await expect(page.locator(".workbench-management-detail")).not.toContainText("操作角色");
-  await expect(page.locator(".workbench-management-results .filter-panel")).toHaveCount(0);
+  await expect(page.locator(".workbench-management-nav > .workbench-panel-heading")).toHaveCount(0);
+  await expect(page.locator('.workbench-management-nav [role="tab"]')).toHaveCount(4);
 
   const layout = await page.evaluate(() => {
     const panels = Array.from(document.querySelectorAll<HTMLElement>(".workbench-management-columns > .workbench-panel"));
     return {
+      display: getComputedStyle(document.querySelector<HTMLElement>(".workbench-management-columns")!).display,
       lefts: panels.map((panel) => Math.round(panel.getBoundingClientRect().left)),
       widths: panels.map((panel) => Math.round(panel.getBoundingClientRect().width)),
       overflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth)
     };
   });
-  expect(layout.lefts[0], `${testInfo.project.name} navigation should be first`).toBeLessThan(layout.lefts[1]!);
-  expect(layout.lefts[1], `${testInfo.project.name} results should be centered`).toBeLessThan(layout.lefts[2]!);
-  expect(layout.widths[1], `${testInfo.project.name} result panel should receive the most width`).toBeGreaterThan(layout.widths[2]!);
-  expect(layout.widths[2], `${testInfo.project.name} tool panel must remain usable`).toBeGreaterThanOrEqual(250);
+  if (testInfo.project.name === "mobile-390") {
+    expect(layout.display).toBe("flex");
+    expect(layout.widths[0], "mobile navigation should use the available row width").toBeGreaterThan(320);
+  } else {
+    expect(layout.lefts[0], `${testInfo.project.name} navigation should be first`).toBeLessThan(layout.lefts[1]!);
+    expect(layout.lefts[1], `${testInfo.project.name} results should be centered`).toBeLessThan(layout.lefts[2]!);
+    expect(layout.widths[0], `${testInfo.project.name} navigation should stay compact`).toBeLessThan(170);
+    expect(layout.widths[1], `${testInfo.project.name} result panel should receive the most width`).toBeGreaterThan(layout.widths[0]!);
+    expect(layout.widths[2], `${testInfo.project.name} tool panel must remain usable`).toBeGreaterThanOrEqual(250);
+  }
   expect(layout.overflow, `${testInfo.project.name} management page must not overflow horizontally`).toBeLessThanOrEqual(1);
 
-  await expect(page).toHaveScreenshot("workbench-management-overview.png", { fullPage: false });
+  await expect(page).toHaveScreenshot("workspace-transaction-overview.png", { fullPage: false });
 });
 
-test("workbench image maintenance uses a selected list row and right inspector", async ({ page }, testInfo) => {
+test("Workspace master fixture maintenance uses the current list and detail flow", async ({ page }, testInfo) => {
   await installDeterministicApi(page, "admin");
-  await page.goto("/master/images?ui_surface=workbench&customer=1");
-  await page.locator(".workbench-management-ui").waitFor();
-  await expect(page.locator("tbody tr.workbench-image-row")).toHaveCount(fixtures.length);
-  await expect(page.locator("tbody tr.workbench-image-row.selected")).toHaveCount(1);
-  await expect(page.locator(".workbench-management-detail")).toContainText("SELECTED FIXTURE");
-  await expect(page.locator(".workbench-management-detail")).toContainText("尚無圖片");
-  await expect(page.locator(".workbench-management-results thead th")).toHaveCount(4);
-  await page.locator(".workbench-filter-toggle").click();
-  await expect(page.locator(".workbench-management-detail .form-image-filters")).toBeHidden();
-  await expect(page.locator(".workbench-filter-toggle")).toHaveAttribute("aria-expanded", "false");
-  await page.locator(".workbench-filter-toggle").click();
+  await page.goto("/master/fixtures?ui_surface=workspace&customer=1");
+  await page.locator(".master-shell").waitFor();
+  const fixtureList = page.locator('[data-tour="detailed-master-list"]');
+  await expect(fixtureList.getByRole("heading", { name: "治具清單" })).toBeVisible();
+  await expect(fixtureList.locator("tbody tr")).toHaveCount(fixtures.length);
+  await fixtureList.locator("tbody tr").first().click();
+  const fixtureDetail = page.locator('[data-tour="detailed-master-detail"]');
+  await expect(fixtureDetail).toContainText("FX-001");
+  await expect(fixtureDetail).toContainText("Fixture 1");
+  await expectNoPageOverflow(page, `${testInfo.project.name} Workspace master fixtures`);
 
-  const overflow = await page.evaluate(() => Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth));
-  expect(overflow, `${testInfo.project.name} image maintenance must not overflow horizontally`).toBeLessThanOrEqual(1);
-  await expect(page).toHaveScreenshot("workbench-image-maintenance.png", { fullPage: false });
+  await expect(page).toHaveScreenshot("workspace-master-fixtures.png", { fullPage: false });
 });
 
-test("workbench ledger keeps the case list central and details in right tools", async ({ page }, testInfo) => {
+test("Workspace ledger uses the current master list and case detail layout", async ({ page }, testInfo) => {
   await installDeterministicApi(page, "admin");
-  await page.goto("/master/ledger?ui_surface=workbench&customer=1");
-  await page.locator(".workbench-management-ui").waitFor();
-  await expect(page.locator(".workbench-management-results .workbench-ledger-table tbody tr")).toHaveCount(ledgerRows.length);
-  await expect(page.locator(".workbench-management-results .workbench-ledger-detail")).toHaveCount(0);
-  await expect(page.locator(".workbench-management-detail .workbench-ledger-side")).toContainText("LED-0001");
-  await expect(page.locator(".workbench-management-detail .workbench-ledger-item-list > article")).toHaveCount(1);
+  await page.goto("/master/ledger?ui_surface=workspace&customer=1");
+  await page.locator(".master-shell").waitFor();
+  const ledgerList = page.locator('[data-tour="master-ledger-list"]');
+  const ledgerDetail = page.locator('[data-tour="master-ledger-detail"]');
+  await expect(ledgerList.locator("tbody tr")).toHaveCount(ledgerRows.length);
+  await expect(ledgerDetail).toContainText("LED-0001");
+  await expect(ledgerDetail.locator("tbody tr")).toHaveCount(1);
 
-  const typeSelect = page.locator('.workbench-management-detail details[aria-label="作業類型複選"]');
+  const typeSelect = page.locator('[data-tour="master-ledger-filters"] details[aria-label="類型複選"]');
   await typeSelect.locator("summary").click();
   await expect(typeSelect.locator(".ui-multi-select-option")).toHaveCount(2);
   await expect(typeSelect.locator('.ui-multi-select-option input[type="checkbox"]').first()).toHaveCSS("clip-path", "inset(50%)");
-  await expect(page).toHaveScreenshot("workbench-ledger-multiselect-open.png", { fullPage: false });
-  await typeSelect.locator("summary").click();
-
-  const overflow = await page.evaluate(() => Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth));
-  expect(overflow, `${testInfo.project.name} ledger must not overflow horizontally`).toBeLessThanOrEqual(1);
-  await expect(page).toHaveScreenshot("workbench-ledger-management.png", { fullPage: false });
-
-  await page.locator(".workbench-filter-toggle").click();
-  await expect(page.locator(".workbench-management-detail .workbench-admin-filter-grid")).toBeHidden();
-  await expect(page.locator(".workbench-management-detail .workbench-ledger-side")).toBeVisible();
-  await expect(page).toHaveScreenshot("workbench-ledger-management-collapsed.png", { fullPage: false });
+  await expectNoPageOverflow(page, `${testInfo.project.name} Workspace ledger`);
+  await expect(page).toHaveScreenshot("workspace-ledger.png", { fullPage: false });
 });

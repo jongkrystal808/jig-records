@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime, time, timezone
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.models import Base
@@ -245,6 +245,50 @@ class ConfigurationReportTests(unittest.TestCase):
         self.assertEqual(fixture_a["max_open_station_count"], 1)
         self.assertIn("departmentStorage", result["populated_columns"])
         self.assertIn("maxOpenStationCount", result["populated_columns"])
+
+    def test_report_page_and_options_use_bounded_query_counts(self) -> None:
+        customer_id = int(self.bundle["customer"].id)
+
+        def query_count_for(callback) -> tuple[object, int]:
+            statement_count = 0
+
+            def count_statement(*_args) -> None:
+                nonlocal statement_count
+                statement_count += 1
+
+            event.listen(self.engine, "before_cursor_execute", count_statement)
+            try:
+                result = callback()
+            finally:
+                event.remove(self.engine, "before_cursor_execute", count_statement)
+            return result, statement_count
+
+        result, page_query_count = query_count_for(
+            lambda: self.report.get_page(
+                customer_id=customer_id,
+                page=1,
+                page_size=50,
+                filters=self.empty_filters(),
+                sort_by="fixture_code",
+                sort_direction="asc",
+                include_transaction_details=False,
+            )
+        )
+        options, options_query_count = query_count_for(
+            lambda: self.report.get_options(
+                customer_id=customer_id,
+                filters=self.empty_filters(),
+                priority=None,
+            )
+        )
+
+        self.assertEqual(result["total"], 5)
+        self.assertEqual(
+            [row["code"] for row in options["models"]],
+            ["MODEL-A", "MODEL-B", "MODEL-C"],
+        )
+        self.assertLessEqual(page_query_count, 2)
+        self.assertEqual(options_query_count, 1)
 
     def test_report_capacity_uses_only_designated_identifier_stock(self) -> None:
         requirement = next(

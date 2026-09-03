@@ -78,6 +78,11 @@ mysql+pymysql://fixture_user:replace-app-password@db:3306/fixture_m_lite?charset
 2. `DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME`
 3. 若都沒給，退回 SQLite：`sqlite:///./fixture_m_lite.db`
 
+API launcher 另支援：
+
+- `UVICORN_RELOAD`：Docker 範例預設 `0`；只有本機開發需要檔案監看時才設為 `1`
+- `UVICORN_WORKERS`：reload 關閉時的 worker 數，預設 `1`；調高前需依主機 CPU、記憶體與資料庫連線上限評估
+
 ## 6. 停止與清理
 
 停止：

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -11,7 +12,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
 
-from backend.app.core.auth import SessionContext, _get_db as auth_get_db, create_session_token, require_permission
+from backend.app.core.auth import (
+    SessionContext,
+    _get_db as auth_get_db,
+    create_session_token,
+    list_accessible_customers,
+    require_permission,
+)
+from backend.app.core.audit_logging import REQUEST_ID_HEADER, register_audit_middleware
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.errors import register_error_handlers
@@ -326,6 +334,106 @@ class AuthServiceTests(ServiceTestCase):
         self.assertEqual(super_manage_guard(session=super_admin).role, "super_admin")
 
 
+class AuthTokenRevocationApiTests(ServiceTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        app = FastAPI()
+        register_error_handlers(app)
+        app.dependency_overrides[get_db] = self._override_get_db
+        app.dependency_overrides[auth_get_db] = self._override_get_db
+        app.include_router(api_router, prefix=settings.api_v2_prefix)
+        self.client = TestClient(app, raise_server_exceptions=False)
+
+        self.super_admin = self.auth_service.create_user(
+            UserCreate(
+                username="root-admin",
+                password="root-secret",
+                display_name="Root Admin",
+                role="super_admin",
+                is_active=True,
+            )
+        )
+        self.user = self.auth_service.create_user(
+            UserCreate(
+                username="alice",
+                password="secret123",
+                display_name="Alice",
+                role="user",
+                is_active=True,
+            )
+        )
+
+    def tearDown(self) -> None:
+        self.client.close()
+        super().tearDown()
+
+    def _override_get_db(self):
+        try:
+            yield self.db
+        finally:
+            pass
+
+    def _token_for(self, user_id: int) -> str:
+        user = self.repo.get_user(user_id)
+        self.assertIsNotNone(user)
+        return create_session_token(mode="user", user=user)
+
+    @staticmethod
+    def _headers(token: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_changing_own_password_invalidates_existing_token(self) -> None:
+        old_token = self._token_for(self.user["id"])
+
+        changed = self.client.post(
+            f"{settings.api_v2_prefix}/auth/password",
+            headers=self._headers(old_token),
+            json={"current_password": "secret123", "new_password": "new-secret123"},
+        )
+
+        self.assertEqual(changed.status_code, 204)
+        stale_request = self.client.get(
+            f"{settings.api_v2_prefix}/master/customers",
+            headers=self._headers(old_token),
+        )
+        self.assertEqual(stale_request.status_code, 401)
+        self.assertEqual(stale_request.json()["error"]["message"], "authentication token is stale")
+
+        login = self.client.post(
+            f"{settings.api_v2_prefix}/auth/login",
+            json={"username": "alice", "password": "new-secret123"},
+        )
+        self.assertEqual(login.status_code, 200)
+        fresh_request = self.client.get(
+            f"{settings.api_v2_prefix}/master/customers",
+            headers=self._headers(login.json()["token"]),
+        )
+        self.assertEqual(fresh_request.status_code, 200)
+
+    def test_admin_password_reset_invalidates_target_users_existing_token(self) -> None:
+        admin_token = self._token_for(self.super_admin["id"])
+        user_token = self._token_for(self.user["id"])
+
+        reset = self.client.post(
+            f"{settings.api_v2_prefix}/auth/users/{self.user['id']}/reset-password",
+            headers=self._headers(admin_token),
+            json={"password": "reset-secret123"},
+        )
+
+        self.assertEqual(reset.status_code, 204)
+        stale_request = self.client.get(
+            f"{settings.api_v2_prefix}/master/customers",
+            headers=self._headers(user_token),
+        )
+        self.assertEqual(stale_request.status_code, 401)
+        self.assertEqual(stale_request.json()["error"]["message"], "authentication token is stale")
+        admin_request = self.client.get(
+            f"{settings.api_v2_prefix}/master/customers",
+            headers=self._headers(admin_token),
+        )
+        self.assertEqual(admin_request.status_code, 200)
+
+
 class SearchServiceTests(ServiceTestCase):
     def test_fixture_and_identifier_search_modes_do_not_override_each_other(self) -> None:
         bundle = self.seed_customer_bundle()
@@ -387,6 +495,63 @@ class SearchServiceTests(ServiceTestCase):
 
 
 class MasterServiceTests(ServiceTestCase):
+    def test_customer_lists_use_constant_query_count(self) -> None:
+        customers = [
+            self.repo.create_customer(
+                code=f"PERF-CUSTOMER-{index:03d}",
+                name=f"Performance Customer {index}",
+            )
+            for index in range(25)
+        ]
+        user = self.repo.create_user(
+            username="customer-list-user",
+            email=None,
+            password_hash="test-hash",
+            display_name="Customer List User",
+            role="user",
+            is_active=True,
+        )
+        self.db.flush()
+        for customer in customers:
+            self.repo.replace_allowed_users_for_customer(customer.id, [user.id])
+        self.db.commit()
+
+        def query_count_for(callback) -> tuple[object, int]:
+            statement_count = 0
+
+            def count_statement(*_args) -> None:
+                nonlocal statement_count
+                statement_count += 1
+
+            event.listen(self.engine, "before_cursor_execute", count_statement)
+            try:
+                result = callback()
+            finally:
+                event.remove(self.engine, "before_cursor_execute", count_statement)
+            return result, statement_count
+
+        service_rows, service_query_count = query_count_for(
+            self.master_service.list_customers
+        )
+        guest = SessionContext(
+            mode="guest",
+            user_id=None,
+            username=None,
+            display_name="Guest",
+            role="guest",
+            issued_at=0,
+            expires_at=9999999999,
+        )
+        accessible_rows, accessible_query_count = query_count_for(
+            lambda: list_accessible_customers(guest, self.db)
+        )
+
+        self.assertEqual(len(service_rows), len(customers))
+        self.assertEqual(len(accessible_rows), len(customers))
+        self.assertTrue(all(row["assigned_user_ids"] == [user.id] for row in service_rows))
+        self.assertLessEqual(service_query_count, 2)
+        self.assertLessEqual(accessible_query_count, 2)
+
     def test_fixture_code_uniqueness_lookup_is_case_insensitive(self) -> None:
         customer_a = self.repo.create_customer(code="C-UNIQUE-A", name="Unique Customer A")
         customer_b = self.repo.create_customer(code="C-UNIQUE-B", name="Unique Customer B")
@@ -865,6 +1030,9 @@ class ApiErrorFormatTests(unittest.TestCase):
     def setUp(self) -> None:
         app = FastAPI()
         register_error_handlers(app)
+        register_audit_middleware(app)
+        self.audit_log_patcher = patch("backend.app.core.audit_logging.write_audit_log")
+        self.audit_log_mock = self.audit_log_patcher.start()
 
         @app.get("/http-error")
         def http_error():
@@ -879,6 +1047,10 @@ class ApiErrorFormatTests(unittest.TestCase):
             raise RuntimeError("boom")
 
         self.client = TestClient(app, raise_server_exceptions=False)
+
+    def tearDown(self) -> None:
+        self.client.close()
+        self.audit_log_patcher.stop()
 
     def test_http_exception_uses_standard_payload(self) -> None:
         response = self.client.get("/http-error")
@@ -896,11 +1068,42 @@ class ApiErrorFormatTests(unittest.TestCase):
         self.assertIn("details", payload["error"])
 
     def test_generic_exception_uses_standard_payload(self) -> None:
-        response = self.client.get("/boom")
+        with self.assertLogs("backend.app.core.errors", level="ERROR") as captured:
+            response = self.client.get(
+                "/boom",
+                params={"password": "do-not-log", "access_token": "secret-token"},
+                headers={"Authorization": "Bearer private-token"},
+            )
         self.assertEqual(response.status_code, 500)
         payload = response.json()
         self.assertEqual(payload["error"]["code"], "internal_error")
         self.assertEqual(payload["error"]["message"], "系統發生未預期錯誤")
+        request_id = payload["error"]["request_id"]
+        self.assertEqual(response.headers[REQUEST_ID_HEADER], request_id)
+        self.assertRegex(request_id, r"^[0-9a-f]{32}$")
+
+        self.assertEqual(len(captured.records), 1)
+        log_record = captured.records[0]
+        log_payload = json.loads(log_record.getMessage())
+        self.assertEqual(log_payload["event"], "unhandled_request_error")
+        self.assertEqual(log_payload["request_id"], request_id)
+        self.assertEqual(log_payload["exception_type"], "RuntimeError")
+        self.assertIsNotNone(log_record.exc_info)
+        rendered_log = "\n".join(captured.output)
+        self.assertIn("RuntimeError: boom", rendered_log)
+        self.assertNotIn("do-not-log", rendered_log)
+        self.assertNotIn("secret-token", rendered_log)
+        self.assertNotIn("private-token", rendered_log)
+
+        self.audit_log_mock.assert_called_once()
+        audit_payload = self.audit_log_mock.call_args.args[0]
+        self.assertEqual(audit_payload["request_id"], request_id)
+        self.assertEqual(audit_payload["error_type"], "RuntimeError")
+        self.assertIn("password=%5BREDACTED%5D", audit_payload["request"]["query"])
+        self.assertIn("access_token=%5BREDACTED%5D", audit_payload["request"]["query"])
+        self.assertNotIn("do-not-log", json.dumps(audit_payload))
+        self.assertNotIn("secret-token", json.dumps(audit_payload))
+        self.assertNotIn("private-token", json.dumps(audit_payload))
 
 
 class ProductionServiceTests(ServiceTestCase):
@@ -1433,6 +1636,52 @@ class ProductionServiceTests(ServiceTestCase):
 
 
 class InventoryServiceTests(ServiceTestCase):
+    def test_dashboard_low_stock_preview_is_bounded(self) -> None:
+        customer = self.repo.create_customer(code="PERF-DASH", name="Performance Dashboard")
+        for index in range(25):
+            fixture = self.repo.create_fixture(
+                customer_id=customer.id,
+                responsible_user_id=None,
+                code=f"LOW-{index:03d}",
+                name=f"Low Stock Fixture {index}",
+                line_storage_location=None,
+                department_storage_location=None,
+                description=None,
+            )
+            self.db.add_all(
+                [
+                    FixtureStockLevel(
+                        fixture_id=fixture.id,
+                        min_stock_qty=2,
+                        warning_threshold=0,
+                        alert_enabled=True,
+                    ),
+                    FixtureStockSummary(
+                        fixture_id=fixture.id,
+                        stock_qty=1,
+                        returned_qty=0,
+                        stock_status="low_stock",
+                    ),
+                ]
+            )
+        self.db.commit()
+        statement_count = 0
+
+        def count_statement(*_args) -> None:
+            nonlocal statement_count
+            statement_count += 1
+
+        event.listen(self.engine, "before_cursor_execute", count_statement)
+        try:
+            result = self.inventory_service.build_dashboard_summary(customer.id)
+        finally:
+            event.remove(self.engine, "before_cursor_execute", count_statement)
+
+        self.assertEqual(result["low_stock_count"], 25)
+        self.assertEqual(len(result["low_stock_preview_entries"]), 20)
+        self.assertTrue(result["has_more_low_stock_entries"])
+        self.assertLessEqual(statement_count, 5)
+
     def _make_receipt_payload(self, bundle, transaction_no: str = "12005436") -> StockTransactionCreate:
         return StockTransactionCreate(
             customer_id=bundle["customer"].id,

@@ -22,6 +22,7 @@ export default defineConfig({
     trace: "retain-on-failure"
   },
   projects: [
+    { name: "mobile-390", use: { ...devices["Pixel 7"], viewport: { width: 390, height: 844 } } },
     { name: "tablet-1024", use: { viewport: { width: 1024, height: 900 } } },
     { name: "notebook-1366", use: { viewport: { width: 1366, height: 900 } } },
     { name: "desktop-1920", use: { viewport: { width: 1920, height: 1080 } } }

@@ -504,6 +504,19 @@ class MasterRepository:
         stmt = select(UserCustomer.user_id).where(UserCustomer.customer_id == customer_id).order_by(UserCustomer.user_id)
         return list(self.db.scalars(stmt))
 
+    def list_allowed_user_ids_for_customers(self, customer_ids: list[int]) -> dict[int, list[int]]:
+        result = {customer_id: [] for customer_id in customer_ids}
+        if not customer_ids:
+            return result
+        rows = self.db.execute(
+            select(UserCustomer.customer_id, UserCustomer.user_id)
+            .where(UserCustomer.customer_id.in_(customer_ids))
+            .order_by(UserCustomer.customer_id, UserCustomer.user_id)
+        )
+        for customer_id, user_id in rows:
+            result[int(customer_id)].append(int(user_id))
+        return result
+
     def replace_allowed_customers_for_user(self, user_id: int, customer_ids: list[int]) -> None:
         self.db.execute(delete(UserCustomer).where(UserCustomer.user_id == user_id))
         unique_customer_ids = sorted(set(customer_ids))

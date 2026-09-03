@@ -625,7 +625,9 @@ function currentStatusFilter(): "all" | "active" | "inactive" {
 
 function updateEntityPageTotal(tab: MasterTab, total: number): void {
   listTotal.value = total;
-  entityTotals.value = { ...entityTotals.value, [tab]: total };
+  if (!keyword.value && statusFilter.value.length === 0) {
+    entityTotals.value = { ...entityTotals.value, [tab]: total };
+  }
 }
 
 async function startDemoTour(): Promise<void> {

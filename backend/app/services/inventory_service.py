@@ -234,13 +234,16 @@ class InventoryService:
     def build_dashboard_summary(self, customer_id: int | None = None) -> dict:
         target_date = datetime.now().astimezone().date()
         today_totals = self.repo.summarize_transaction_quantities_on_date(target_date, customer_id=customer_id)
-        low_stock_rows = self.repo.list_stock_alert_rows(customer_id=customer_id)
+        low_stock_rows, low_stock_count = self.repo.list_stock_alert_preview(
+            customer_id=customer_id,
+            limit=20,
+        )
         return {
             "today_receipt_qty": int(today_totals.get("receipt", 0)),
             "today_return_qty": int(today_totals.get("return", 0)),
-            "low_stock_count": len(low_stock_rows),
-            "low_stock_preview_entries": low_stock_rows[:20],
-            "has_more_low_stock_entries": len(low_stock_rows) > 20,
+            "low_stock_count": low_stock_count,
+            "low_stock_preview_entries": low_stock_rows,
+            "has_more_low_stock_entries": low_stock_count > len(low_stock_rows),
             "recent_receipt_entries": self.repo.list_recent_transaction_item_entries(
                 10,
                 customer_id=customer_id,

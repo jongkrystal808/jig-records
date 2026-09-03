@@ -63,6 +63,7 @@ def create_session_token(*, mode: SessionMode, user: User | None = None, display
         "username": None if user is None else user.username,
         "display_name": display_name if display_name is not None else (None if user is None else user.display_name),
         "role": None if user is None else user.role,
+        "auth_version": None if user is None else user.auth_version,
         "iat": issued_at,
         "exp": expires_at,
     }
@@ -128,6 +129,13 @@ def _load_context_from_payload(payload: dict, db: Session) -> SessionContext:
 
     token_username = str(payload.get("username") or "")
     if token_username != user.username:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="authentication token is stale")
+
+    # Tokens issued before auth_version was introduced did not carry this
+    # claim. Existing migrated users start at version 1, so those sessions
+    # remain valid only until the user's next password change or reset.
+    token_auth_version = payload.get("auth_version", 1)
+    if type(token_auth_version) is not int or token_auth_version != user.auth_version:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="authentication token is stale")
 
     return SessionContext(
@@ -217,10 +225,21 @@ def get_allowed_customer_ids(session: SessionContext, db: Session) -> list[int] 
     return list(db.scalars(stmt))
 
 
-def _serialize_customer(customer: Customer, db: Session) -> dict:
-    assigned_user_ids = list(
-        db.scalars(select(UserCustomer.user_id).where(UserCustomer.customer_id == customer.id).order_by(UserCustomer.user_id))
+def _list_assigned_user_ids(db: Session, customer_ids: list[int]) -> dict[int, list[int]]:
+    result = {customer_id: [] for customer_id in customer_ids}
+    if not customer_ids:
+        return result
+    rows = db.execute(
+        select(UserCustomer.customer_id, UserCustomer.user_id)
+        .where(UserCustomer.customer_id.in_(customer_ids))
+        .order_by(UserCustomer.customer_id, UserCustomer.user_id)
     )
+    for customer_id, user_id in rows:
+        result[int(customer_id)].append(int(user_id))
+    return result
+
+
+def _serialize_customer(customer: Customer, assigned_user_ids: list[int]) -> dict:
     return {
         "id": customer.id,
         "code": customer.code,
@@ -234,12 +253,17 @@ def _serialize_customer(customer: Customer, db: Session) -> dict:
 def list_accessible_customers(session: SessionContext, db: Session) -> list[dict]:
     if session.is_guest:
         stmt = select(Customer).order_by(Customer.code)
-        return [_serialize_customer(customer, db) for customer in db.scalars(stmt)]
-    allowed_customer_ids = get_allowed_customer_ids(session, db)
-    if not allowed_customer_ids:
-        return []
-    stmt = select(Customer).where(Customer.id.in_(allowed_customer_ids)).order_by(Customer.code)
-    return [_serialize_customer(customer, db) for customer in db.scalars(stmt)]
+    else:
+        allowed_customer_ids = get_allowed_customer_ids(session, db)
+        if not allowed_customer_ids:
+            return []
+        stmt = select(Customer).where(Customer.id.in_(allowed_customer_ids)).order_by(Customer.code)
+    customers = list(db.scalars(stmt))
+    assigned_user_ids = _list_assigned_user_ids(db, [customer.id for customer in customers])
+    return [
+        _serialize_customer(customer, assigned_user_ids[customer.id])
+        for customer in customers
+    ]
 
 
 def list_accessible_customers_page(
@@ -269,15 +293,7 @@ def list_accessible_customers_page(
             .limit(page_size)
         )
     )
-    customer_ids = [customer.id for customer in customers]
-    assigned_user_ids: dict[int, list[int]] = {customer_id: [] for customer_id in customer_ids}
-    if customer_ids:
-        for customer_id, user_id in db.execute(
-            select(UserCustomer.customer_id, UserCustomer.user_id)
-            .where(UserCustomer.customer_id.in_(customer_ids))
-            .order_by(UserCustomer.customer_id, UserCustomer.user_id)
-        ):
-            assigned_user_ids[int(customer_id)].append(int(user_id))
+    assigned_user_ids = _list_assigned_user_ids(db, [customer.id for customer in customers])
     return {
         "items": [
             {

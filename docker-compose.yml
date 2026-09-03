@@ -27,6 +27,8 @@ services:
       AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:?set AUTH_SECRET_KEY in .env for docker testing}
       DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-admin123}
       BOOTSTRAP_BEFORE_RUN: "0"
+      UVICORN_RELOAD: ${UVICORN_RELOAD:-0}
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
     volumes:
       - ${FIXTURE_IMAGE_DIR_HOST:-./uploads/fixtures}:/data/fixture-images
     depends_on:

@@ -219,6 +219,7 @@ class AuthService:
         if user is None:
             raise LookupError("user not found")
         user.password_hash = _hash_password(payload.password)
+        user.auth_version += 1
         self.audit.record(
             customer_id=None,
             entity_type="user",
@@ -243,6 +244,7 @@ class AuthService:
         if hmac.compare_digest(payload.current_password, payload.new_password):
             raise ValueError("新密碼不可與目前密碼相同")
         user.password_hash = _hash_password(payload.new_password)
+        user.auth_version += 1
         self.audit.record(
             customer_id=None,
             entity_type="user",

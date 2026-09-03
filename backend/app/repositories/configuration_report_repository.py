@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Iterable
 
-from sqlalchemy import Boolean, Integer, and_, case, cast, exists, func, literal, or_, select, union_all
+from sqlalchemy import Boolean, Integer, and_, case, cast, exists, func, literal, or_, select, true, union_all
 from sqlalchemy.orm import Session
 
 from backend.app.models.inventory import (
@@ -440,10 +440,15 @@ class ConfigurationReportRepository:
         page_size: int | None,
         sort_by: str,
         sort_direction: str,
-    ) -> tuple[list[dict], int]:
+        include_total: bool = True,
+    ) -> tuple[list[dict], int | None]:
         rows = self.report_rows_subquery(customer_id)
         filtered = self.apply_filters(select(rows), rows, filters=filters)
-        total = int(self.db.scalar(select(func.count()).select_from(filtered.order_by(None).subquery())) or 0)
+        total = (
+            int(self.db.scalar(select(func.count()).select_from(filtered.order_by(None).subquery())) or 0)
+            if include_total
+            else None
+        )
 
         sort_key = sort_by if sort_by in REPORT_SORT_COLUMNS else "fixture_code"
         sort_column = getattr(rows.c, sort_key)
@@ -477,8 +482,39 @@ class ConfigurationReportRepository:
 
     def summarize(self, *, customer_id: int, filters: dict) -> dict:
         rows = self.report_rows_subquery(customer_id)
-        filtered = self.apply_filters(select(rows), rows, filters=filters).subquery()
-        scalar_summary = self.db.execute(
+        filtered = self.apply_filters(select(rows), rows, filters=filters).cte(
+            "filtered_configuration_report"
+        )
+        has_transaction_filters = any(
+            filters.get(key)
+            for key in ("transaction_type", "ownership_type", "date_from", "date_to")
+        )
+        transaction_detail_count = literal(0)
+        if has_transaction_filters:
+            filtered_fixture_ids = (
+                select(filtered.c.fixture_id)
+                .where(filtered.c.fixture_id > 0)
+                .distinct()
+            )
+            transaction_detail_count = (
+                select(func.count())
+                .select_from(MaterialTransactionItem)
+                .join(
+                    MaterialTransaction,
+                    MaterialTransaction.id == MaterialTransactionItem.transaction_id,
+                )
+                .where(
+                    MaterialTransactionItem.fixture_id.in_(filtered_fixture_ids),
+                    *self._transaction_conditions(
+                        transaction_type=filters.get("transaction_type"),
+                        ownership_type=filters.get("ownership_type"),
+                        date_from=filters.get("date_from"),
+                        date_to=filters.get("date_to"),
+                    ),
+                )
+                .scalar_subquery()
+            )
+        scalar_summary_query = (
             select(
                 func.count().label("total"),
                 func.count(func.distinct(case((filtered.c.fixture_id > 0, filtered.c.fixture_id)))).label(
@@ -540,8 +576,11 @@ class ConfigurationReportRepository:
                 func.max(
                     case((filtered.c.max_open_station_count.is_not(None), 1), else_=0)
                 ).label("has_max_open_station_count"),
+                transaction_detail_count.label("transaction_detail_count"),
             )
-        ).one()
+            .select_from(filtered)
+            .cte("configuration_report_scalar_summary")
+        )
         fixture_totals = (
             select(
                 filtered.c.fixture_id,
@@ -551,9 +590,9 @@ class ConfigurationReportRepository:
             )
             .where(filtered.c.fixture_id > 0)
             .group_by(filtered.c.fixture_id)
-            .subquery()
+            .cte("configuration_report_fixture_totals")
         )
-        stock_totals = self.db.execute(
+        stock_totals_query = (
             select(
                 func.coalesce(func.sum(fixture_totals.c.stock_qty), 0).label("total_stock_qty"),
                 func.coalesce(func.sum(fixture_totals.c.customer_supplied_qty), 0).label(
@@ -562,6 +601,13 @@ class ConfigurationReportRepository:
                 func.coalesce(func.sum(fixture_totals.c.self_purchased_qty), 0).label(
                     "self_purchased_qty"
                 ),
+            )
+            .select_from(fixture_totals)
+            .cte("configuration_report_stock_totals")
+        )
+        scalar_summary = self.db.execute(
+            select(*scalar_summary_query.c, *stock_totals_query.c).select_from(
+                scalar_summary_query.join(stock_totals_query, true())
             )
         ).one()
         populated_columns = ["index", "customer", "configurationStatus"]
@@ -588,10 +634,11 @@ class ConfigurationReportRepository:
             "fixture_count": int(scalar_summary.fixture_count or 0),
             "attention_fixture_count": int(scalar_summary.attention_fixture_count or 0),
             "missing_configuration_count": int(scalar_summary.missing_configuration_count or 0),
-            "total_stock_qty": int(stock_totals.total_stock_qty or 0),
-            "customer_supplied_qty": int(stock_totals.customer_supplied_qty or 0),
-            "self_purchased_qty": int(stock_totals.self_purchased_qty or 0),
+            "total_stock_qty": int(scalar_summary.total_stock_qty or 0),
+            "customer_supplied_qty": int(scalar_summary.customer_supplied_qty or 0),
+            "self_purchased_qty": int(scalar_summary.self_purchased_qty or 0),
             "populated_columns": populated_columns if scalar_summary.total else [],
+            "transaction_detail_count": int(scalar_summary.transaction_detail_count or 0),
         }
 
     def list_options(
@@ -601,7 +648,8 @@ class ConfigurationReportRepository:
         filters: dict,
         priority: list[str],
     ) -> dict:
-        rows = self.report_rows_subquery(customer_id)
+        report_rows = self.report_rows_subquery(customer_id)
+        rows = select(report_rows).cte("configuration_report_option_rows")
         active_order = [key for key in priority if key in REPORT_FILTER_KEYS and filters.get(key)]
         active_order.extend(
             key for key in REPORT_FILTER_KEYS if filters.get(key) and key not in active_order
@@ -612,44 +660,87 @@ class ConfigurationReportRepository:
                 return active_order[: active_order.index(target)]
             return active_order
 
-        def option_rows(target: str, *columns):
-            stmt = self.apply_filters(
-                select(*columns).distinct(),
+        def option_query(target: str, id_column, code_column, name_column):
+            return self.apply_filters(
+                select(
+                    literal(target).label("option_type"),
+                    id_column.label("option_id"),
+                    code_column.label("option_code"),
+                    name_column.label("option_name"),
+                ).distinct(),
                 rows,
                 filters=filters,
                 enabled_keys=enabled_before(target),
             )
-            return self.db.execute(stmt.order_by(columns[1].asc())).all()
 
-        fixture_rows = option_rows("fixture_id", rows.c.fixture_id, rows.c.fixture_code, rows.c.fixture_name)
-        model_rows = option_rows("model_id", rows.c.model_id, rows.c.model_code, rows.c.model_code)
-        station_rows = option_rows("station_id", rows.c.station_id, rows.c.station_code, rows.c.station_name)
-        water_rows = self.db.execute(
-            self.apply_filters(
-                select(rows.c.water_status).distinct(),
-                rows,
-                filters=filters,
-                enabled_keys=enabled_before("water_status"),
+        water_query = self.apply_filters(
+            select(
+                literal("water_status").label("option_type"),
+                literal(0).label("option_id"),
+                rows.c.water_status.label("option_code"),
+                rows.c.water_status.label("option_name"),
+            ).distinct(),
+            rows,
+            filters=filters,
+            enabled_keys=enabled_before("water_status"),
+        )
+        combined_options = union_all(
+            option_query(
+                "fixture_id",
+                rows.c.fixture_id,
+                rows.c.fixture_code,
+                rows.c.fixture_name,
+            ),
+            option_query(
+                "model_id",
+                rows.c.model_id,
+                rows.c.model_code,
+                rows.c.model_code,
+            ),
+            option_query(
+                "station_id",
+                rows.c.station_id,
+                rows.c.station_code,
+                rows.c.station_name,
+            ),
+            water_query,
+        ).subquery()
+        option_rows = self.db.execute(
+            select(combined_options).order_by(
+                combined_options.c.option_type,
+                combined_options.c.option_code,
             )
         ).all()
+        grouped_options: dict[str, list] = {
+            "fixture_id": [],
+            "model_id": [],
+            "station_id": [],
+            "water_status": [],
+        }
+        for row in option_rows:
+            grouped_options[str(row.option_type)].append(row)
         return {
             "fixtures": [
-                {"id": int(row.fixture_id), "code": row.fixture_code, "name": row.fixture_name}
-                for row in fixture_rows
-                if int(row.fixture_id or 0) > 0
+                {"id": int(row.option_id), "code": row.option_code, "name": row.option_name}
+                for row in grouped_options["fixture_id"]
+                if int(row.option_id or 0) > 0
             ],
             "models": [
-                {"id": int(row.model_id), "code": row.model_code, "name": row.model_code}
-                for row in model_rows
-                if int(row.model_id or 0) > 0
+                {"id": int(row.option_id), "code": row.option_code, "name": row.option_name}
+                for row in grouped_options["model_id"]
+                if int(row.option_id or 0) > 0
             ],
             "stations": [
-                {"id": int(row.station_id), "code": row.station_code, "name": row.station_name}
-                for row in station_rows
-                if int(row.station_id or 0) > 0
+                {"id": int(row.option_id), "code": row.option_code, "name": row.option_name}
+                for row in grouped_options["station_id"]
+                if int(row.option_id or 0) > 0
             ],
             "water_statuses": sorted(
-                {str(row.water_status) for row in water_rows if str(row.water_status) != "na"}
+                {
+                    str(row.option_code)
+                    for row in grouped_options["water_status"]
+                    if str(row.option_code) != "na"
+                }
             ),
         }
 

@@ -3145,6 +3145,27 @@
   }
 }
 
+@media (min-width: 721px) {
+  .workbench-management-ui.is-floor-overview .workbench-management-columns {
+    grid-template-columns: max-content minmax(0, 1fr) minmax(270px, 380px);
+  }
+
+  .workbench-management-ui.is-floor-overview .workbench-management-nav {
+    padding: 8px;
+  }
+
+  .workbench-management-ui.is-floor-overview .workbench-mode-tabs {
+    grid-template-columns: 1fr;
+    margin-bottom: 0;
+  }
+
+  .workbench-management-ui.is-floor-overview .workbench-mode-tabs button {
+    min-width: 108px;
+    padding-inline: 10px;
+    white-space: nowrap;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .workbench-ui * {
     scroll-behavior: auto;

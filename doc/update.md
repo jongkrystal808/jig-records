@@ -9,6 +9,14 @@
 
 ## 2026-09 Update
 
+### 2026-09-03 P2 後端查詢與執行效率改善
+
+- 配置報表頁面移除未使用的重複 total count；欄位摘要、去重庫存總計與 transaction detail count 合併為單一 CTE 查詢，一般 page 固定最多 2 次 SQL。聯動治具／機種／站點／水位選項由 4 次大型 union 查詢收斂為 1 次共用 CTE 查詢。
+- Dashboard 低庫存改為最多 20 筆的 bounded preview，完整警示筆數由同一查詢的 window count 取得，不再把所有低庫存資料載入 application memory。
+- 客戶清單的 `assigned_user_ids` 改為當批 customer set 一次載入；25 筆客戶的 service 與 guest scope 清單皆固定最多 2 次 SQL。
+- `main.py` 不再無條件啟用 uvicorn reload；預設只在 development 啟用，Docker 明確關閉，並提供 `UVICORN_WORKERS` 設定。`.env.example`、compose 與 Docker 操作文件已同步。
+- 驗證：完整 backend suite `159 passed, 1 skipped, 4 subtests passed`；frontend `73` 個測試檔／`227 passed`；production build 與 `docker compose config --quiet` 通過。build 仍提示既有入口 chunk 約 `509.94 kB`，留待 P3 bundle 拆分處理。
+
 ### 2026-09-01 P1 查詢與頁面載入效能改善
 
 - storage overview 移除逐 storage code 查 container／placement 的 N+1，改由 repository 單次 grouped projection；新增回歸測試，30 個 storage codes 的 overview 固定最多 2 次 SQL。

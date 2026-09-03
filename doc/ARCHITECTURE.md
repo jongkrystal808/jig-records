@@ -229,12 +229,14 @@ Application shell notes:
 - `/storage` is the dedicated fixture-storage index route across system surfaces. It registers comma-separated location codes, groups codes into optional containers, and edits fixture placement quantities; guest sessions retain read-only access.
 - storage overview aggregation is repository-owned and query-count bounded: containers are loaded once and storage-code placement counts are produced by one grouped query instead of per-code lookups
 - production model/capacity reads use one model-scoped requirement projection plus one designated-identifier batch; query count is bounded independently of the number of requirements
+- customer list responses bulk-load `user_customers` assignments once for the returned customer set; both the shared scope picker and `MasterService` avoid per-customer assignment queries
 - Modern `MasterPage` user maintenance includes the customer multi-select in its create/edit flow, requires at least one selected customer on save, preserves the current selection during activation changes, and labels legacy empty assignments as unassigned
 - master-data list panels now surface `current page / total pages / total rows` and paging actions above the list table, instead of below it
 - guest users do not see `資料維護`, and router guard blocks direct `/master` access
 - the current shell is a top bar rather than a left sidebar
 - the top bar surfaces login state, customer switch, today receipt/return totals, and low-stock count
 - top-bar summary data now comes from a dedicated backend dashboard-summary endpoint, rather than front-end derivation from a recent transaction slice
+- dashboard low-stock metadata uses a bounded 20-row preview query with a windowed total count, so the top bar does not materialize every alert row
 - the top bar provides primary `收/退料`, `匯出中心`, and `Modern UI 教學` actions
 - `更多功能` omits the duplicate fixture/model query entry because both query and report are directly available from `/search`
 - clicking the logo returns to `/search`
@@ -386,6 +388,7 @@ Current layout direction for inventory entry points:
 - `/inventory` keeps the full operation workspace route
 - the global top-bar `收/退料` button opens a modal that exposes only the shared batch-import flow
 - Workspace and Form account areas expose the same current-user password-change dialog; the backend verifies the current password before replacing it
+- Signed-in session tokens carry the user's `auth_version`; changing or resetting a password increments the stored version so every previously issued token for that user is rejected immediately
 - the global top-bar `匯出中心` button opens a modal that centralizes dataset, format, and range selection
 - the export-center dataset list is role-aware, so Admin/Super-Admin exports such as `治具資料品質` are hidden from guest/user sessions instead of failing late with `403`
 - transaction-detail exports can narrow custom scope by `customer_supplied` or `self_purchased`; export preview and the final report share the same backend item-level filter
@@ -592,7 +595,7 @@ The inventory/configuration report has a dedicated backend read model instead of
 - `GET /api/v2/inventory/configuration-report/export` streams every matching row as CSV or XLSX and is not limited to the current page.
 - Shared CSV helpers and the explicit XLSX renderers escape string cells that begin with `=`, `+`, `-`, or `@` by adding a leading apostrophe; numeric cells retain their numeric type.
 
-`ConfigurationReportRepository` builds a relation-level union of configured requirements, unbound fixtures, unconfigured model/station mappings, unmapped models, and unmapped stations. A configured fixture therefore appears once per matching model/station requirement rather than being collapsed into a primary-entity row. The repository also joins stock-water state and transaction-derived customer-supplied/self-purchased balances. Configured rows calculate `max_open_station_count` with a model/station window over the complete requirement set, so a later fixture filter cannot hide the true bottleneck. Fixture status, water status, configuration status, transaction direction, and ownership source accept repeated values; each category expands to an SQL `IN`/`EXISTS` OR set, with date and other categories applied as AND conditions. Two composite indexes support the report's transaction lookup paths. The frontend requests only the current server page plus linked options; the explicit capacity action and fixture-image action continue to use their existing authoritative endpoints.
+`ConfigurationReportRepository` builds a relation-level union of configured requirements, unbound fixtures, unconfigured model/station mappings, unmapped models, and unmapped stations. A configured fixture therefore appears once per matching model/station requirement rather than being collapsed into a primary-entity row. The repository also joins stock-water state and transaction-derived customer-supplied/self-purchased balances. Configured rows calculate `max_open_station_count` with a model/station window over the complete requirement set, so a later fixture filter cannot hide the true bottleneck. Fixture status, water status, configuration status, transaction direction, and ownership source accept repeated values; each category expands to an SQL `IN`/`EXISTS` OR set, with date and other categories applied as AND conditions. Two composite indexes support the report's transaction lookup paths. Page reads reuse the summary total instead of running a separate row-count query; summary flags, stock totals, and filtered transaction-detail count share one CTE-backed statement. Linked fixture/model/station/water options are also combined into one CTE-backed database round trip while retaining priority-aware filtering. The frontend requests only the current server page plus linked options; the explicit capacity action and fixture-image action continue to use their existing authoritative endpoints.
 
 ---
 
@@ -617,6 +620,10 @@ Audit logging behavior:
 - existing business audit events are also mirrored to the same file as `domain_audit`
 - the audit file is line-delimited JSON, so each log line is a standalone event
 - the file logger uses rotation to avoid unbounded single-file growth
+- every request receives a stable `X-Request-ID`; the same value is returned in the response header, included in error payloads, and written to request-audit records
+- unexpected 500 errors are logged by the application logger as a structured event with `logger.exception`, preserving the traceback while limiting metadata to request ID, method, path, status, and exception type
+- Alembic logging configuration keeps existing application loggers enabled, including when migration and request handling run in the same process
+- request query keys that can carry passwords, authorization values, secrets, API keys, or tokens are redacted before audit persistence; request bodies and raw exception messages are not copied into unexpected-error events
 
 Current request-audit payload includes:
 
@@ -630,9 +637,10 @@ Current request-audit payload includes:
 - `request.path`
 - `request.query`
 - `request.client_ip`
+- `request_id`
 - `response.status_code`
 - `response.duration_ms`
-- `error`
+- `error_type`
 
 ---
 
@@ -1179,6 +1187,7 @@ Recent schema evolution:
 - Alembic revision `0016_user_model_shortcuts` adds customer-scoped, cross-device model shortcut usage and pin preferences for signed-in users
 - Alembic revision `0019_fixture_storage` adds `storage_containers`, `storage_codes`, and `fixture_placements`, then backfills existing comma-separated fixture storage fields. It is a new explicit Lite storage-index design, not restoration of the retired pre-Lite warehouse schema.
 - Alembic revision `0020_transaction_actor` adds `material_transactions.actor_user_id`; legacy rows are backfilled only when their free-text `created_by` uniquely matches one user, while ambiguous or unmatched rows remain nullable.
+- Alembic revision `0021_user_auth_version` adds `users.auth_version`; password changes and resets increment it, and token validation rejects sessions carrying an older version.
 
 Compatibility behavior:
 

@@ -210,7 +210,8 @@ describe("WorkbenchManagementSurface", () => {
     expect(wrapper.find(".workbench-management-module-list").exists()).toBe(false);
     expect(wrapper.find('[data-workbench-area="floor"]').exists()).toBe(true);
     expect(wrapper.attributes("aria-label")).toBe("現場工作台收退料總檢視");
-    expect(wrapper.get(".workbench-management-nav").text()).toContain("現場工作台");
+    expect(wrapper.find(".workbench-management-nav > .workbench-panel-heading").exists()).toBe(false);
+    expect(wrapper.get(".workbench-management-nav").element.children).toHaveLength(1);
     expect(wrapper.find(".workbench-return-floor").exists()).toBe(false);
     expect(wrapper.get(".workbench-mode-tabs").text()).toContain("收料／退料");
     expect(wrapper.get(".workbench-mode-tabs").text()).toContain("查詢治具");
